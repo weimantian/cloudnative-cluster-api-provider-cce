@@ -1,0 +1,45 @@
+name: Go Build & Test
+
+on:
+  pull_request:
+    paths: ['**.go', 'go.mod', 'go.sum', 'Makefile']
+  push:
+    branches: [main]
+    paths: ['**.go', 'go.mod', 'go.sum', 'Makefile']
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    name: Build and unit test
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+
+      - name: Verify modules
+        run: go mod verify
+
+      - name: Build
+        run: go build ./...
+
+      - name: Vet
+        run: go vet ./...
+
+      - name: Unit tests
+        run: go test ./...
+
+      - name: Generate check (controller-gen output must be committed)
+        run: |
+          go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.21.0 \
+            object:headerFile="hack/boilerplate.go.txt" paths="./..."
+          go run sigs.k8s.io/controller-tools/cmd/controller-gen@v0.21.0 \
+            crd paths="./..." output:crd:artifacts:config=config/crd/bases
+          git diff --exit-code -- api config/crd || \
+            (echo "Generated code is out of date — run 'make generate manifests'" && exit 1)

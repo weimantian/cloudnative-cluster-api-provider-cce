@@ -1,0 +1,186 @@
+/*
+Copyright 2025 Huawei Cloud.
+
+Licensed under the MIT No Attribution (MIT-0) License.
+*/
+
+package v1beta1
+
+import (
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+)
+
+// CCEManagedControlPlaneSpec defines the desired state of
+// CCEManagedControlPlane. It maps to the CCE CreateCluster API (ClusterSpec):
+// category / flavor / version / containerNetwork / serviceNetwork /
+// customSan / publicAccess / agencyName / billingMode.
+type CCEManagedControlPlaneSpec struct {
+	// ClusterName of the owning CCE cluster.
+	// +kubebuilder:validation:Required
+	ClusterName string `json:"clusterName"`
+
+	// Version of Kubernetes, e.g. "v1.30.0". Empty means CCE latest.
+	// +optional
+	Version string `json:"version,omitempty"`
+
+	// Category of the CCE cluster: CCE (Standard) or Turbo.
+	// +kubebuilder:validation:Enum=CCE;Turbo
+	// +kubebuilder:default=Turbo
+	// +optional
+	Category string `json:"category,omitempty"`
+
+	// Flavor of the cluster (official enum e.g. cce.s1.small ... cce.s2.xlarge).
+	// +optional
+	Flavor string `json:"flavor,omitempty"`
+
+	// ContainerNetwork of the cluster.
+	// +optional
+	ContainerNetwork ContainerNetworkSpec `json:"containerNetwork,omitempty"`
+
+	// ServiceNetwork of the cluster.
+	// +optional
+	ServiceNetwork ServiceNetworkSpec `json:"serviceNetwork,omitempty"`
+
+	// CustomSan entries for the API server certificate.
+	// +optional
+	CustomSan []string `json:"customSan,omitempty"`
+
+	// EndpointAccess controls public API server access.
+	// +optional
+	EndpointAccess EndpointAccessSpec `json:"endpointAccess,omitempty"`
+
+	// AgencyName used by the cluster (1.27+; empty uses the system agency).
+	// +optional
+	AgencyName string `json:"agencyName,omitempty"`
+
+	// Billing controls billing mode: 0=on-demand, 1=subscription.
+	// +optional
+	Billing BillingSpec `json:"billing,omitempty"`
+
+	// ControlPlaneEndpoint is the API server endpoint (backfilled by the
+	// provider from ShowClusterEndpoints).
+	// +optional
+	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
+}
+
+// ContainerNetworkSpec mirrors the CCE ContainerNetwork model.
+type ContainerNetworkSpec struct {
+	// Mode: overlay_l2 | vpc-router | eni (eni implies Turbo).
+	// +kubebuilder:validation:Enum=overlay_l2;vpc-router;eni
+	// +kubebuilder:default=eni
+	// +optional
+	Mode string `json:"mode,omitempty"`
+
+	// CIDR of the container network (immutable after creation for tunnel mode).
+	// +optional
+	CIDR string `json:"cidr,omitempty"`
+
+	// ENISubnets for eni mode (Turbo).
+	// +optional
+	ENISubnets []string `json:"eniSubnets,omitempty"`
+}
+
+// ServiceNetworkSpec mirrors the CCE service network (default 10.247.0.0/16).
+type ServiceNetworkSpec struct {
+	// CIDR of the service network.
+	// +optional
+	CIDR string `json:"cidr,omitempty"`
+}
+
+// EndpointAccessSpec controls API server access.
+type EndpointAccessSpec struct {
+	// Public enables public API server access.
+	// +optional
+	Public bool `json:"public,omitempty"`
+}
+
+// BillingSpec controls cluster billing.
+type BillingSpec struct {
+	// Mode: 0=on-demand, 1=subscription.
+	// +kubebuilder:validation:Enum=0;1
+	// +kubebuilder:default=0
+	// +optional
+	Mode int32 `json:"mode,omitempty"`
+}
+
+// CCEManagedControlPlaneStatus defines the observed state of
+// CCEManagedControlPlane.
+type CCEManagedControlPlaneStatus struct {
+	// Ready indicates the CCE control plane is available.
+	// +optional
+	Ready bool `json:"ready,omitempty"`
+
+	// Initialized indicates the kubeconfig Secret has been generated.
+	// +optional
+	Initialized bool `json:"initialized,omitempty"`
+
+	// ClusterID is the CCE cluster UUID.
+	// +optional
+	ClusterID string `json:"clusterID,omitempty"`
+
+	// ControlPlaneEndpoint is the API server endpoint.
+	// +optional
+	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
+
+	// KubeconfigSecretName of the generated kubeconfig Secret.
+	// +optional
+	KubeconfigSecretName string `json:"kubeconfigSecretName,omitempty"`
+
+	// Version of the cluster as reported by CCE.
+	// +optional
+	Version string `json:"version,omitempty"`
+
+	// FailureReason is a short reason for failure.
+	// +optional
+	FailureReason string `json:"failureReason,omitempty"`
+
+	// FailureMessage is a human-readable failure description.
+	// +optional
+	FailureMessage string `json:"failureMessage,omitempty"`
+
+	// Conditions defines current service state.
+	// +optional
+	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// +kubebuilder:object:root=true
+// +kubebuilder:subresource:status
+// +kubebuilder:resource:path=ccemanagedcontrolplanes,scope=Namespaced,categories=cluster-api
+// +kubebuilder:printcolumn:name="Cluster",type="string",JSONPath=".metadata.labels.cluster\\.x-k8s\\.io/cluster-name",description="Cluster to which this CCEManagedControlPlane belongs"
+// +kubebuilder:printcolumn:name="Ready",type="string",JSONPath=".status.ready",description="Control plane ready"
+// +kubebuilder:printcolumn:name="Initialized",type="string",JSONPath=".status.initialized",description="kubeconfig generated"
+// +kubebuilder:printcolumn:name="Age",type="date",JSONPath=".metadata.creationTimestamp"
+
+// CCEManagedControlPlane is the Schema for the CCE managed control plane
+// (ControlPlane).
+type CCEManagedControlPlane struct {
+	metav1.TypeMeta   `json:",inline"`
+	metav1.ObjectMeta `json:"metadata,omitempty"`
+
+	Spec   CCEManagedControlPlaneSpec   `json:"spec,omitempty"`
+	Status CCEManagedControlPlaneStatus `json:"status,omitempty"`
+}
+
+// GetConditions implements the v1beta2 conditions contract.
+func (c *CCEManagedControlPlane) GetConditions() []metav1.Condition {
+	return c.Status.Conditions
+}
+
+// SetConditions implements the v1beta2 conditions contract.
+func (c *CCEManagedControlPlane) SetConditions(conditions []metav1.Condition) {
+	c.Status.Conditions = conditions
+}
+
+// +kubebuilder:object:root=true
+
+// CCEManagedControlPlaneList contains a list of CCEManagedControlPlane.
+type CCEManagedControlPlaneList struct {
+	metav1.TypeMeta `json:",inline"`
+	metav1.ListMeta `json:"metadata,omitempty"`
+	Items           []CCEManagedControlPlane `json:"items"`
+}
+
+func init() {
+	SchemeBuilder.Register(&CCEManagedControlPlane{}, &CCEManagedControlPlaneList{})
+}

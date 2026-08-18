@@ -1,0 +1,74 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cce-provider-controller-manager
+  labels:
+    control-plane: controller-manager
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      labels:
+        control-plane: controller-manager
+    spec:
+      securityContext:
+        runAsNonRoot: true
+      containers:
+        - name: manager
+          image: swr.cn-north-4.myhuaweicloud.com/cce-provider/controller:latest
+          imagePullPolicy: IfNotPresent
+          args:
+            - --leader-elect
+            - --health-probe-bind-address=:8081
+          env:
+            # Global fallback credentials (per-cluster Secrets are recommended;
+            # see docs/deploy or deploy/variables.md).
+            - name: CLOUD_SDK_AK
+              valueFrom:
+                secretKeyRef:
+                  name: cce-provider-credentials
+                  key: accessKey
+                  optional: true
+            - name: CLOUD_SDK_SK
+              valueFrom:
+                secretKeyRef:
+                  name: cce-provider-credentials
+                  key: secretKey
+                  optional: true
+          ports:
+            - containerPort: 8080
+              name: metrics
+              protocol: TCP
+            - containerPort: 9443
+              name: webhook-server
+              protocol: TCP
+          livenessProbe:
+            httpGet:
+              path: /healthz
+              port: 8081
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /readyz
+              port: 8081
+            initialDelaySeconds: 5
+            periodSeconds: 10
+          resources:
+            limits:
+              cpu: 500m
+              memory: 256Mi
+            requests:
+              cpu: 100m
+              memory: 64Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+      serviceAccountName: cce-provider-controller-manager
+      terminationGracePeriodSeconds: 10

@@ -1,0 +1,11 @@
+apiVersion: kustomize.config.k8s.io/v1beta1
+kind: Kustomization
+namespace: cce-provider-system
+resources:
+  - namespace.yaml
+  - ../crd
+  - ../rbac
+  - ../manager
+# Webhook resources are wired in when cert-manager is available (P0).
+# - ../webhook
+# - ../certmanager
