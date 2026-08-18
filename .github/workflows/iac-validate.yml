@@ -1,0 +1,54 @@
+name: IaC Validate
+
+on:
+  pull_request:
+    paths: ['deploy/**', 'scripts/**']
+  push:
+    branches: [main]
+    paths: ['deploy/**', 'scripts/**']
+
+permissions:
+  contents: read
+
+jobs:
+  validate:
+    name: Validate deploy scripts and IaC templates
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out code
+        uses: actions/checkout@v4
+
+      - name: Shell syntax check (bash -n)
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r f; do
+            if ! bash -n "$f"; then
+              echo "::error::Syntax error in $f"
+              failed=1
+            fi
+          done < <(find deploy scripts -name '*.sh' -type f 2>/dev/null)
+          exit "$failed"
+
+      - name: Install shellcheck
+        run: sudo apt-get update && sudo apt-get install -y shellcheck
+
+      - name: Run shellcheck
+        run: |
+          set -euo pipefail
+          failed=0
+          while IFS= read -r f; do
+            if ! shellcheck -x -S warning "$f"; then
+              echo "::error::shellcheck failed for $f"
+              failed=1
+            fi
+          done < <(find deploy scripts -name '*.sh' -type f 2>/dev/null)
+          exit "$failed"
+
+      # Terraform validation runs only when a terraform module exists.
+      - name: Terraform validate (if deploy/terraform exists)
+        if: ${{ hashFiles('deploy/terraform/**/*.tf') != '' }}
+        run: |
+          cd deploy/terraform
+          terraform init -backend=false -input=false
+          terraform validate

@@ -1,0 +1,26 @@
+# ===== Environment tooling artifacts (never commit) =====
+.codeartsdoer/
+.merkle-snapshot.json
+
+# ===== OS / editor =====
+.DS_Store
+*.swp
+.idea/
+.vscode/
+
+# ===== Go build artifacts =====
+bin/
+*.test
+*.out
+coverage.txt
+
+# ===== Local credentials / env =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# ===== Generated Kubernetes manifests (see Makefile targets) =====
+config/default/generated/
+_artifacts/
