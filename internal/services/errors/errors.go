@@ -38,6 +38,16 @@ const (
 	ErrCodeInsufficientSubENIQuota = "CCE.01400025"
 	// ErrCodeResourceNotFound: 404 Resource not found (cluster/node pool/node).
 	ErrCodeResourceNotFound = "CCE.01404001"
+	// ErrCodeAuthenticationFailure: 401 authentication failed.
+	ErrCodeAuthenticationFailure = "CCE.01401001"
+	// ErrCodePermissionDenied: 403 access denied / insufficient permission.
+	ErrCodePermissionDenied = "CCE.01403001"
+	// ErrCodeNoAgencyPermission: 403 no permission to create/authorize agencies.
+	ErrCodeNoAgencyPermission = "CCE.01403008"
+	// ErrCodeResourceAlreadyExists: 409 the resource already exists.
+	ErrCodeResourceAlreadyExists = "CCE.01409001"
+	// ErrCodeResourceVersionExpired: 409 the resource version is expired.
+	ErrCodeResourceVersionExpired = "CCE.01409002"
 	// ErrCodeNodePoolStateNotAllowDelete: 403 current node pool status does not allow deletion.
 	ErrCodeNodePoolStateNotAllowDelete = "CCE.01403003"
 	// ErrCodeClusterStateNotAllowNodePoolDelete: 403 cluster status does not allow node pool deletion.
@@ -61,7 +71,23 @@ func IsNotFound(err error) bool {
 func IsConflict(err error) bool {
 	var sdkErr *sdkerr.ServiceResponseError
 	if errors.As(err, &sdkErr) {
-		return sdkErr.StatusCode == 409
+		return sdkErr.StatusCode == 409 ||
+			sdkErr.ErrorCode == ErrCodeResourceAlreadyExists ||
+			sdkErr.ErrorCode == ErrCodeResourceVersionExpired
+	}
+	return false
+}
+
+// IsPermissionDenied reports whether err is an authentication/permission error
+// (401 CCE.01401001, 403 CCE.01403001/01403008); surfaced as a permanent
+// failure condition (no retry).
+func IsPermissionDenied(err error) bool {
+	var sdkErr *sdkerr.ServiceResponseError
+	if errors.As(err, &sdkErr) {
+		return sdkErr.StatusCode == 401 || sdkErr.StatusCode == 403 ||
+			sdkErr.ErrorCode == ErrCodeAuthenticationFailure ||
+			sdkErr.ErrorCode == ErrCodePermissionDenied ||
+			sdkErr.ErrorCode == ErrCodeNoAgencyPermission
 	}
 	return false
 }

@@ -63,7 +63,8 @@
 - **关键(子代理确认)**:`CCE FullAccess` 是系统策略但**明确不含"生成集群证书"能力**——取 kubeconfig 需 `cce:cluster:get`(或 CCE Administrator);ECS/VPC/EVS 的资源操作由系统委托(`cce_admin_trust`/`cce_cluster_agency`)代行,**AK/SK 无需配 ECS/EVS action**;企业项目授权下创建节点需额外全局权限 `evs:quotas:get`、`evs:types:get`(官方原文)。
 - 官方未要求主账号:官方原文"账号具备所有 API 的调用权限,如果使用账号下的 IAM 用户调用当前 API,该 IAM 用户需具备调用 API 所需的权限" → **IAM 用户配足细粒度策略即可**。
 - 委托(官方 cce_02_0236 + cce_10_0556):创建集群**必须已有系统委托**,`agencyName` 不传时自动使用 `cce_admin_trust` 或 `cce_cluster_agency`(1.21+;后者仅含 CCE 组件依赖权限)。
-- **AK/SK 约束**:官方权限概述——**联邦用户不支持创建永久 AK/SK** → Provider 凭证必须来自账号或实体 IAM 用户。
+- **AK/SK 约束**:官方权限概述——**联邦用户不支持创建永久 AK/SK** → Provider 凭证必须来自账号或实体 IAM 用户;**AK/SK 既可用永久密钥也可用临时密钥(临时密钥需额外携带 `X-Security-Token` 字段)**(官方认证鉴权 cce_02_0004)。
+- FullAccess 官方原文:"CCE FullAccess | 策略 | …普通操作权限(包含集群创建、删除、更新等)。**不包括集群命名空间权限以及委托授权、生成集群证书等管理员权限**" → Provider 取 kubeconfig 必须显式配 `cce:cluster:get` 或用 CCE Administrator。
 - **未确认(需实测)**:同一对 AK/SK 跨多 project 调用;最小策略集是否隐式依赖其他 action。
 
 ## Q7 默认配额 — [官方文档] 部分确认(存在文档矛盾)
@@ -97,18 +98,20 @@
 
 ## Q10 CCE Autopilot — [官方文档/SDK] 确认(远期)
 
-- 官方集群类型对比:Autopilot = **Serverless 集群,无节点部署/管理,按 CPU/内存实际使用计费**,网络为云原生网络 2.0,Pod 可绑安全组/EIP/固定 IP。
-- SDK 有独立 API 族(**路径前缀 `/autopilot/v3`**);**SDK 中不存在任何 Autopilot 节点/节点池 API**(无 CreateAutopilotNodePool)→ 天然"无节点集群",与 Fargate 类似。
-- 官方约束(子代理抓取 Autopilot 约束页):每区域每账号集群总数 50、默认最多 1000 Pod、不支持 HostPath/HostNetwork/NodePort/DaemonSet/ARM 镜像等。
+- 官方集群类型对比:Autopilot = **Serverless 集群,无节点部署/管理,按 CPU/内存实际使用计费**,网络为云原生网络 2.0,Pod 可绑安全组/EIP/固定 IP;计费含"集群管理费用、Pod 费用、终端节点费用"。
+- SDK 有独立 API 族(**路径前缀 `/autopilot/v3`**);**SDK 中不存在任何 Autopilot 节点/节点池 API**(无 CreateAutopilotNodePool)→ 天然"无节点集群";**也可经统一 `CreateCluster` 携带 `EnableAutopilot=true` 创建**(SDK model_cluster_spec.go);AutopilotClusterSpec 无 master/节点字段,Flavor 固定 `cce.autopilot.cluster`,BillingMode 仅按需。
+- 官方约束:单区域每账号集群总数 **50**;默认最多 **1000 Pod**;不支持 HostPath/HostNetwork/NodePort/DaemonSet/ARM 镜像。
 - **官方无 CAPI/声明式对接说明** → CAPI 对接方式需自行设计(远期 P2,Cluster + 无 MachinePool)。
 
 ## Q11 集群升级 — [官方文档/SDK] 大部分确认
 
-- 升级编排(官方 API/SDK):`CreateUpgradeWorkFlow`(WorkFlowSpec.`TargetVersion` 必填)→ `CreatePreCheck` → `UpgradeCluster`(targetVersion 只能填更高版本;**策略仅 `inPlaceRollingUpdate` 原地升级**)→ `CreatePostCheck`;任务支持 Pause/Retry/Continue。
-- 升级期间:集群状态 `Upgrading`;**控制面升级期间暂停节点池弹性伸缩**,API Server 访问短暂中断;节点由 CCE **分批原地升级**(默认每批 20、最高 120,升级时节点不可调度)。
-- 失败处理:可重试;可按备份回滚(升级成功后做过其他操作则无法回滚)。
-- 升级路径:官方有明确路径表(如 v1.23→v1.25/v1.27/v1.28;v1.13 及以下不支持;停止维护版本需连续多次升级);**补丁版本可一次直升最新**。
-- **未确认(需实测)**:升级总体耗时量级;仅升 platformVersion 不升 K8s 版本的 API 行为。
+- 升级编排(官方 API/SDK):`CreateUpgradeWorkFlow`(WorkFlowSpec.`TargetVersion` 必填)→ `CreatePreCheck` → **备份(自动:etcd 备份 1-5min;可选 CBR 整机备份 20min-2h / EVS 快照 1-5min)** → `UpgradeCluster`(targetVersion 只能填更高版本;**策略仅 `inPlaceRollingUpdate` 原地升级**;`userDefinedStep` 每批最大节点数 1-60,默认 20)→ `CreatePostCheck`;任务支持 Pause/Retry/Continue;错误码 CCE.01400074(升级关键步骤失败)、CCE.01400075(升级前检查过期)。
+- 升级期间:集群状态 `Upgrading`;**控制面升级前系统自动保存并关闭节点池弹性伸缩,控制面升级完成后恢复(节点缩容能力要整个升级结束后恢复)**;API Server 访问短暂中断,已运行工作负载不中断;升级中不建议对集群做任何操作。
+- 节点处理:CCE 对节点**分批原地升级**(默认每批 20、最高 120,升级时节点不可调度,组件被更新而非整机替换);**节点操作系统不升级**(系统 EOS 才需替换)。
+- 失败处理:可 Retry/Continue;可按备份回滚(升级成功后做过其他操作则无法回滚)。
+- 升级路径(官方表格):v1.23→v1.25/v1.27/v1.28、v1.25→v1.27/v1.28、v1.28→v1.29/v1.31、v1.31→v1.32/v1.34、v1.33→v1.34 等;**v1.13 及以下不支持**;已停止维护版本需**连续多次升级**(如 v1.15→v1.19→v1.23→v1.27/v1.28);**补丁版本可一次直升最新补丁**。
+- **platformVersion 是输出非输入**(官方:不支持用户指定,创建时自动选最新平台版本)→ **无"仅升级 platform 不动 K8s 版本"的独立参数**,需实测确认。
+- **未确认(需实测)**:升级总体耗时量级;批次递增"2 的幂/4 的幂"两种表述差异。
 
 ## Q12 计费与休眠/唤醒 — [官方文档] 大部分确认
 
@@ -129,13 +132,14 @@
 ## Q14 API 限流与错误码全集 — [官方文档] 重大确认(错误码表公开)
 
 - **官方错误码参考公开**(support.huaweicloud.com/api-cce/ErrorCode.html,64+ 条)。与本 Provider 最相关的:
-  - 400:`CCE.01400001`(请求不合法)、`CCE.01400002`(未在 VPC 中找到子网)、`CCE.01400005`(容器网络网段冲突)、`CCE.01400007`(集群配额不足)、`CCE.01400008`(ECS 配额不足)、`CCE.01400009/10`(CPU/内存配额)、`CCE.01400011`(安全组配额)、`CCE.01400012`(EIP 配额)、`CCE.01400013`(磁盘配额)、`CCE.01400020`(VPC 配额)、`CCE.01400025`(subeni 配额,规格不支持 Turbo)
-  - 403:`CCE.01403001`(权限不足)、`CCE.01403003~09`(节点池/集群状态不允许删除、扩容中不允许删除等)
-  - 404:`CCE.01404001`(Resource not found,通用)
-  - 409:`CCE.01409001`(冲突)
+  - 400:`CCE.01400001`(请求不合法)、`CCE.01400002`(未在 VPC 中找到子网)、`CCE.01400005`(容器网络网段冲突)、`CCE.01400007`(集群配额不足)、`CCE.01400008`(ECS 配额不足)、`CCE.01400009/10`(CPU/内存配额)、`CCE.01400011`(安全组配额)、`CCE.01400012`(EIP 配额)、`CCE.01400013`(磁盘配额)、`CCE.01400014`(节点数超出集群规模)、`CCE.01400020`(VPC 配额)、`CCE.01400025`(subeni 配额,规格不支持 Turbo)
+  - 401:`CCE.01401001`(认证失败);403:`CCE.01403001`(权限不足)、`CCE.01403002`(账号受限)、`CCE.01403003~09`(节点池/集群状态不允许删除、扩容中不允许删除等)、`CCE.01403008`(不具备委托创建/授权权限)
+  - 404:`CCE.01404001`(Resource not found,集群/节点/节点池不存在均归此码)
+  - 409:`CCE.01409001`(资源已存在)、`CCE.01409002`(资源版本过期)
   - 429:`CCE.01429002`(资源被其他请求锁定)、`CCE.01429003`(已达并发任务上限)、`CCE.02429001`(达到最大请求数)
+  - 500:`CCE.01500001/02500001/03500001`(内部错误);升级:`CCE.01400074/75`
 - **限流机制(子代理确认)**:CCE 未公开 QPS 数值;限流表现为 429 + **`APIGW.0308`("超出流控值限制",APIGW 默认每个 API 每秒最多 200 次,云服务开放 API 一般无法调整)** + CCE 自身 429 码。
-- 错误体格式:`{"errorCode":…,"errorMessage":…}`;SDK 结构 `sdkerr.ServiceResponseError{StatusCode, RequestId, ErrorCode, ErrorMessage, EncodedAuthorizationMessage}`。
+- 错误体格式:`{"errorCode":…,"errorMessage":…}`(另一处示例 `error_code/error_msg`,两种命名官方均出现;SDK 两者都兼容);SDK 结构 `sdkerr.ServiceResponseError{StatusCode, RequestId, ErrorCode, ErrorMessage, EncodedAuthorizationMessage}`。
 - 分页:ListClusters 无分页;ListNodes limit 1-2000(默认 2000)+ marker;ListNodePools 无分页;配额查询 `ShowQuotas`/`GetClusterQuota`。
 - **未确认(需实测)**:429 是否带 Retry-After;CCE 管理面具体 QPS 阈值。
 - 已按此更新 PoC `internal/services/errors/errors.go`(修正原先占位的 not-found 码,新增 Quota/Throttle 分类)。
