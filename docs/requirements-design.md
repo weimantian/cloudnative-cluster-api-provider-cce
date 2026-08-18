@@ -153,7 +153,7 @@
 | 编号 | 需求 | 优先级 | 说明/状态 |
 |---|---|---|---|
 | FR-GOV-1 | 仓库命名 `<领域前缀>-<场景描述>`(全小写英文、连字符) | P0 | 已定:`cloudnative-cluster-api-provider-cce`(技术领域:云原生) |
-| FR-GOV-2 | 标准套件结构:README.md、LICENSE、CONTRIBUTING.md、CODE_OF_CONDUCT.md、deploy/、docs/、scripts/、.github/ | P0 | 已按规范搭建骨架(README 17 节、LICENSE MIT-0、DCO 流程、CoC 标准模板、deploy 脚本+变量说明+销毁命令、scripts 头部注释/幂等、.github 模板+workflow) |
+| FR-GOV-2 | 标准套件结构:README.md、LICENSE、CONTRIBUTING.md、CODE_OF_CONDUCT.md、deploy/、app/、docs/、scripts/、.github/(ISSUE_TEMPLATE、PULL_REQUEST_TEMPLATE、workflows) | P0 | 已按规范搭建并 git init 提交:README 17 节、LICENSE MIT-0、DCO 流程、CoC 标准模板、deploy 脚本+变量说明+销毁命令、app/ 预留示例应用、scripts 头部注释/幂等、.github 模板+4 workflow;`.gitignore` 排除环境产物(.codeartsdoer/、.merkle-snapshot.json) |
 | FR-GOV-3 | LICENSE 默认 MIT-0;Apache 2.0 为例外需申请并经工作组批准;严禁 GPL/AGPL 依赖 | P0 | MIT-0 已定;依赖引入时须做许可证扫描(禁止 GPL/AGPL) |
 | FR-GOV-4 | README 17 节结构,CRITICAL 章节(标题徽章/简介/前置条件/快速开始/使用方法验证/许可证/联系方式)不可缺失;非中国限定场景主 README 用英文,**并提供中文版(README.zh-CN.md 等,全仓库 MD 均中英双语)** | P0 | README 已按 17 节编写(英文主版 + 中文版,互链);发布前复核各 CRITICAL 节 |
 | FR-GOV-5 | CONTRIBUTING:DCO 签名(`git commit -s`)、Fork 流程、5 个工作日内响应、至少 1 名维护者批准、贡献按仓库许可分发 | P0 | 已编写 |
