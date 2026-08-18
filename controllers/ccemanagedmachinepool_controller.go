@@ -133,17 +133,17 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	}
 
 	// Reconcile scale: align the pool's expected count with the MachinePool
-	// replicas (questionnaire Q3: delta semantics to be verified).
+	// replicas. desiredNodeCount is the ABSOLUTE expected total (official docs;
+	// final live-test confirmation is questionnaire Q3), so pass replicas
+	// directly. status.replicas is refreshed from the cloud below.
 	if pool.Status.Replicas != pool.Spec.Replicas {
 		conditions.MarkFalse(pool, conditions.NodePoolScalingCondition,
 			conditions.ReconciliationInProgressReason, "scaling node pool")
-		delta := pool.Spec.Replicas - pool.Status.Replicas
-		if err := svc.ScaleNodePool(ctx, clusterID, pool.Status.NodePoolID, delta); err != nil {
+		if err := svc.ScaleNodePool(ctx, clusterID, pool.Status.NodePoolID, pool.Spec.Replicas); err != nil {
 			conditions.MarkFalse(pool, conditions.NodePoolScalingCondition,
 				conditions.ReconciliationFailedReason, err.Error())
 			return ctrl.Result{}, err
 		}
-		pool.Status.Replicas = pool.Spec.Replicas
 		conditions.MarkTrue(pool, conditions.NodePoolScalingCondition, "ScalingCompleted", "node pool scaled")
 	}
 

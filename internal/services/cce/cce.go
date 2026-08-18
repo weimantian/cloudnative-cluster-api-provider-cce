@@ -218,11 +218,16 @@ func (s *Client) CreateNodePool(_ context.Context, in CreateNodePoolInput) (stri
 }
 
 // ScaleNodePool implements Service.
-// WARNING: the official ScaleNodePoolSpec comment describes desiredNodeCount as
-// a delta ("add to/subtract from the current count") and omitting it defaults
-// to 0, which would delete all nodes. The exact semantics must be verified
-// against a real cluster (questionnaire Q3) before production use.
-func (s *Client) ScaleNodePool(_ context.Context, clusterID, nodePoolID string, desiredDelta int32) error {
+// NOTE: per the official API/SDK docs, desiredNodeCount is the ABSOLUTE
+// expected total node count of the pool ("节点池期望节点数"; range 0 or a
+// positive integer; omitting it defaults to 0 which deletes all nodes). The
+// phrase "add to/subtract from the current count" in the SDK comment tells the
+// CALLER how to compute the value to pass (target = current ± delta), it does
+// not mean the API applies a delta. The user guide's "本次节点数与已有节点数
+// 相加" phrasing is the console UX (the console computes the target for you).
+// Final confirmation still requires a live test (questionnaire Q3: create a
+// 2-node pool and pass desiredNodeCount=2 — absolute => stays 2, delta => 4).
+func (s *Client) ScaleNodePool(_ context.Context, clusterID, nodePoolID string, desiredCount int32) error {
 	if _, err := s.cce.ScaleNodePool(&model.ScaleNodePoolRequest{
 		ClusterId:  clusterID,
 		NodepoolId: nodePoolID,
@@ -230,7 +235,7 @@ func (s *Client) ScaleNodePool(_ context.Context, clusterID, nodePoolID string, 
 			Kind:       "NodePool",
 			ApiVersion: "v3",
 			Spec: &model.ScaleNodePoolSpec{
-				DesiredNodeCount: desiredDelta,
+				DesiredNodeCount: desiredCount,
 				ScaleGroups:      []string{"default"},
 			},
 		},

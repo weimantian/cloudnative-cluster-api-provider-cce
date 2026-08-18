@@ -95,9 +95,10 @@ type Service interface {
 	GetClusterKubeconfig(ctx context.Context, clusterID string, durationDays int32) (string, error)
 	// CreateNodePool creates a node pool and returns its ID.
 	CreateNodePool(ctx context.Context, in CreateNodePoolInput) (string, error)
-	// ScaleNodePool scales a node pool by desiredDelta (see questionnaire Q3:
-	// desiredNodeCount semantics must be verified before relying on it).
-	ScaleNodePool(ctx context.Context, clusterID, nodePoolID string, desiredDelta int32) error
+	// ScaleNodePool scales a node pool to the given absolute desired total
+	// node count (desiredNodeCount semantics per official docs — see
+	// questionnaire Q3 for the pending live-test confirmation).
+	ScaleNodePool(ctx context.Context, clusterID, nodePoolID string, desiredCount int32) error
 	// DeleteNodePool deletes a node pool.
 	DeleteNodePool(ctx context.Context, clusterID, nodePoolID string) error
 	// ListNodePools lists the node pools of a cluster.

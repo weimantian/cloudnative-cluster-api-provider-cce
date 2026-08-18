@@ -10,10 +10,10 @@ import "testing"
 
 func TestParseTaint(t *testing.T) {
 	tests := []struct {
-		in           string
-		wantKey      string
-		wantValue    string
-		wantEffect   string
+		in         string
+		wantKey    string
+		wantValue  string
+		wantEffect string
 	}{
 		{in: "dedicated=worker:NoSchedule", wantKey: "dedicated", wantValue: "worker", wantEffect: "NoSchedule"},
 		{in: "spot=true:PreferNoSchedule", wantKey: "spot", wantValue: "true", wantEffect: "PreferNoSchedule"},
