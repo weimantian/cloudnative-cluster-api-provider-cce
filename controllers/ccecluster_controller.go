@@ -8,6 +8,7 @@ package controllers
 
 import (
 	"context"
+	"strings"
 	"time"
 
 	"github.com/pkg/errors"
@@ -23,6 +24,8 @@ import (
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
 )
 
 // CCEClusterFinalizer ensures the shell object is released only after the
@@ -84,15 +87,64 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		}
 	}
 
-	// Validate the referenced network. Full validation (VPC/subnet existence,
-	// CIDR compatibility) is a P0 item — the CCE API rejects non-compliant
-	// networks at create time (see questionnaire Q4/Q5).
-	// TODO(P0): network validation service.
 	if cceCluster.Spec.Region == "" {
 		conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 			conditions.ReconciliationFailedReason,
 			"spec.region is required")
 		return ctrl.Result{}, errors.New("spec.region is required")
+	}
+
+	// Validate the referenced network (VPC/subnet existence and CIDR
+	// compatibility) per the official rules (questionnaire Q4/Q7). When no
+	// credentials are configured yet (env fallback missing) the validation is
+	// skipped with a warning — the CCE API will reject bad networks at create
+	// time (CCE.01400002/01400005).
+	if creds, err := scope.ResolveCredentials(ctx, r.Client, cceCluster.Namespace, cluster.Name+"-credentials"); err == nil {
+		validator, verr := network.NewValidator(cceCluster.Spec.Region, creds.AccessKey, creds.SecretKey)
+		if verr != nil {
+			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
+				conditions.ReconciliationFailedReason, verr.Error())
+			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, verr
+		}
+		// Read the container/service CIDR from the control plane spec.
+		containerMode, containerCIDR, serviceCIDR, eniSubnets := "", "", "", []string{}
+		if cluster.Spec.ControlPlaneRef.Name != "" {
+			cp := &controlplanev1beta1.CCEManagedControlPlane{}
+			if err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err == nil {
+				containerMode = cp.Spec.ContainerNetwork.Mode
+				containerCIDR = cp.Spec.ContainerNetwork.CIDR
+				serviceCIDR = cp.Spec.ServiceNetwork.CIDR
+				eniSubnets = cp.Spec.ContainerNetwork.ENISubnets
+			}
+		}
+		issues, verr := validator.Validate(ctx, network.ValidateInput{
+			VPCID:         cceCluster.Spec.Network.VPC.ID,
+			SubnetIDs:     subnetIDs(cceCluster),
+			ContainerMode: containerMode,
+			ContainerCIDR: containerCIDR,
+			ServiceCIDR:   serviceCIDR,
+			ENISubnetIDs:  eniSubnets,
+		})
+		if verr != nil {
+			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
+				conditions.ReconciliationFailedReason, verr.Error())
+			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, verr
+		}
+		var hardMsgs []string
+		for _, i := range issues {
+			if i.Warning {
+				log.Info("Network validation warning", "field", i.Field, "message", i.Message)
+				continue
+			}
+			hardMsgs = append(hardMsgs, i.Field+": "+i.Message)
+		}
+		if len(hardMsgs) > 0 {
+			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
+				conditions.ReconciliationFailedReason, strings.Join(hardMsgs, "; "))
+			return ctrl.Result{RequeueAfter: 2 * time.Minute}, errors.New("network validation failed: " + strings.Join(hardMsgs, "; "))
+		}
+	} else {
+		log.Info("Skipping network validation: no credentials configured (env fallback missing)")
 	}
 	conditions.MarkTrue(cceCluster, conditions.NetworkReadyCondition, "NetworkValidated", "network references validated")
 
@@ -107,6 +159,17 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 	cceCluster.Status.Ready = true
 	log.Info("CCECluster infrastructure is ready")
 	return ctrl.Result{}, nil
+}
+
+// subnetIDs extracts the referenced subnet IDs from the CCECluster spec.
+func subnetIDs(cceCluster *infrav1beta1.CCECluster) []string {
+	var ids []string
+	for _, s := range cceCluster.Spec.Network.Subnets {
+		if s.ID != "" {
+			ids = append(ids, s.ID)
+		}
+	}
+	return ids
 }
 
 func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cceCluster *infrav1beta1.CCECluster) (ctrl.Result, error) {

@@ -131,7 +131,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		if err != nil {
 			conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
-			return ctrl.Result{}, err
+			return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, err
 		}
 		clusterID = id
 		cp.Status.ClusterID = id
@@ -149,7 +149,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		}
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		return ctrl.Result{}, err
+		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, err
 	}
 	if info.Phase != "Available" {
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
@@ -168,8 +168,9 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	conditions.MarkTrue(cp, conditions.CCEClusterReadyCondition, "ClusterAvailable", "CCE cluster is available")
 
 	// kubeconfig Secret (mirrors the ACK provider kubeconfig contract, so
-	// `clusterctl get kubeconfig` works).
-	if cp.Status.KubeconfigSecretName == "" {
+	// `clusterctl get kubeconfig` works). Refreshed before certificate expiry
+	// (questionnaire Q2: duration -1/[1,1827], default 365 days).
+	if cp.Status.KubeconfigSecretName == "" || kubeconfigNeedsRefresh(ctx, r.Client, cp.Namespace, cp.Status.KubeconfigSecretName, kubeconfigRefreshThresholdDays) {
 		kubeconfig, err := svc.GetClusterKubeconfig(ctx, clusterID, kubeconfigValidityDays)
 		if err != nil {
 			conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
@@ -187,10 +188,22 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 			},
 			Data: map[string][]byte{"value": []byte(kubeconfig)},
 		}
-		if err := r.Client.Create(ctx, secret); err != nil && !apierrors.IsAlreadyExists(err) {
-			conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
-				conditions.ReconciliationFailedReason, err.Error())
-			return ctrl.Result{}, err
+		if err := r.Client.Create(ctx, secret); err != nil {
+			if !apierrors.IsAlreadyExists(err) {
+				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
+					conditions.ReconciliationFailedReason, err.Error())
+				return ctrl.Result{}, err
+			}
+			// Update the existing Secret in place (rotation).
+			existing := &corev1.Secret{}
+			if err := r.Get(ctx, types.NamespacedName{Namespace: cp.Namespace, Name: secretName}, existing); err == nil {
+				existing.Data = secret.Data
+				if err := r.Update(ctx, existing); err != nil {
+					conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
+						conditions.ReconciliationFailedReason, err.Error())
+					return ctrl.Result{}, err
+				}
+			}
 		}
 		cp.Status.KubeconfigSecretName = secretName
 	}
@@ -220,9 +233,16 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 
 	if cp.Status.ClusterID != "" {
 		if _, err := svc.ShowCluster(ctx, cp.Status.ClusterID); err == nil {
-			// TODO(P0): deletion semantics (cascade node pools, duration,
-			// leftovers) — questionnaire Q8.
-			if err := svc.DeleteCluster(ctx, cp.Status.ClusterID); err != nil && !clouderrors.IsNotFound(err) {
+			// Delete with explicit options to avoid leftovers (official
+			// defaults leave EVS/storage behind — questionnaire Q8).
+			if err := svc.DeleteCluster(ctx, cceService.DeleteClusterInput{
+				ClusterID:          cp.Status.ClusterID,
+				DeleteEVS:          true,
+				DeleteENI:          true,
+				DeleteELB:          true,
+				OnDemandNodePolicy: "delete",
+				PeriodicNodePolicy: "reset",
+			}); err != nil && !clouderrors.IsNotFound(err) {
 				return ctrl.Result{}, errors.Wrap(err, "failed to delete CCE cluster")
 			}
 			log.Info("CCE cluster deletion requested, waiting", "clusterID", cp.Status.ClusterID)

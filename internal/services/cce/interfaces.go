@@ -83,16 +83,48 @@ type NodePoolInfo struct {
 	NodeCount int32
 }
 
+// DeleteClusterInput carries the CCE DeleteCluster query options. Official
+// defaults leave EVS/storage behind (delete_evs=false), so the provider
+// explicitly requests deletion of on-demand resources (verified against
+// cce_02_0241 — questionnaire Q8).
+type DeleteClusterInput struct {
+	ClusterID string
+	// DeleteEVS deletes EVS volumes (official default: skip => leftovers).
+	DeleteEVS bool
+	// DeleteENI deletes ENI ports (official default: block).
+	DeleteENI bool
+	// DeleteELB deletes auto-created ELB / Service / Ingress resources
+	// (official default: block).
+	DeleteELB bool
+	// DeleteEFS deletes SFS Turbo volumes (official default: skip).
+	DeleteEFS bool
+	// OnDemandNodePolicy: delete | reset | retain (official default: delete
+	// on-demand nodes, retain admitted nodes).
+	OnDemandNodePolicy string
+	// PeriodicNodePolicy: reset | retain.
+	PeriodicNodePolicy string
+}
+
+// QuotaInfo is the cluster quota for the project.
+type QuotaInfo struct {
+	// ClusterQuotaLimit is the max number of clusters (official: per region).
+	ClusterQuotaLimit int32
+	// ClusterQuotaUsed is the number of clusters in use.
+	ClusterQuotaUsed int32
+}
+
 // Service is the CCE API surface consumed by the provider controllers.
 type Service interface {
 	// ShowCluster returns the current state of a CCE cluster.
 	ShowCluster(ctx context.Context, clusterID string) (*ClusterInfo, error)
 	// CreateCluster creates a CCE cluster and returns its ID.
 	CreateCluster(ctx context.Context, in CreateClusterInput) (string, error)
-	// DeleteCluster deletes a CCE cluster.
-	DeleteCluster(ctx context.Context, clusterID string) error
+	// DeleteCluster deletes a CCE cluster with the given delete options.
+	DeleteCluster(ctx context.Context, in DeleteClusterInput) error
 	// GetClusterKubeconfig downloads and assembles the cluster kubeconfig.
 	GetClusterKubeconfig(ctx context.Context, clusterID string, durationDays int32) (string, error)
+	// ShowQuotas returns the project cluster quota (ShowQuotas API).
+	ShowQuotas(ctx context.Context) (*QuotaInfo, error)
 	// CreateNodePool creates a node pool and returns its ID.
 	CreateNodePool(ctx context.Context, in CreateNodePoolInput) (string, error)
 	// ScaleNodePool scales a node pool to the given absolute desired total

@@ -85,7 +85,7 @@ func (s *Client) ShowCluster(_ context.Context, clusterID string) (*ClusterInfo,
 }
 
 // CreateCluster implements Service.
-func (s *Client) CreateCluster(_ context.Context, in CreateClusterInput) (string, error) {
+func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (string, error) {
 	spec := &model.ClusterSpec{
 		Category:    clusterCategory(in.Category),
 		Flavor:      stringPtr(in.Flavor),
@@ -138,20 +138,106 @@ func (s *Client) CreateCluster(_ context.Context, in CreateClusterInput) (string
 	if err != nil {
 		return "", errors.Wrap(err, "CreateCluster failed")
 	}
-	if resp.Metadata == nil || resp.Metadata.Uid == nil {
-		return "", errors.New("CreateCluster returned no cluster ID")
+	if resp.Metadata != nil && resp.Metadata.Uid != nil {
+		return *resp.Metadata.Uid, nil
 	}
-	return *resp.Metadata.Uid, nil
+	// Subscription (billingMode=1) cluster creates do NOT return a cluster ID
+	// (official model_cluster_metadata.go note) — fall back to lookup by name.
+	// TODO(P0): verify the created cluster phase before returning (Q1).
+	id, err := s.findClusterIDByName(ctx, in.Name)
+	if err != nil {
+		return "", errors.Wrap(err, "CreateCluster returned no ID and lookup by name failed")
+	}
+	return id, nil
 }
 
-// DeleteCluster implements Service.
-func (s *Client) DeleteCluster(_ context.Context, clusterID string) error {
-	// TODO(P0): deletion semantics (cascade, duration, leftovers) — see
-	// questionnaire Q8; may need to delete node pools first.
-	if _, err := s.cce.DeleteCluster(&model.DeleteClusterRequest{ClusterId: clusterID}); err != nil {
-		return errors.Wrapf(err, "DeleteCluster %s failed", clusterID)
+// findClusterIDByName looks up a cluster by its metadata name.
+func (s *Client) findClusterIDByName(ctx context.Context, name string) (string, error) {
+	resp, err := s.cce.ListClusters(&model.ListClustersRequest{})
+	if err != nil {
+		return "", errors.Wrap(err, "ListClusters failed")
+	}
+	if resp.Items != nil {
+		for _, c := range *resp.Items {
+			if c.Metadata != nil && c.Metadata.Name == name && c.Metadata.Uid != nil {
+				return *c.Metadata.Uid, nil
+			}
+		}
+	}
+	return "", errors.Errorf("cluster %q not found by name", name)
+}
+
+// DeleteCluster implements Service. Delete options default to "delete
+// everything the provider manages" to avoid leftovers (official defaults leave
+// EVS/storage behind — verified cce_02_0241, questionnaire Q8).
+func (s *Client) DeleteCluster(_ context.Context, in DeleteClusterInput) error {
+	req := &model.DeleteClusterRequest{
+		ClusterId: in.ClusterID,
+	}
+	if in.DeleteEVS {
+		v := model.GetDeleteClusterRequestDeleteEvsEnum().BLOCK
+		req.DeleteEvs = &v
+	}
+	if in.DeleteENI {
+		v := model.GetDeleteClusterRequestDeleteEniEnum().BLOCK
+		req.DeleteEni = &v
+	}
+	if in.DeleteELB {
+		v := model.GetDeleteClusterRequestDeleteNetEnum().BLOCK
+		req.DeleteNet = &v
+	}
+	if in.DeleteEFS {
+		v := model.GetDeleteClusterRequestDeleteEfsEnum().BLOCK
+		req.DeleteEfs = &v
+	}
+	switch in.OnDemandNodePolicy {
+	case "reset":
+		v := model.GetDeleteClusterRequestOndemandNodePolicyEnum().RESET
+		req.OndemandNodePolicy = &v
+	case "retain":
+		v := model.GetDeleteClusterRequestOndemandNodePolicyEnum().RETAIN
+		req.OndemandNodePolicy = &v
+	default: // "delete" (official default)
+		v := model.GetDeleteClusterRequestOndemandNodePolicyEnum().DELETE
+		req.OndemandNodePolicy = &v
+	}
+	switch in.PeriodicNodePolicy {
+	case "retain":
+		v := model.GetDeleteClusterRequestPeriodicNodePolicyEnum().RETAIN
+		req.PeriodicNodePolicy = &v
+	default: // "reset"
+		v := model.GetDeleteClusterRequestPeriodicNodePolicyEnum().RESET
+		req.PeriodicNodePolicy = &v
+	}
+	// TODO(P0): deletion is async (200 = job accepted); poll ShowCluster until
+	// gone, with delete-status from the Job (questionnaire Q8).
+	if _, err := s.cce.DeleteCluster(req); err != nil {
+		return errors.Wrapf(err, "DeleteCluster %s failed", in.ClusterID)
 	}
 	return nil
+}
+
+// ShowQuotas implements Service (official ShowQuotas API; questionnaire Q7:
+// prefer runtime quota values over documentation numbers).
+func (s *Client) ShowQuotas(ctx context.Context) (*QuotaInfo, error) {
+	resp, err := s.cce.ShowQuotas(&model.ShowQuotasRequest{})
+	if err != nil {
+		return nil, errors.Wrap(err, "ShowQuotas failed")
+	}
+	info := &QuotaInfo{}
+	if resp.Quotas != nil {
+		for _, r := range *resp.Quotas {
+			if r.QuotaKey != nil && *r.QuotaKey == "cluster" {
+				if r.QuotaLimit != nil {
+					info.ClusterQuotaLimit = *r.QuotaLimit
+				}
+				if r.Used != nil {
+					info.ClusterQuotaUsed = *r.Used
+				}
+			}
+		}
+	}
+	return info, nil
 }
 
 // GetClusterKubeconfig implements Service. It downloads the cluster certificate

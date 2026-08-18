@@ -76,6 +76,12 @@ func (c *CCEManagedControlPlane) validate() error {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "containerNetwork", "mode"),
 			"eni", "eni mode requires category Turbo"))
 	}
+	// eni mode requires ENI subnets (official: eniNetwork must set subnets or
+	// eniSubnetId — our CRD exposes subnets via eniSubnets).
+	if c.Spec.ContainerNetwork.Mode == "eni" && len(c.Spec.ContainerNetwork.ENISubnets) == 0 {
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "containerNetwork", "eniSubnets"),
+			"eni mode requires at least one ENI subnet (official eniNetwork.subnets)"))
+	}
 	if len(allErrs) == 0 {
 		return nil
 	}
