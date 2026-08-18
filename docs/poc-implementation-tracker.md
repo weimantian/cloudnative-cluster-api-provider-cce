@@ -13,7 +13,7 @@
 | A1 | `controllers/ccecluster_controller.go:89-90` TODO(P0) 网络校验服务 | **Q4**(eni VPC/子网硬性要求)、Q5 | eni 对 VPC/子网要求:ENI 子网、网段不重叠、AZ 覆盖;校验失败的错误码 | 实现 `internal/services/network` 校验服务:子网存在性、CIDR 与容器网段不重叠、eni 子网覆盖;接入 CCECluster reconcile(失败→`NetworkReady=False`+信息) | 单测(校验矩阵)+ 真实 CCE 冒烟(不满足条件→拒绝并给出明确错误) | ✅已确认(Q4/Q5,2AZ说法无官方依据) |
 | A2 | `internal/services/cce/cce.go:128-129` TODO(P0) hostNetwork/authentication 映射 | Q4、Q5 | hostNetwork 子网、认证方式(认证模式/证书)的 API 参数 | `CreateClusterInput` 增加 `hostNetwork.subnetId`、`authentication` 字段并映射 SDK 模型 | 单测(映射)+ 冒烟(创建的集群参数与确认一致) | ✅已确认(Q4/Q5) |
 | A3 | `internal/services/cce/cce.go:149-150` + `controllers/ccemanagedcontrolplane_controller.go:223-224` TODO(P0) 删除语义 | **Q8** | ✅ 已确认(官方 cce_02_0241):DeleteCluster 带删除选项 `delete_evs`(默认 false→残留!)/`delete_eni`(默认 block)/`delete_net`(默认 block)/`delete_efs`/`delete_obs`/`delete_sfs`;删除为异步;实测:删除时长、Unavailable 可删性、节点池先行 | 实现删除编排:先删节点池→删集群(显式传 `delete_evs=true/block` 等选项防残留)→轮询消失;按确认处理 Unavailable | e2e(删除后核对无 EVS/ELB 残留)+ 单元(状态机) | 部分确认,待实测 |
-| A4 | `controllers/ccemanagedcontrolplane_controller.go` 主流程(等 infra → 建集群 → 等 Available) | **Q1** | 空集群(0 节点)创建可行性与计费/配额 | 若空集群不可建或受限:调整主流程(创建集群时附带首节点池);补充计费/配额预检 | 冒烟(空集群创建)+ 文档 | ✅已确认(Q1 官方原文"创建空集群";空集群照常计费) |
+| A4 | `controllers/ccemanagedcontrolplane_controller.go` 主流程(等 infra → 建集群 → 等 Available) | **Q1/Q12** | ✅ 已确认(Q1:官方原文"创建空集群",空集群照常计费;Q12:**包周期集群创建响应不返回集群 ID** → 需按名称查询) | 主流程已确认可行;实现注意:创建包周期集群后按名称查询集群 ID(不能依赖响应 Metadata.Uid) | 冒烟(空集群创建)+ 文档 | ✅已确认,含实现注意 |
 
 ### B 组:节点池与扩缩容(阻塞主链路)
 

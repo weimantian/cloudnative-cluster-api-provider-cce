@@ -21,7 +21,7 @@
 - **吊销(官方 cce_02_0249 + cce_10_0744)**:`clustercertrevoke`(userId/agencyId 二选一);"吊销后此证书申请人之前下载的证书和 kubectl 配置文件**无法再用于连接集群**…可重新下载";旧凭证"无法恢复"。前提:v1.19.16-r50 等及以上版本。
 - 证书有效性(官方 cce_10_0107):"申请 kubeconfig 凭证后,即使该用户已被删除,其申请的 kubeconfig 凭证仍然有效。需要手动吊销" → 凭证默认持续有效至到期/被吊销。
 - **注意**:控制面内部证书(默认 5 年,公告 cce_bulletin_0136)与 kubeconfig 客户端证书是**不同对象**。
-- 权限:权限表"获取集群证书"= `cce:cluster:get`;API 接口约束另写 `cce:cluster:generateClientCredential` → **两处来源不同,需核对**。
+- 权限:接口约束授权项 = **`cce:cluster:generateClientCredential`(依赖 `cce:cluster:get`)** → 最小集合需同时含 `cce:cluster:get` 与 `cce:cluster:generateClientCredential`(解决了权限表与 API 页两处来源的差异:表列 cce:cluster:get,API 页列 generateClientCredential 并注明依赖前者)。
 - **未确认(需实测)**:duration/expire_at 都不传的行为;证书到期瞬间的失败表现;重新签发是否即时生效(如需立即失效应先 revoke)。
 
 ## Q3 节点池扩缩容语义 — [官方文档] 已确认(绝对值语义),仍建议实测定稿
@@ -84,9 +84,8 @@
   - `periodic_node_policy`(包周期节点):reset/retain
   - `delete_evs`(云硬盘)**默认 false(skip)→ 残留** ⚠️;`delete_eni` 默认 block;`delete_net`(ELB 等)默认 block;`delete_efs/delete_obs/delete_sfs/delete_sfs30` 默认 false(skip)
   - **实现必须显式传删除选项,否则 EVS/存储卷会残留。**
-- **残留规则(官方 cce_10_0212)**:删除集群不会删除**包周期资源**(继续计费);集群**非运行状态(冻结/不可用)删除会残留存储、网络等关联资源**;存储按卷回收策略(Retain 则保留);ELB 仅删除自动创建的;删除后集群停止计费,但残留资源仍计费。
-- **休眠中集群不能直接删**,需先唤醒;有"禁止删除集群"保护(错误码 `CCE.01400034`)。
-- 包周期集群不能直接删,需退订/释放;`tobedeleted=true` 可预置删除参数。
+- **残留规则(官方 cce_10_0212)**:删除集群不会删除**包周期资源**(继续计费);集群**非运行状态(冻结/不可用)删除会残留存储、网络等关联资源**;存储按卷回收策略(PV 策略 Delete 时云硬盘/SFS/OBS 等会删,Retain 保留);ELB 仅删除自动创建的;删除后集群停止计费,但残留资源仍计费。
+- **包周期集群不能直接删**,需退订/释放;`tobedeleted=true` 可预置删除参数(供退订识别);休眠中集群不能直接删,需先唤醒;有"禁止删除集群"保护(错误码 `CCE.01400034`);删除响应含 JobID 与 deleteStatus。
 - **未确认(需实测)**:存在节点池时直接删集群的行为;删除不存在集群的确切错误码(通用表 404 `CCE.01404001`,未在删除页逐条列出);Deleting 中重复删除。
 
 ## Q9 单节点路径(AddNode) — [官方文档/SDK] 完全确认:需重装系统,不适合免干预 CAPI Machine
@@ -118,6 +117,8 @@
 
 - `billingMode`(SDK model_cluster_spec.go):"0: 按需计费;1: 包周期;**默认为按需计费**"。
 - 包周期参数(SDK model_cluster_extend_param.go):`periodType`(month/year)与 `periodNum`(month 取 [1-9]、year 取 [1-3])在 `billingMode=1` 时**必填**;isAutoRenew/isAutoPay 默认不自动。
+- **⚠️ 包周期集群创建响应不返回集群 ID**(SDK model_cluster_metadata.go:"在创建包周期集群时,响应体不返回集群 ID")→ 实现创建包周期集群后需**按名称查询**集群 ID。
+- 节点级计费:`billingMode` 0=按需/1=包周期/2=废弃(SDK model_node_spec.go,默认 0);按需转包 `BatchChangeNodeToPeriod`(includeResources 当前仅支持 eip)。
 - **休眠(HibernateCluster,官方 cce_02_0374)**:休眠后"不再收取控制节点资源费用";"节点、绑定的弹性 IP、带宽等资源按各自计费方式继续收费";休眠中不可创建/管理工作负载。
 - **唤醒(AwakeCluster,官方 cce_02_0375)**:200="唤醒任务下发成功,需持续查询集群状态,当集群状态变为 Available 后表示唤醒成功";预计 **3~5 分钟**;可能因资源不足导致唤醒失败(需稍后再试);phase 含 Hibernating/Hibernation/Awaking。
 - 停止计费(官方 price-cce):节点关机后不再收取基础资源(vCPU/内存)费用,但云硬盘/带宽仍计费 → 要彻底省钱需删除集群及关联资源。
