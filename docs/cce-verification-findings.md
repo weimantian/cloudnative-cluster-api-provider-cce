@@ -41,10 +41,10 @@
 ## Q4 Turbo(eni)网络模型的 VPC/子网要求 — [官方文档] 大部分确认
 
 - eni(云原生网络 2.0):Pod 直接绑定 VPC 弹性网卡(ENI)/辅助弹性网卡(Sub-ENI),**Pod IP 来自 VPC 子网**(官方 cce_10_0284);`containerNetwork.mode=eni` 时 category 强制 Turbo。
-- 参数:`eniNetwork` 必填 `subnets`(1.19.10+)或 `eniSubnetId` 之一(SDK model_eni_network.go)。
-- **网段关系(官方最佳实践 cce_bestpractice_00004)**:eni 容器子网取自 VPC 子网,**可与节点子网重叠甚至相同**;硬性约束是**服务网段不能与 VPC 子网/容器子网重叠**(cce_10_0284);"容器子网与节点子网不要用同一个子网"是**建议**(避免 IP 不足),非硬性。
-- eni 创建后可**新增子网、不可修改已有子网**;vpc-router 可新增网段(**最多 20 个**)、不可改已有;overlay_l2 创建后不可修改/不可扩容。
-- 错误码 `CCE.01400025`(400):subeni 配额不足,虚机规格不支持 Turbo → Turbo 节点规格需 sub-ENI 配额。
+- 参数:`eniNetwork` 必填 `subnets`(**1.19.10+ 使用**,字段 `subnetID`)或 `eniSubnetId` 之一(SDK model_eni_network.go);`eniSubnetCIDR` 可选(填写会校验)。
+- **网段关系(官方最佳实践 cce_bestpractice_00004)**:eni 容器子网取自 VPC 子网,**可与节点子网重叠甚至相同**;硬性约束是**服务网段不能与 VPC 子网/容器子网重叠**;多集群时不同集群容器子网可重叠;"容器子网与节点子网不要用同一个子网"是**建议**(避免 IP 不足),非硬性。
+- **网段规划(官方)**:建议容器网段掩码 `10.0.0.0/12~19、172.16.0.0/16~19、192.168.0.0/16~19`;**容器子网数量上限:旧版本集群最多 20 个,新版本最多 100 个**(cce_10_0196);eni 创建后**可新增子网、不可修改已有子网**;vpc-router 可新增网段(**最多 20 个**,1.21+ 用 cidrs 字段)、不可改已有;overlay_l2 创建后不可修改/不可扩容。
+- 冲突校验错误码:400 `CCE.01400002`(子网不在 VPC)、`CCE.01400005`(容器网段冲突)、**`CCE.01400017`(没有找到可用的容器网段)**、`CCE.01400025`(subeni 配额,规格不支持 Turbo)。
 - **未确认(需实测)**:官方文档**找不到**"ENI 子网需覆盖 2 个可用区"或数量下限的说法;仅见每容器网络配置最多 20/100 个子网(cce_10_0196)。
 
 ## Q5 安全组 — [官方文档] 完全确认
@@ -73,7 +73,8 @@
 - 官方约束页(cce_productdesc_0005):单 Region 集群数 **50**;单集群节点规模 50/200/1000/2000(工单最大 20000);单节点最大实例 256(最大 512);单集群最大 10 万 Pod。
 - **矛盾点**:创建集群 API 文档页写"默认 5 个集群/Region",与约束页 50 不一致 → **以控制台"我的配额"或 ShowQuotas/GetClusterQuota 实测值为准**。
 - 配额不足错误码:400 `CCE.01400007`(集群配额不足)、`CCE.01400008~13`(ECS/CPU/内存/安全组/EIP/磁盘)、**`CCE.01400014`(节点数超规模)**、`CCE.01400020`(VPC 配额)。
-- 提升流程(官方):控制台"资源 > 我的配额 > 申请扩大配额";不超自动生效值约 1 分钟后生效,否则人工复核。
+- **配额查询 API(官方)**:`ShowQuotas`(GET /api/v3/projects/{project_id}/quotas,quotaKey=cluster/quotaLimit/used,权限 `cce:quota:get`)、`GetClusterQuota`(GET /cce/v1/projects/{project_id}/quota,type=cluster|autopilot_cluster)→ **建议 Provider 运行时查询实际配额,不依赖文档数字**。
+- 提升流程(官方):控制台"资源 > 我的配额 > 申请扩大配额";目标配额≤自动生效值 → **约 1 分钟后生效**;超过 → 自动创建工单人工复核。
 
 ## Q8 集群删除语义 — [官方文档] 重要确认(有 API 级删除选项)
 
@@ -124,8 +125,8 @@
 
 ## Q13 管理集群 → CCE API Server 网络路径 — [官方文档] 大部分确认
 
-- **公网**:API Server 绑定 EIP,地址形态 **`https://<EIP>:5443`**(端口 5443 官方确认,cce_10_0864);创建时 `publicAccess.cidrs` 白名单**仅创建时生效**,默认 `0.0.0.0/0`;之后访问控制靠 cce-control 安全组 5443 入方向规则(见 Q5)。
-- **私网**:kubeconfig current-context=internal,server=**`https://<VPC内网IP/VIP>:5443`**(官方响应示例 `https://192.168.1.7:5443`);ShowClusterEndpoints 官方原文"PrivateIP(HA 集群返回 VIP)"→ 私网地址仅 VPC 内可达(须同 VPC,cce_10_0107)。
+- **公网**:API Server 绑定 EIP,地址形态 **`https://<EIP>:5443`**(端口 5443 官方确认,cce_10_0864);**绑定 EIP 会短暂重启集群 API Server 并更新 kubeconfig 证书**(官方原文)→ 影响 kubeconfig 轮换设计;创建时 `publicAccess.cidrs` 白名单**仅创建时生效**,默认 `0.0.0.0/0`;之后访问控制靠 cce-control 安全组 5443 入方向规则(见 Q5)。
+- **私网**:kubeconfig current-context=internal,server=**`https://<VPC内网IP>:5443`**(官方响应示例 `https://192.168.1.7:5443`);ShowClusterEndpoints 官方原文"**PrivateIP(HA 集群返回 VIP)**"、`privateEndpoint` 字段 → 私网地址仅 VPC 内可达(须同 VPC,cce_10_0107)。
 - **跨 VPC(官方推荐)**:同区域用 **VPC 对等连接**(两端网段不可重叠、需双向加路由,cce_bestpractice_10044)、**云专线**、**VPN**(VPN 网段不能与 VPC/容器网段冲突);**跨 Region 官方无专门推荐 → 需咨询/实测**。
 - endpoint 结构(SDK model_cluster_endpoints.go):url + type(public/private)。
 
