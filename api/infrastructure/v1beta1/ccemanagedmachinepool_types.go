@@ -33,9 +33,10 @@ type CCEManagedMachinePoolSpec struct {
 	// +optional
 	OS string `json:"os,omitempty"`
 
-	// RootVolume of the nodes (nodeTemplate.rootVolume).
+	// RootVolume of the nodes (nodeTemplate.rootVolume). Pointer so an empty
+	// value is omitted (the NodeVolume schema requires size >= 1).
 	// +optional
-	RootVolume common.NodeVolume `json:"rootVolume,omitempty"`
+	RootVolume *common.NodeVolume `json:"rootVolume,omitempty"`
 
 	// DataVolumes of the nodes (nodeTemplate.dataVolumes).
 	// +optional

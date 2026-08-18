@@ -122,7 +122,9 @@ spec:
                 format: int32
                 type: integer
               rootVolume:
-                description: RootVolume of the nodes (nodeTemplate.rootVolume).
+                description: |-
+                  RootVolume of the nodes (nodeTemplate.rootVolume). Pointer so an empty
+                  value is omitted (the NodeVolume schema requires size >= 1).
                 properties:
                   size:
                     description: Size in GiB.

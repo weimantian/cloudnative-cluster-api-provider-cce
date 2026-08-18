@@ -40,6 +40,20 @@ const kubeconfigValidityDays = 365
 // (ControlPlane). It drives the CCE cluster lifecycle and kubeconfig Secret.
 type CCEManagedControlPlaneReconciler struct {
 	client.Client
+
+	// ServiceFactory builds the CCE API service for a region/credential pair.
+	// Overridden in tests with a fake; defaults to cceService.NewClient
+	// (see SetupControllers).
+	ServiceFactory func(regionID, ak, sk string) (cceService.Service, error)
+}
+
+// newCCEService returns a CCE service via the injected factory, or the real
+// implementation when no factory is set.
+func (r *CCEManagedControlPlaneReconciler) newCCEService(regionID, ak, sk string) (cceService.Service, error) {
+	if r.ServiceFactory != nil {
+		return r.ServiceFactory(regionID, ak, sk)
+	}
+	return cceService.NewClient(regionID, ak, sk)
 }
 
 // +kubebuilder:rbac:groups=controlplane.cluster.x-k8s.io,resources=ccemanagedcontrolplanes,verbs=get;list;watch;create;update;patch;delete
@@ -117,7 +131,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	}
 	conditions.MarkTrue(cp, conditions.CredentialsReadyCondition, "CredentialsResolved", "CCE credentials resolved")
 
-	svc, err := cceService.NewClient(region, creds.AccessKey, creds.SecretKey)
+	svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.CredentialsReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
@@ -159,9 +173,10 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 
 	// Backfill the API server endpoint (official ShowClusterEndpoints model).
 	for _, ep := range info.Endpoints {
-		if ep.Type == "public" || (ep.Type == "private" && cp.Status.ControlPlaneEndpoint.IsZero()) {
-			cp.Status.ControlPlaneEndpoint = clusterv1.APIEndpoint{Host: ep.URL, Port: 5443}
-			cp.Spec.ControlPlaneEndpoint = cp.Status.ControlPlaneEndpoint
+		endpoint := &clusterv1.APIEndpoint{Host: ep.URL, Port: 5443}
+		if ep.Type == "public" || (ep.Type == "private" && (cp.Status.ControlPlaneEndpoint == nil || cp.Status.ControlPlaneEndpoint.IsZero())) {
+			cp.Status.ControlPlaneEndpoint = endpoint
+			cp.Spec.ControlPlaneEndpoint = endpoint
 		}
 	}
 	cp.Status.Version = info.Version
@@ -212,6 +227,10 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	cp.Status.Ready = true
 	cp.Status.Initialized = true
 	log.Info("CCE control plane is ready", "clusterID", clusterID)
+	// Persist status explicitly (status subresource ignores r.Update).
+	if err := r.Status().Update(ctx, cp); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -226,7 +245,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	svc, err := cceService.NewClient(region, creds.AccessKey, creds.SecretKey)
+	svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

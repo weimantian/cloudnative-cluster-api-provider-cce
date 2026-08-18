@@ -114,8 +114,7 @@ type QuotaInfo struct {
 }
 
 // Service is the CCE API surface consumed by the provider controllers.
-type Service interface {
-	// ShowCluster returns the current state of a CCE cluster.
+type Service interface {	// ShowCluster returns the current state of a CCE cluster.
 	ShowCluster(ctx context.Context, clusterID string) (*ClusterInfo, error)
 	// CreateCluster creates a CCE cluster and returns its ID.
 	CreateCluster(ctx context.Context, in CreateClusterInput) (string, error)

@@ -57,6 +57,14 @@ type ValidateInput struct {
 	VPCCloudCIDR     string
 }
 
+// ValidatorInterface is the network validation surface used by controllers;
+// *Validator implements it, and tests inject fakes.
+type ValidatorInterface interface {
+	Validate(ctx context.Context, in ValidateInput) ([]Issue, error)
+}
+
+var _ ValidatorInterface = (*Validator)(nil)
+
 // Validator validates the network against the VPC API.
 type Validator struct {
 	vpc *vpcv2.VpcClient

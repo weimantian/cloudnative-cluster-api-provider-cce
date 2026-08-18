@@ -50,7 +50,7 @@ type CCEClusterStatus struct {
 
 	// ControlPlaneEndpoint is the API server endpoint of the CCE cluster.
 	// +optional
-	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
+	ControlPlaneEndpoint *clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 
 	// FailureMessage is a human-readable message indicating why the resource
 	// is in a failed state.

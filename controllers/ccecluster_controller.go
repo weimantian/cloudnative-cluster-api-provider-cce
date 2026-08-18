@@ -38,6 +38,20 @@ const defaultRequeue = 30 * time.Second
 // CCEClusterReconciler reconciles CCECluster objects (InfrastructureCluster).
 type CCEClusterReconciler struct {
 	client.Client
+
+	// NetworkValidatorFactory builds the network validator for a
+	// region/credential pair. Overridden in tests with a fake; defaults to
+	// network.NewValidator (see SetupControllers).
+	NetworkValidatorFactory func(regionID, ak, sk string) (network.ValidatorInterface, error)
+}
+
+// newNetworkValidator returns a validator via the injected factory, or the
+// real implementation when no factory is set.
+func (r *CCEClusterReconciler) newNetworkValidator(regionID, ak, sk string) (network.ValidatorInterface, error) {
+	if r.NetworkValidatorFactory != nil {
+		return r.NetworkValidatorFactory(regionID, ak, sk)
+	}
+	return network.NewValidator(regionID, ak, sk)
 }
 
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=cceclusters,verbs=get;list;watch;create;update;patch;delete
@@ -100,7 +114,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 	// skipped with a warning — the CCE API will reject bad networks at create
 	// time (CCE.01400002/01400005).
 	if creds, err := scope.ResolveCredentials(ctx, r.Client, cceCluster.Namespace, cluster.Name+"-credentials"); err == nil {
-		validator, verr := network.NewValidator(cceCluster.Spec.Region, creds.AccessKey, creds.SecretKey)
+		validator, verr := r.newNetworkValidator(cceCluster.Spec.Region, creds.AccessKey, creds.SecretKey)
 		if verr != nil {
 			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 				conditions.ReconciliationFailedReason, verr.Error())
@@ -141,6 +155,11 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		if len(hardMsgs) > 0 {
 			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 				conditions.ReconciliationFailedReason, strings.Join(hardMsgs, "; "))
+			// Persist the failure condition (status subresource ignores
+			// r.Update).
+			if err := r.Status().Update(ctx, cceCluster); err != nil {
+				return ctrl.Result{}, err
+			}
 			return ctrl.Result{RequeueAfter: 2 * time.Minute}, errors.New("network validation failed: " + strings.Join(hardMsgs, "; "))
 		}
 	} else {
@@ -158,6 +177,10 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 
 	cceCluster.Status.Ready = true
 	log.Info("CCECluster infrastructure is ready")
+	// Persist status explicitly (status subresource ignores r.Update).
+	if err := r.Status().Update(ctx, cceCluster); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 

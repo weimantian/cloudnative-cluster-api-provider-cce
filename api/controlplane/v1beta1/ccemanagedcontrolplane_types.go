@@ -59,9 +59,10 @@ type CCEManagedControlPlaneSpec struct {
 	Billing BillingSpec `json:"billing,omitempty"`
 
 	// ControlPlaneEndpoint is the API server endpoint (backfilled by the
-	// provider from ShowClusterEndpoints).
+	// provider from ShowClusterEndpoints). Pointer so an empty value is
+	// omitted (the embedded APIEndpoint schema requires >=1 property).
 	// +optional
-	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
+	ControlPlaneEndpoint *clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 }
 
 // ContainerNetworkSpec mirrors the CCE ContainerNetwork model.
@@ -121,7 +122,7 @@ type CCEManagedControlPlaneStatus struct {
 
 	// ControlPlaneEndpoint is the API server endpoint.
 	// +optional
-	ControlPlaneEndpoint clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
+	ControlPlaneEndpoint *clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 
 	// KubeconfigSecretName of the generated kubeconfig Secret.
 	// +optional

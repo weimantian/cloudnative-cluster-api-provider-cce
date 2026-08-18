@@ -48,9 +48,23 @@ controller-gen: ## Install controller-gen
 
 ##@ Verify
 
+# envtest binaries (kube-apiserver/etcd) for the controller test suite.
+# The version tracks the k8s.io dependency line (go.mod -> v0.36.x).
+ENVTEST_K8S_VERSION ?= 1.36.x
+ENVTEST ?= $(BIN_DIR)/setup-envtest
+KUBEBUILDER_ASSETS ?= $(shell $(ENVTEST) use -p path $(ENVTEST_K8S_VERSION) 2>/dev/null)
+
+.PHONY: envtest
+envtest: ## Install setup-envtest (envtest binaries provider)
+	GOBIN=$(shell pwd)/$(BIN_DIR) $(GO) install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+
 .PHONY: test
-test: ## Run unit tests
-	$(GO) test ./...
+test: envtest ## Run unit tests (incl. envtest controller suite)
+	KUBEBUILDER_ASSETS="$(KUBEBUILDER_ASSETS)" $(GO) test ./...
+
+.PHONY: test-controllers
+test-controllers: envtest ## Run only the envtest controller suite
+	KUBEBUILDER_ASSETS="$(KUBEBUILDER_ASSETS)" $(GO) test ./controllers/... -v
 
 .PHONY: vet
 vet: ## Run go vet

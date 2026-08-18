@@ -32,7 +32,12 @@ jobs:
       - name: Vet
         run: go vet ./...
 
-      - name: Unit tests
+      - name: Set up envtest binaries
+        run: |
+          go install sigs.k8s.io/controller-runtime/tools/setup-envtest@latest
+          echo "KUBEBUILDER_ASSETS=$(setup-envtest use -p path 1.36.x)" >> "$GITHUB_ENV"
+
+      - name: Unit tests (incl. envtest controller suite)
         run: go test ./...
 
       - name: Generate check (controller-gen output must be committed)

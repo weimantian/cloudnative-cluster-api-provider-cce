@@ -33,6 +33,19 @@ const MachinePoolFinalizer = "ccemanagedmachinepool.infrastructure.cluster.x-k8s
 // (InfrastructureMachinePool). It drives the CCE node pool lifecycle.
 type CCEManagedMachinePoolReconciler struct {
 	client.Client
+
+	// ServiceFactory builds the CCE API service for a region/credential pair.
+	// Overridden in tests with a fake; defaults to cceService.NewClient.
+	ServiceFactory func(regionID, ak, sk string) (cceService.Service, error)
+}
+
+// newCCEService returns a CCE service via the injected factory, or the real
+// implementation when no factory is set.
+func (r *CCEManagedMachinePoolReconciler) newCCEService(regionID, ak, sk string) (cceService.Service, error) {
+	if r.ServiceFactory != nil {
+		return r.ServiceFactory(regionID, ak, sk)
+	}
+	return cceService.NewClient(regionID, ak, sk)
 }
 
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=ccemanagedmachinepools,verbs=get;list;watch;create;update;patch;delete
@@ -113,7 +126,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			conditions.ReconciliationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
-	svc, err := cceService.NewClient(region, creds.AccessKey, creds.SecretKey)
+	svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
@@ -165,6 +178,10 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	conditions.MarkTrue(pool, conditions.NodePoolReadyCondition, "NodePoolReady", "node pool is ready")
 	pool.Status.Ready = true
 	log.Info("CCE node pool reconciled", "nodePoolID", pool.Status.NodePoolID)
+	// Persist status explicitly (status subresource ignores r.Update).
+	if err := r.Status().Update(ctx, pool); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -180,7 +197,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 		if err != nil {
 			return ctrl.Result{}, err
 		}
-		svc, err := cceService.NewClient(region, creds.AccessKey, creds.SecretKey)
+		svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
 		if err != nil {
 			return ctrl.Result{}, err
 		}
@@ -235,8 +252,6 @@ func toCreateNodePoolInput(clusterID string, pool *infrav1beta1.CCEManagedMachin
 		Name:             pool.Spec.NodePoolName,
 		Flavor:           pool.Spec.Flavor,
 		OS:               pool.Spec.OS,
-		RootVolumeSize:   pool.Spec.RootVolume.Size,
-		RootVolumeType:   pool.Spec.RootVolume.Type,
 		SSHKey:           pool.Spec.SSHKey,
 		AvailabilityZone: pool.Spec.AvailabilityZone,
 		InitialNodeCount: pool.Spec.Replicas,
@@ -244,6 +259,10 @@ func toCreateNodePoolInput(clusterID string, pool *infrav1beta1.CCEManagedMachin
 		Taints:           pool.Spec.Taints,
 		Labels:           pool.Spec.Labels,
 		SecurityGroups:   pool.Spec.SecurityGroups,
+	}
+	if pool.Spec.RootVolume != nil {
+		in.RootVolumeSize = pool.Spec.RootVolume.Size
+		in.RootVolumeType = pool.Spec.RootVolume.Type
 	}
 	if len(pool.Spec.DataVolumes) > 0 {
 		in.DataVolumeSize = pool.Spec.DataVolumes[0].Size

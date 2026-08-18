@@ -114,7 +114,8 @@ spec:
               controlPlaneEndpoint:
                 description: |-
                   ControlPlaneEndpoint is the API server endpoint (backfilled by the
-                  provider from ShowClusterEndpoints).
+                  provider from ShowClusterEndpoints). Pointer so an empty value is
+                  omitted (the embedded APIEndpoint schema requires >=1 property).
                 minProperties: 1
                 properties:
                   host:
