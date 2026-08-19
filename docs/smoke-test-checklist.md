@@ -44,6 +44,10 @@
 | `scale` | **Q3 关键** | **2 节点池上 ScaleNodePool(desiredNodeCount=2)→ 观察节点数:仍为 2 = 绝对值;变 4 = 增量**;UpdateNodePool(ignore=true)是否保持数量不变 |
 | `delete` | Q8 | DeleteNodePool → DeleteCluster(delete_evs/eni/net=true)→ 集群消失;**运行后请到控制台核对无 EVS/ELB/EIP 残留** |
 | `quota` | Q7 | ShowQuotas 返回集群配额 limit/used(实测值,解决文档 5 vs 50 矛盾) |
+| `autoscaling` | Q3 + B3(FR-2.6) | **节点池带 autoscaling {enable=true,min=1,max=4} 创建是否被接受;ListNodePools 回读是否一致;autoscaling 开启时手动 ScaleNodePool 是否并存不冲突** |
+| `upgrade` | Q11 + E3(FR-1.7) | **GetUpgradeInfo 返回的平台目标版本列表(空 = 平台无路径,Q11);有目标 → StartUpgrade→ShowUpgradeTask 轮询到 Success/Failed 并计时;无目标 → 记录 StartUpgrade 被平台拒绝的错误(controller 走 UpgradeNotOffered)** |
+
+> 说明:`autoscaling`、`upgrade` 用例需在 `CCE_SMOKE_CASES` 中显式开启(如 `CCE_SMOKE_CASES=autoscaling,upgrade`);`upgrade` 还会创建 v1.34 集群(`CCE_SMOKE_UPGRADE_FROM`),无节点池。
 
 ## 四、安全与成本提醒
 

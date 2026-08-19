@@ -1060,3 +1060,238 @@ func deletePublicIP(ctx context.Context, regionID, ak, sk, eipID string) {
 func masterEipActionPtr(a model.MasterEipRequestSpecAction) *model.MasterEipRequestSpecAction {
 	return &a
 }
+
+// TestSmokeAutoscaling verifies B3 end-to-end: a node pool created with
+// autoscaling (enable/min/max) is accepted by CCE and the configuration is
+// readable back; autoscaling coexists with manual ScaleNodePool (the two
+// mechanisms do not conflict — questionnaire Q3 + FR-2.6).
+//
+// Enable with: CCE_SMOKE_CASES=autoscaling
+func TestSmokeAutoscaling(t *testing.T) {
+	ctx := context.Background()
+	ak := smokeRequired(t, "CCE_SMOKE_AK")
+	sk := smokeRequired(t, "CCE_SMOKE_SK")
+	region := smokeEnv("CCE_SMOKE_REGION", "cn-north-4")
+	vpcID := smokeRequired(t, "CCE_SMOKE_VPC")
+	subnetID := smokeRequired(t, "CCE_SMOKE_SUBNET")
+	keypair := smokeRequired(t, "CCE_SMOKE_KEYPAIR")
+	flavor := smokeEnv("CCE_SMOKE_FLAVOR", "c6.large.2")
+	cases := smokeCases()
+	enabled := func(c string) bool { return cases["autoscaling"] || cases[c] }
+
+	svc, err := NewClient(region, ak, sk)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	clusterName := fmt.Sprintf("capi-auto-%d", time.Now().Unix()%100000)
+	containerCIDR := fmt.Sprintf("10.%d.0.0/16", 70+(time.Now().Unix()%120))
+	clusterID, err := svc.CreateCluster(ctx, CreateClusterInput{
+		Name:                 clusterName,
+		Category:             "CCE",
+		Flavor:               smokeEnv("CCE_SMOKE_CLUSTER_FLAVOR", "cce.s1.small"),
+		ContainerNetworkMode: "vpc-router",
+		ContainerNetworkCIDR: containerCIDR,
+		HostNetworkVpcID:     vpcID,
+		HostNetworkSubnetID:  subnetID,
+		ServiceCIDR:          "10.247.0.0/16",
+		BillingMode:          0,
+	})
+	if err != nil {
+		t.Fatalf("CreateCluster failed: %v", err)
+	}
+	t.Logf("autoscaling: cluster %s", clusterID)
+	defer func() {
+		_ = svc.DeleteCluster(ctx, DeleteClusterInput{ClusterID: clusterID, DeleteEVS: true, DeleteENI: true, DeleteELB: true, OnDemandNodePolicy: "delete"})
+	}()
+	if _, err := waitForPhase(ctx, svc, clusterID, "Available", smokeClusterWait, smokePollInterval); err != nil {
+		t.Fatalf("cluster not Available: %v", err)
+	}
+
+	if !enabled("pool") {
+		t.Log("B3: pool case disabled (CCE_SMOKE_CASES=autoscaling)")
+		return
+	}
+
+	// ---- B3: create node pool with autoscaling enable=true min=1 max=4 ----
+	nodePoolID, err := svc.CreateNodePool(ctx, CreateNodePoolInput{
+		ClusterID:        clusterID,
+		Name:             "pool-auto",
+		Flavor:           flavor,
+		OS:               "Huawei Cloud EulerOS 2.0",
+		SSHKey:           keypair,
+		AvailabilityZone: smokeEnv("CCE_SMOKE_AZ", "cn-north-4a"),
+		InitialNodeCount: 1,
+		RootVolumeSize:   40,
+		RootVolumeType:   "SSD",
+		DataVolumeSize:   100,
+		DataVolumeType:   "SSD",
+		Autoscaling:      &NodePoolAutoscaling{Enable: true, MinNodeCount: 1, MaxNodeCount: 4},
+	})
+	if err != nil {
+		t.Fatalf("CreateNodePool with autoscaling failed: %v", err)
+	}
+	t.Logf("B3: node pool %s created with autoscaling {enable,1,4}", nodePoolID)
+	defer func() { _ = svc.DeleteNodePool(ctx, clusterID, nodePoolID) }()
+	if err := waitForNodeCount(ctx, svc, clusterID, nodePoolID, 1, smokePoolWait, smokePollInterval); err != nil {
+		t.Fatalf("node pool did not reach 1 node: %v", err)
+	}
+
+	// Read back the autoscaling config via the raw SDK response.
+	if as := readPoolAutoscaling(ctx, svc, clusterID, nodePoolID); as == nil {
+		t.Error("B3: ListNodePools shows NO autoscaling config — CCE did not persist it")
+	} else if !derefBool(as.Enable) || derefI32(as.MinNodeCount) != 1 || derefI32(as.MaxNodeCount) != 4 {
+		t.Errorf("B3: autoscaling read back mismatch: enable=%v min=%d max=%d (want true/1/4)",
+			derefBool(as.Enable), derefI32(as.MinNodeCount), derefI32(as.MaxNodeCount))
+	} else {
+		t.Logf("B3 RESULT: autoscaling persisted and readable: enable=true min=1 max=4")
+	}
+
+	// ---- B3: autoscaling coexists with manual ScaleNodePool ----
+	if !enabled("scale") {
+		return
+	}
+	t.Log("B3: calling ScaleNodePool(2) on an autoscaling pool…")
+	if err := svc.ScaleNodePool(ctx, clusterID, nodePoolID, 2); err != nil {
+		t.Fatalf("ScaleNodePool on autoscaling pool failed: %v", err)
+	}
+	if err := waitForNodeCount(ctx, svc, clusterID, nodePoolID, 2, smokePoolWait, smokePollInterval); err != nil {
+		t.Fatalf("pool did not reach 2 nodes: %v", err)
+	}
+	if as := readPoolAutoscaling(ctx, svc, clusterID, nodePoolID); as == nil || !derefBool(as.Enable) {
+		t.Error("B3: autoscaling config lost after manual scale")
+	} else {
+		t.Log("B3 RESULT: autoscaling + manual ScaleNodePool coexist (pool scaled to 2, autoscaling still enabled)")
+	}
+}
+
+// readPoolAutoscaling returns the autoscaling config of a node pool from the
+// raw SDK ListNodePools response (smoke test runs in-package, so it can reach
+// the underlying client).
+func readPoolAutoscaling(ctx context.Context, svc Service, clusterID, nodePoolID string) *model.NodePoolNodeAutoscaling {
+	c := svc.(*Client)
+	resp, err := c.cce.ListNodePools(&model.ListNodePoolsRequest{ClusterId: clusterID})
+	if err != nil {
+		return nil
+	}
+	if resp.Items != nil {
+		for _, p := range *resp.Items {
+			if p.Metadata != nil && p.Metadata.Uid != nil && *p.Metadata.Uid == nodePoolID && p.Spec != nil {
+				return p.Spec.Autoscaling
+			}
+		}
+	}
+	return nil
+}
+
+func derefI32(v *int32) int32 {
+	if v == nil {
+		return 0
+	}
+	return *v
+}
+
+func derefBool(v *bool) bool {
+	if v == nil {
+		return false
+	}
+	return *v
+}
+
+// TestSmokeUpgradeWorkflow verifies E3 end-to-end: GetUpgradeInfo returns the
+// platform-offered targets; when targets exist the workflow is driven
+// (StartUpgrade -> ShowUpgradeTask until Success/Failed); when none are
+// offered (questionnaire Q11: verified empty on v1.34.8-r2) it records the
+// platform rejection so the controller's UpgradeNotOffered path is grounded.
+//
+// Enable with: CCE_SMOKE_CASES=upgrade
+func TestSmokeUpgradeWorkflow(t *testing.T) {
+	ctx := context.Background()
+	ak := smokeRequired(t, "CCE_SMOKE_AK")
+	sk := smokeRequired(t, "CCE_SMOKE_SK")
+	region := smokeEnv("CCE_SMOKE_REGION", "cn-north-4")
+	vpcID := smokeRequired(t, "CCE_SMOKE_VPC")
+	subnetID := smokeRequired(t, "CCE_SMOKE_SUBNET")
+	fromVersion := smokeEnv("CCE_SMOKE_UPGRADE_FROM", "v1.34")
+
+	svc, err := NewClient(region, ak, sk)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	clusterName := fmt.Sprintf("capi-upgwf-%d", time.Now().Unix()%100000)
+	containerCIDR := fmt.Sprintf("10.%d.0.0/16", 80+(time.Now().Unix()%100))
+	clusterID, err := svc.CreateCluster(ctx, CreateClusterInput{
+		Name:                 clusterName,
+		Category:             "CCE",
+		Flavor:               smokeEnv("CCE_SMOKE_CLUSTER_FLAVOR", "cce.s1.small"),
+		Version:              fromVersion,
+		ContainerNetworkMode: "vpc-router",
+		ContainerNetworkCIDR: containerCIDR,
+		HostNetworkVpcID:     vpcID,
+		HostNetworkSubnetID:  subnetID,
+		ServiceCIDR:          "10.247.0.0/16",
+		BillingMode:          0,
+	})
+	if err != nil {
+		t.Fatalf("CreateCluster(%s) failed: %v", fromVersion, err)
+	}
+	t.Logf("upgrade-workflow: cluster %s at %s", clusterID, fromVersion)
+	defer func() {
+		_ = svc.DeleteCluster(ctx, DeleteClusterInput{ClusterID: clusterID, DeleteEVS: true, DeleteENI: true, DeleteELB: true, OnDemandNodePolicy: "delete"})
+	}()
+	if _, err := waitForPhase(ctx, svc, clusterID, "Available", smokeClusterWait, smokePollInterval); err != nil {
+		t.Fatalf("cluster not Available: %v", err)
+	}
+
+	// ---- E3: what does the platform actually offer? ----
+	info, err := svc.GetUpgradeInfo(ctx, clusterID)
+	if err != nil {
+		t.Fatalf("GetUpgradeInfo failed: %v", err)
+	}
+	t.Logf("E3: GetUpgradeInfo -> current=%s targets=%v", info.CurrentVersion, info.TargetVersions)
+
+	if len(info.TargetVersions) == 0 {
+		// No upgrade path offered (Q11): verify the controller-facing signal —
+		// StartUpgrade must be rejected by the platform, which is why the
+		// controller reports UpgradeNotOffered instead of calling it.
+		t.Log("E3: no upgrade targets offered — attempting StartUpgrade to record the platform rejection…")
+		_, err := svc.StartUpgrade(ctx, clusterID, fromVersion)
+		if err != nil {
+			t.Logf("E3 RESULT: platform rejected StartUpgrade as expected: %v (controller path: UpgradeNotOffered)", err)
+		} else {
+			t.Log("E3: StartUpgrade unexpectedly accepted with no targets (review)")
+		}
+		return
+	}
+
+	// Targets exist: drive the workflow and poll to completion.
+	target := info.TargetVersions[0]
+	t.Logf("E3: starting upgrade to %s…", target)
+	start := time.Now()
+	taskID, err := svc.StartUpgrade(ctx, clusterID, target)
+	if err != nil {
+		t.Fatalf("StartUpgrade(%s) failed: %v", target, err)
+	}
+	t.Logf("E3: upgrade task %s started", taskID)
+	phase := ""
+	for i := 0; i < 240; i++ { // poll up to 2h
+		time.Sleep(30 * time.Second)
+		phase, err = svc.ShowUpgradeTask(ctx, clusterID, taskID)
+		if err != nil {
+			t.Logf("E3: ShowUpgradeTask error (retrying): %v", err)
+			continue
+		}
+		t.Logf("E3: upgrade phase=%s elapsed=%v", phase, time.Since(start).Round(time.Second))
+		if phase == UpgradeTaskPhaseSuccess || phase == UpgradeTaskPhaseFailed {
+			break
+		}
+	}
+	if phase == UpgradeTaskPhaseSuccess {
+		t.Logf("E3 RESULT: upgrade to %s SUCCEEDED in %v (task %s)", target, time.Since(start).Round(time.Second), taskID)
+	} else if phase == UpgradeTaskPhaseFailed {
+		t.Logf("E3 RESULT: upgrade task FAILED (phase=%s, task %s)", phase, taskID)
+	} else {
+		t.Logf("E3 RESULT: upgrade still in phase %q after poll window (task %s)", phase, taskID)
+	}
+}
