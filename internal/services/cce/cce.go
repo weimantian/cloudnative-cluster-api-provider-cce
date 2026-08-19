@@ -458,13 +458,34 @@ func (s *Client) GetUpgradeInfo(_ context.Context, clusterID string) (*UpgradeIn
 // StartUpgrade implements Service. Drives the official upgrade orchestration:
 // CreateUpgradeWorkFlow -> CreatePreCheck -> UpgradeCluster. Returns the
 // upgrade task ID (UpgradeCluster response uid) used by ShowUpgradeTask.
+//
+// NOTE (verified live 2026-08-19): the platform enforces exact version
+// consistency across the workflow and pre-check:
+//   - clusterID must be set (SDK comment says it is server-generated, but the
+//     API rejects an empty one: CCE_CM.0004 "Invalid field cluster ID");
+//   - the cluster version must be the FULL "release-patch" form (e.g.
+//     v1.33.12-r2), matching the workflow exactly, or the pre-check fails with
+//     CCE_CM.0101.
 func (s *Client) StartUpgrade(_ context.Context, clusterID, targetVersion string) (string, error) {
-	// 1. Create the upgrade workflow (targetVersion is required).
+	// Resolve the full current version (release-patch) so the workflow and
+	// pre-check carry identical values.
+	currentVersion := ""
+	if up, err := s.cce.ShowClusterUpgradeInfo(&model.ShowClusterUpgradeInfoRequest{ClusterId: clusterID}); err == nil && up.Spec != nil && up.Spec.VersionInfo != nil {
+		if vi := up.Spec.VersionInfo; vi.Release != nil {
+			currentVersion = *vi.Release
+			if vi.Patch != nil && *vi.Patch != "" {
+				currentVersion += "-" + *vi.Patch
+			}
+		}
+	}
+	// 1. Create the upgrade workflow (targetVersion + clusterID are required).
 	workflowBody := &model.CreateUpgradeWorkFlowRequestBody{
 		Kind:       "WorkFlowTask",
 		ApiVersion: "v3",
 		Spec: &model.WorkFlowSpec{
-			TargetVersion: targetVersion,
+			ClusterID:      stringPtr(clusterID),
+			ClusterVersion: stringPtr(currentVersion),
+			TargetVersion:  targetVersion,
 		},
 	}
 	if _, err := s.cce.CreateUpgradeWorkFlow(&model.CreateUpgradeWorkFlowRequest{
@@ -473,12 +494,13 @@ func (s *Client) StartUpgrade(_ context.Context, clusterID, targetVersion string
 	}); err != nil {
 		return "", errors.Wrap(err, "CreateUpgradeWorkFlow failed")
 	}
-	// 2. Run the pre-check (current version + target version).
+	// 2. Run the pre-check (versions must match the workflow exactly).
 	precheckBody := &model.PrecheckClusterRequestBody{
 		ApiVersion: "v3",
 		Kind:       "PreCheckTask",
 		Spec: &model.PrecheckSpec{
-			ClusterVersion: stringPtr(currentVersionFrom(clusterID, s)),
+			ClusterID:      stringPtr(clusterID),
+			ClusterVersion: stringPtr(currentVersion),
 			TargetVersion:  stringPtr(targetVersion),
 		},
 	}
@@ -489,7 +511,10 @@ func (s *Client) StartUpgrade(_ context.Context, clusterID, targetVersion string
 		return "", errors.Wrap(err, "CreatePreCheck failed")
 	}
 	// 3. Execute the upgrade (strategy: in-place rolling update only —
-	// official UpgradeStrategy constraint).
+	// official UpgradeStrategy constraint). userDefinedStep (batch size) is
+	// REQUIRED under inPlaceRollingUpdate (verified live: CCE_CM.0004 "Field
+	// user defined step must defined by inPlaceRollingUpdate strategy");
+	// official default is 20 per batch (1-40 per SDK, up to 120 per docs).
 	upgradeResp, err := s.cce.UpgradeCluster(&model.UpgradeClusterRequest{
 		ClusterId: clusterID,
 		Body: &model.UpgradeClusterRequestBody{
@@ -497,7 +522,12 @@ func (s *Client) StartUpgrade(_ context.Context, clusterID, targetVersion string
 			Spec: &model.UpgradeSpec{
 				ClusterUpgradeAction: &model.ClusterUpgradeAction{
 					TargetVersion: targetVersion,
-					Strategy:      &model.UpgradeStrategy{Type: "inPlaceRollingUpdate"},
+					Strategy: &model.UpgradeStrategy{
+						Type: "inPlaceRollingUpdate",
+						InPlaceRollingUpdate: &model.InPlaceRollingUpdate{
+							UserDefinedStep: int32Ptr(20),
+						},
+					},
 				},
 			},
 		},
@@ -525,17 +555,6 @@ func (s *Client) ShowUpgradeTask(_ context.Context, clusterID, taskID string) (s
 		return "", errors.New("ShowUpgradeClusterTask returned no status phase")
 	}
 	return *resp.Status.Phase, nil
-}
-
-// currentVersionFrom returns the running cluster version for the pre-check
-// (best-effort: a failure falls back to the cluster name-less empty string,
-// since the pre-check accepts an empty/unknown current version).
-func currentVersionFrom(clusterID string, s *Client) string {
-	resp, err := s.cce.ShowCluster(&model.ShowClusterRequest{ClusterId: clusterID})
-	if err != nil || resp == nil || resp.Spec == nil || resp.Spec.Version == nil {
-		return ""
-	}
-	return *resp.Spec.Version
 }
 
 // ---- helpers ----

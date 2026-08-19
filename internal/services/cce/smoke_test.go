@@ -26,6 +26,7 @@ package cce
 import (
 	"context"
 	"crypto/tls"
+	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
@@ -1353,6 +1354,21 @@ func TestSmokeUpgradeWorkflow(t *testing.T) {
 		t.Logf("E3 RESULT: upgrade to %s SUCCEEDED in %v (task %s)", target, time.Since(start).Round(time.Second), taskID)
 	} else if phase == UpgradeTaskPhaseFailed {
 		t.Logf("E3 RESULT: upgrade task FAILED (phase=%s, task %s)", phase, taskID)
+		// Dump the full task detail (spec.items carries per-step outcomes) to
+		// diagnose why the upgrade failed.
+		if raw, rerr := svc.cce.ShowUpgradeClusterTask(&model.ShowUpgradeClusterTaskRequest{ClusterId: clusterID, TaskId: taskID}); rerr == nil {
+			if raw.Spec != nil && raw.Spec.Items != nil {
+				if b, jerr := json.MarshalIndent(raw.Spec.Items, "", "  "); jerr == nil {
+					t.Logf("E3: upgrade task items:\n%s", string(b))
+				}
+			}
+		}
+		// The task list carries richer history (incl. items of each task).
+		if raw, rerr := svc.cce.ListUpgradeClusterTasks(&model.ListUpgradeClusterTasksRequest{ClusterId: clusterID}); rerr == nil {
+			if b, jerr := json.MarshalIndent(raw, "", "  "); jerr == nil {
+				t.Logf("E3: upgrade task list:\n%s", string(b))
+			}
+		}
 	} else {
 		t.Logf("E3 RESULT: upgrade still in phase %q after poll window (task %s)", phase, taskID)
 	}
