@@ -58,11 +58,6 @@ type CCEManagedControlPlaneSpec struct {
 	// +optional
 	Billing BillingSpec `json:"billing,omitempty"`
 
-	// ControlPlaneEndpoint is the API server endpoint (backfilled by the
-	// provider from ShowClusterEndpoints). Pointer so an empty value is
-	// omitted (the embedded APIEndpoint schema requires >=1 property).
-	// +optional
-	ControlPlaneEndpoint *clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 }
 
 // ContainerNetworkSpec mirrors the CCE ContainerNetwork model.
@@ -137,14 +132,6 @@ type CCEManagedControlPlaneStatus struct {
 	// upgrade workflow was started (FR-1.7, questionnaire Q11).
 	// +optional
 	UpgradeTaskID string `json:"upgradeTaskID,omitempty"`
-
-	// FailureReason is a short reason for failure.
-	// +optional
-	FailureReason string `json:"failureReason,omitempty"`
-
-	// FailureMessage is a human-readable failure description.
-	// +optional
-	FailureMessage string `json:"failureMessage,omitempty"`
 
 	// Conditions defines current service state.
 	// +optional

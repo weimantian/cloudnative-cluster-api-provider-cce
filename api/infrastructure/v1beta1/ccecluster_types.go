@@ -8,7 +8,6 @@ package v1beta1
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
-	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 )
@@ -22,18 +21,10 @@ type CCEClusterSpec struct {
 	// +kubebuilder:validation:Required
 	Region string `json:"region"`
 
-	// ProjectID of the target account; inferred from credentials when empty.
-	// +optional
-	ProjectID string `json:"projectID,omitempty"`
-
 	// Network references the VPC/subnets the CCE cluster consumes.
 	// CCE requires a VPC to exist before cluster creation.
 	// +optional
 	Network common.NetworkSpec `json:"network,omitempty"`
-
-	// AdditionalTags attached to the CCE cluster for ownership identification.
-	// +optional
-	AdditionalTags common.Tags `json:"additionalTags,omitempty"`
 }
 
 // CCEClusterStatus defines the observed state of CCECluster.
@@ -54,15 +45,6 @@ type CCEClusterStatus struct {
 	// controller).
 	// +optional
 	ClusterID string `json:"clusterID,omitempty"`
-
-	// ControlPlaneEndpoint is the API server endpoint of the CCE cluster.
-	// +optional
-	ControlPlaneEndpoint *clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
-
-	// FailureMessage is a human-readable message indicating why the resource
-	// is in a failed state.
-	// +optional
-	FailureMessage *string `json:"failureMessage,omitempty"`
 
 	// Conditions defines current service state of the CCECluster.
 	// +optional

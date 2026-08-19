@@ -36,13 +36,16 @@ func TestParseTaint(t *testing.T) {
 }
 
 func TestTaintEffectMapping(t *testing.T) {
-	noSchedule := taintEffect("NoSchedule")
-	if noSchedule.Value() != "NoSchedule" {
-		t.Errorf("taintEffect(NoSchedule) = %q, want NoSchedule", noSchedule.Value())
+	noSchedule, err := taintEffect("NoSchedule")
+	if err != nil || noSchedule.Value() != "NoSchedule" {
+		t.Errorf("taintEffect(NoSchedule) = (%q,%v), want NoSchedule", noSchedule.Value(), err)
 	}
-	prefer := taintEffect("PreferNoSchedule")
-	if prefer.Value() != "PreferNoSchedule" {
-		t.Errorf("taintEffect(PreferNoSchedule) = %q, want PreferNoSchedule", prefer.Value())
+	prefer, err := taintEffect("PreferNoSchedule")
+	if err != nil || prefer.Value() != "PreferNoSchedule" {
+		t.Errorf("taintEffect(PreferNoSchedule) = (%q,%v), want PreferNoSchedule", prefer.Value(), err)
+	}
+	if _, err := taintEffect("NoScheduel"); err == nil {
+		t.Error("expected error for unknown effect")
 	}
 }
 

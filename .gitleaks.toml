@@ -1,0 +1,29 @@
+# gitleaks configuration — extends default detection with Huawei Cloud
+# credential patterns (AK/SK have no fixed prefix like AKIA..., so they are
+# matched by variable-name + high-entropy rules).
+title = "cloudnative-cluster-api-provider-cce gitleaks config"
+
+[[rules]]
+id = "huawei-cloud-aksk"
+description = "Huawei Cloud AccessKey/SecretKey (variable-name anchored)"
+regex = '''(?i)(access[_-]?key|secret[_-]?key|cloud_sdk_ak|cloud_sdk_sk|cce_access_key|cce_secret_key)["'\s:=]+["']?[A-Za-z0-9+/]{16,}'''
+keywords = ["accessKey", "secretKey", "CLOUD_SDK_AK", "CLOUD_SDK_SK", "CCE_ACCESS_KEY", "CCE_SECRET_KEY"]
+
+[[rules]]
+id = "huawei-cloud-ak-entropy"
+description = "Huawei Cloud AK-like high-entropy token"
+regex = '''\b[A-Z0-9]{20,}\b'''
+entropy = 4.2
+keywords = ["AK", "SK", "AccessKey", "SecretKey"]
+
+[allowlist]
+description = "allow test placeholders and docs"
+paths = [
+  "docs/",
+  "test/",
+]
+regexes = [
+  "AKIA",
+  "EXAMPLE",
+  "your-access-key",
+]

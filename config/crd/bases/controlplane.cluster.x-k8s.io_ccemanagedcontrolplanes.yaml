@@ -111,25 +111,6 @@ spec:
                     - eni
                     type: string
                 type: object
-              controlPlaneEndpoint:
-                description: |-
-                  ControlPlaneEndpoint is the API server endpoint (backfilled by the
-                  provider from ShowClusterEndpoints). Pointer so an empty value is
-                  omitted (the embedded APIEndpoint schema requires >=1 property).
-                minProperties: 1
-                properties:
-                  host:
-                    description: host is the hostname on which the API server is serving.
-                    maxLength: 512
-                    minLength: 1
-                    type: string
-                  port:
-                    description: port is the port on which the API server is serving.
-                    format: int32
-                    maximum: 65535
-                    minimum: 1
-                    type: integer
-                type: object
               customSan:
                 description: CustomSan entries for the API server certificate.
                 items:
@@ -241,12 +222,6 @@ spec:
                     minimum: 1
                     type: integer
                 type: object
-              failureMessage:
-                description: FailureMessage is a human-readable failure description.
-                type: string
-              failureReason:
-                description: FailureReason is a short reason for failure.
-                type: string
               initialized:
                 description: Initialized indicates the kubeconfig Secret has been
                   generated.

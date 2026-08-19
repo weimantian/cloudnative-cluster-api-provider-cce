@@ -63,7 +63,7 @@ func main() {
 	flag.StringVar(&validFlavors, "valid-flavors", "",
 		"Comma-separated allowlist of ECS flavors accepted by the CCEManagedMachinePool webhook "+
 			"(empty = format check only; region availability is still enforced by CCE at create time).")
-	opts := zap.Options{Development: true}
+	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
 

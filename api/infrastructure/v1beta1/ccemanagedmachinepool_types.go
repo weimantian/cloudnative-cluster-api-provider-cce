@@ -29,12 +29,13 @@ type CCEManagedMachinePoolSpec struct {
 	Flavor string `json:"flavor"`
 
 	// OS image family of the nodes (nodeTemplate.os), e.g.
-	// "Huawei Cloud EulerOS 2.0".
+	// "Huawei Cloud EulerOS 2.0". Required by the webhook (official
+	// CreateNodePool requires os unless a private image is used).
 	// +optional
 	OS string `json:"os,omitempty"`
 
 	// RootVolume of the nodes (nodeTemplate.rootVolume). Pointer so an empty
-	// value is omitted (the NodeVolume schema requires size >= 1).
+	// value is omitted; required by the webhook (size 40-1024 GiB).
 	// +optional
 	RootVolume *common.NodeVolume `json:"rootVolume,omitempty"`
 
@@ -46,7 +47,8 @@ type CCEManagedMachinePoolSpec struct {
 	// +optional
 	SSHKey string `json:"sshKey,omitempty"`
 
-	// AvailabilityZone of the nodes.
+	// AvailabilityZone of the nodes. Required by the webhook (CCE does not
+	// support random AZ via API).
 	// +optional
 	AvailabilityZone string `json:"availabilityZone,omitempty"`
 
@@ -82,9 +84,6 @@ type CCEManagedMachinePoolSpec struct {
 	// +optional
 	Autoscaling AutoscalingSpec `json:"autoscaling,omitempty"`
 
-	// AdditionalTags attached to the node pool for ownership identification.
-	// +optional
-	AdditionalTags common.Tags `json:"additionalTags,omitempty"`
 }
 
 // AutoscalingSpec maps the CCE node pool autoscaling configuration
@@ -133,14 +132,6 @@ type CCEManagedMachinePoolStatus struct {
 	// on). Mirrors spec.autoscaling for drift detection.
 	// +optional
 	LastAppliedAutoscaling AutoscalingSpec `json:"lastAppliedAutoscaling,omitempty"`
-
-	// FailureReason is a short reason for failure.
-	// +optional
-	FailureReason string `json:"failureReason,omitempty"`
-
-	// FailureMessage is a human-readable failure description.
-	// +optional
-	FailureMessage string `json:"failureMessage,omitempty"`
 
 	// Conditions defines current service state.
 	// +optional

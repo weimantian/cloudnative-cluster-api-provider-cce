@@ -57,12 +57,6 @@ spec:
               carries cluster-level network/region configuration. The control plane
               implementation lives in CCEManagedControlPlane (controlplane group).
             properties:
-              additionalTags:
-                additionalProperties:
-                  type: string
-                description: AdditionalTags attached to the CCE cluster for ownership
-                  identification.
-                type: object
               network:
                 description: |-
                   Network references the VPC/subnets the CCE cluster consumes.
@@ -125,10 +119,6 @@ spec:
                         type: string
                     type: object
                 type: object
-              projectID:
-                description: ProjectID of the target account; inferred from credentials
-                  when empty.
-                type: string
               region:
                 description: Region is the Huawei Cloud region (e.g. cn-north-4).
                   Required.
@@ -201,28 +191,6 @@ spec:
                   - type
                   type: object
                 type: array
-              controlPlaneEndpoint:
-                description: ControlPlaneEndpoint is the API server endpoint of the
-                  CCE cluster.
-                minProperties: 1
-                properties:
-                  host:
-                    description: host is the hostname on which the API server is serving.
-                    maxLength: 512
-                    minLength: 1
-                    type: string
-                  port:
-                    description: port is the port on which the API server is serving.
-                    format: int32
-                    maximum: 65535
-                    minimum: 1
-                    type: integer
-                type: object
-              failureMessage:
-                description: |-
-                  FailureMessage is a human-readable message indicating why the resource
-                  is in a failed state.
-                type: string
               initialization:
                 description: |-
                   Initialization reports infrastructure provisioning state. Provisioned

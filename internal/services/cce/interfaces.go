@@ -63,7 +63,6 @@ type CreateClusterInput struct {
 	PeriodNum   int32
 	IsAutoRenew string // "true" | "false"
 	IsAutoPay   string // "true" | "false"
-	Tags        map[string]string
 }
 
 // CreateNodePoolInput maps the CCEManagedMachinePool spec to the CCE
@@ -89,7 +88,6 @@ type CreateNodePoolInput struct {
 	// Autoscaling maps to NodePoolNodeAutoscaling (feature gate
 	// NodePoolAutoscaling; nil = autoscaling disabled).
 	Autoscaling *NodePoolAutoscaling
-	Tags        map[string]string
 }
 
 // NodePoolAutoscaling mirrors NodePoolNodeAutoscaling (enable/min/max).

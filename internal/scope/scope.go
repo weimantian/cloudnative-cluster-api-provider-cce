@@ -17,7 +17,6 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
-	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 )
 
@@ -60,24 +59,4 @@ func credentialsFromEnv() (*Credentials, error) {
 		return nil, errors.New("no credentials found: set CLOUD_SDK_AK/CLOUD_SDK_SK or create a per-cluster credentials Secret")
 	}
 	return &Credentials{AccessKey: ak, SecretKey: sk}, nil
-}
-
-// PatchHelper wraps sigs.k8s.io/cluster-api/util/patch to persist object
-// changes (status + spec) at the end of a reconcile.
-type PatchHelper struct {
-	helper *patch.Helper
-}
-
-// NewPatchHelper creates a patch helper for the given object.
-func NewPatchHelper(obj client.Object, c client.Client) (*PatchHelper, error) {
-	h, err := patch.NewHelper(obj, c)
-	if err != nil {
-		return nil, err
-	}
-	return &PatchHelper{helper: h}, nil
-}
-
-// Patch persists the object (spec, metadata and status subresource).
-func (p *PatchHelper) Patch(ctx context.Context, obj client.Object, opts ...patch.Option) error {
-	return p.helper.Patch(ctx, obj, opts...)
 }

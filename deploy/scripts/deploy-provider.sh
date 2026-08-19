@@ -27,10 +27,12 @@ clusterctl init --infrastructure cce
 
 echo "== Creating per-cluster credentials Secret =="
 # The Secret name matches the workload manifest's credentialsSecretName.
+# Use --from-file (process substitution) so the keys never appear in the
+# process argv (visible via ps), unlike --from-literal.
 kubectl create secret generic "${CLUSTER_NAME}-credentials" \
   --namespace default \
-  --from-literal=accessKey="$CCE_ACCESS_KEY" \
-  --from-literal=secretKey="$CCE_SECRET_KEY" \
+  --from-file=accessKey=<(printf '%s' "$CCE_ACCESS_KEY") \
+  --from-file=secretKey=<(printf '%s' "$CCE_SECRET_KEY") \
   --dry-run=client -o yaml | kubectl apply -f -
 
 echo "Provider installed. Next: apply your workload cluster manifest"

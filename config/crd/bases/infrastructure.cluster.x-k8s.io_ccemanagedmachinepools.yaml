@@ -62,12 +62,6 @@ spec:
               It maps 1:1 to a CCE node pool (NodePool). Field semantics follow the
               official CreateNodePool API (nodeTemplate / initialNodeCount / autoscaling).
             properties:
-              additionalTags:
-                additionalProperties:
-                  type: string
-                description: AdditionalTags attached to the node pool for ownership
-                  identification.
-                type: object
               autoscaling:
                 description: |-
                   Autoscaling maps to the CCE node pool autoscaling
@@ -90,7 +84,9 @@ spec:
                     type: integer
                 type: object
               availabilityZone:
-                description: AvailabilityZone of the nodes.
+                description: |-
+                  AvailabilityZone of the nodes. Required by the webhook (CCE does not
+                  support random AZ via API).
                 type: string
               billingMode:
                 description: 'BillingMode: 0=on-demand, 1=subscription.'
@@ -134,7 +130,8 @@ spec:
               os:
                 description: |-
                   OS image family of the nodes (nodeTemplate.os), e.g.
-                  "Huawei Cloud EulerOS 2.0".
+                  "Huawei Cloud EulerOS 2.0". Required by the webhook (official
+                  CreateNodePool requires os unless a private image is used).
                 type: string
               replicas:
                 description: |-
@@ -145,7 +142,7 @@ spec:
               rootVolume:
                 description: |-
                   RootVolume of the nodes (nodeTemplate.rootVolume). Pointer so an empty
-                  value is omitted (the NodeVolume schema requires size >= 1).
+                  value is omitted; required by the webhook (size 40-1024 GiB).
                 properties:
                   size:
                     description: Size in GiB.
@@ -245,12 +242,6 @@ spec:
                   - type
                   type: object
                 type: array
-              failureMessage:
-                description: FailureMessage is a human-readable failure description.
-                type: string
-              failureReason:
-                description: FailureReason is a short reason for failure.
-                type: string
               lastAppliedAutoscaling:
                 description: |-
                   LastAppliedAutoscaling records the autoscaling config last synced to the

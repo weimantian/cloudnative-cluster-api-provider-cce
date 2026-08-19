@@ -51,8 +51,30 @@ func (c *CCEManagedControlPlane) ValidateCreate(_ context.Context, obj *CCEManag
 }
 
 // ValidateUpdate implements admission.Validator.
-func (c *CCEManagedControlPlane) ValidateUpdate(_ context.Context, _, newObj *CCEManagedControlPlane) (admission.Warnings, error) {
-	return nil, newObj.validate()
+func (c *CCEManagedControlPlane) ValidateUpdate(_ context.Context, oldObj, newObj *CCEManagedControlPlane) (admission.Warnings, error) {
+	var allErrs field.ErrorList
+	// Immutable fields: the CCE cluster network config cannot change after
+	// creation (official: container network CIDR/mode are immutable). Accepting
+	// a change silently would drift spec from the cloud.
+	if oldObj.Spec.ContainerNetwork.CIDR != newObj.Spec.ContainerNetwork.CIDR {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "containerNetwork", "cidr"),
+			newObj.Spec.ContainerNetwork.CIDR, "field is immutable after creation"))
+	}
+	if oldObj.Spec.ContainerNetwork.Mode != newObj.Spec.ContainerNetwork.Mode {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "containerNetwork", "mode"),
+			newObj.Spec.ContainerNetwork.Mode, "field is immutable after creation"))
+	}
+	if oldObj.Spec.Category != newObj.Spec.Category {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "category"),
+			newObj.Spec.Category, "field is immutable after creation"))
+	}
+	if err := newObj.validate(); err != nil {
+		return nil, err
+	}
+	if len(allErrs) > 0 {
+		return nil, apierrors.NewInvalid(c.GroupVersionKind().GroupKind(), c.Name, allErrs)
+	}
+	return nil, nil
 }
 
 // ValidateDelete implements admission.Validator.

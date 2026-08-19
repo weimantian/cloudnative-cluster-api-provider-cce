@@ -97,10 +97,12 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		// ("容器网络参数设置为eni模式时,默认为Turbo;否则默认为CCE").
 		Category:    clusterCategory(in.Category, in.ContainerNetworkMode),
 		BillingMode: int32Ptr(in.BillingMode),
-		AgencyName:  stringPtr(in.AgencyName),
 		ContainerNetwork: &model.ContainerNetwork{
 			Mode: model.GetContainerNetworkModeEnum().OVERLAY_L2, // replaced below
 		},
+	}
+	if in.AgencyName != "" {
+		spec.AgencyName = stringPtr(in.AgencyName)
 	}
 	// flavor/version: official defaults apply only when UNCONFIGURED — an
 	// explicit empty string would be rejected, so omit the fields when empty.
@@ -366,7 +368,11 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 		template.Login = &model.Login{SshKey: stringPtr(in.SSHKey)}
 	}
 	if len(in.Taints) > 0 {
-		template.Taints = parseTaints(in.Taints)
+		taints, terr := parseTaints(in.Taints)
+		if terr != nil {
+			return "", terr
+		}
+		template.Taints = taints
 	}
 	if len(in.Labels) > 0 {
 		template.K8sTags = in.Labels
@@ -449,7 +455,9 @@ func (s *Client) ScaleNodePool(_ context.Context, clusterID, nodePoolID string, 
 			ApiVersion: "v3",
 			Spec: &model.ScaleNodePoolSpec{
 				DesiredNodeCount: desiredCount,
-				ScaleGroups:      []string{"default"},
+				// "default" is the only scale group CCE supports today (official:
+				// scaleGroups is required, the default group is named "default").
+				ScaleGroups: []string{"default"},
 			},
 		},
 	}); err != nil {
@@ -801,41 +809,48 @@ func clusterCategory(category, networkMode string) *model.ClusterSpecCategory {
 }
 
 // parseTaint splits "key=value:effect" into its parts.
-func parseTaints(in []string) *[]model.Taint {
+func parseTaints(in []string) (*[]model.Taint, error) {
 	out := make([]model.Taint, 0, len(in))
 	for _, t := range in {
 		key, value, effect := parseTaint(t)
 		if key == "" {
-			continue
+			return nil, errors.Errorf("invalid taint %q: key is required", t)
 		}
-		taint := model.Taint{Key: key, Effect: taintEffect(effect)}
+		te, err := taintEffect(effect)
+		if err != nil {
+			return nil, errors.Wrapf(err, "invalid taint %q", t)
+		}
+		taint := model.Taint{Key: key, Effect: te}
 		if value != "" {
 			taint.Value = stringPtr(value)
 		}
 		out = append(out, taint)
 	}
-	return &out
+	return &out, nil
 }
 
-func taintEffect(effect string) model.TaintEffect {
+func taintEffect(effect string) (model.TaintEffect, error) {
 	switch effect {
 	case "PreferNoSchedule":
-		return model.GetTaintEffectEnum().PREFER_NO_SCHEDULE
+		return model.GetTaintEffectEnum().PREFER_NO_SCHEDULE, nil
 	case "NoExecute":
-		return model.GetTaintEffectEnum().NO_EXECUTE
+		return model.GetTaintEffectEnum().NO_EXECUTE, nil
+	case "NoSchedule":
+		return model.GetTaintEffectEnum().NO_SCHEDULE, nil
 	default:
-		return model.GetTaintEffectEnum().NO_SCHEDULE
+		return model.GetTaintEffectEnum().NO_SCHEDULE, errors.Errorf("unsupported taint effect %q (want NoSchedule|PreferNoSchedule|NoExecute)", effect)
 	}
 }
 
 func parseTaint(s string) (key, value, effect string) {
-	// Formats: "key=value:effect" or "key:effect".
+	// Formats: "key=value:effect" or "key:effect". The effect follows the LAST
+	// colon (a colon inside the value must not truncate it).
 	rest := s
-	if i := indexByte(rest, ':'); i >= 0 {
+	if i := lastIndexByte(rest, ':'); i >= 0 {
 		effect = rest[i+1:]
 		rest = rest[:i]
 	}
-	if i := indexByte(rest, '='); i >= 0 {
+	if i := lastIndexByte(rest, '='); i >= 0 {
 		key, value = rest[:i], rest[i+1:]
 	} else {
 		key = rest
@@ -844,6 +859,15 @@ func parseTaint(s string) (key, value, effect string) {
 		effect = "NoSchedule"
 	}
 	return key, value, effect
+}
+
+func lastIndexByte(s string, b byte) int {
+	for i := len(s) - 1; i >= 0; i-- {
+		if s[i] == b {
+			return i
+		}
+	}
+	return -1
 }
 
 func indexByte(s string, b byte) int {
