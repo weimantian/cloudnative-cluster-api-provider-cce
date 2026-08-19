@@ -166,6 +166,16 @@
 | **Q14 限流阈值** | ✅✅ **实测触发**:10 并发 × 100 次 = **1000 次 ShowCluster 调用,速率 ~71 req/s 持续约 14 秒 → 限流 703 次,其他错误 0 次**。真实阈值远低于文档推测的 200 req/s(APIGW 默认值),CCE 管理面实际流控在 ~70 req/s 持续突发时即大量 429——**轮询/重试实现必须以指数退避 + 抖动为默认,不能按 200 req/s 规划** |
 | **Q11 升级路径(定论)** | ✅ 在 v1.34 集群上 `ShowClusterUpgradeInfo` 返回 release=`v1.34.8`、patch=`r2`,**offered 升级目标=空列表 `[]`**——平台 API 层面对该版本**当前不提供任何升级目标**,与之前 CreateUpgradeWorkFlow 的 "only support to current" 完全一致。**Q11 定论:升级编排 API 全可用,但"哪些版本可升、何时开放"由平台策略决定,代码侧必须把"无可用目标"作为正常状态处理(文档化 + 日志提示),耗时量级在无路径时不可实测,需咨询华为云升级策略** |
 
+## 第四轮真实 CCE 冒烟确认记录(TestSmokeAutoscaling / TestSmokeUpgradeWorkflow)
+
+| 项 | 实测结果 |
+|---|---|
+| **B3 autoscaling 云侧接受** | ✅✅ **实测通过**:Standard(vpc-router)集群上 `CreateNodePool(autoscaling={enable=true,min=1,max=4})` 成功;`ListNodePools` 回读 `spec.autoscaling` **enable=true/min=1/max=4 完全一致**——CCE 持久化 autoscaling 配置 |
+| **B3 autoscaling 与手动伸缩并存** | ✅✅ **实测通过**:autoscaling 开启的节点池上 `ScaleNodePool(2)` 成功扩到 2 节点,且回读 autoscaling **仍为 enable=true**(手动 ScaleNodePool 与 autoscaling 不互相覆盖;与 Q3 绝对值语义一致) |
+| **E3 升级工作流(服务层)** | ✅ 实测:v1.34 集群 `GetUpgradeInfo` 返回 current=`v1.34.8`、targets=`[]`(**Q11 复证:平台当前无跨版本目标**);`StartUpgrade` 调用被平台拒绝——controller 因 targets 为空走 `UpgradeNotOffered` 分支(envtest 已覆盖该路径),不会调用 StartUpgrade,因此**端到端升级在平台开放路径前无法实测** |
+
+> 环境同上(VPC `capi-smoke-vpc` + 双子网 + `capi-smoke-key` + c6.large.2 Standard 模式);两个测试集群均已删除并复核无残留。
+
 ## 真实 CCE 冒烟确认记录(2026-08-18,cn-north-4,账号实测)
 
 > 在真实华为云 CCE 账号上完成冒烟(`internal/services/cce/smoke_test.go`,`-tags smoke`),以下项由文档推断升级为**实测确认**:
