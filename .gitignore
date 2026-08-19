@@ -24,3 +24,5 @@ coverage.txt
 # ===== Generated Kubernetes manifests (see Makefile targets) =====
 config/default/generated/
 _artifacts/
+/smoke-setup
+/bin/

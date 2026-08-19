@@ -330,6 +330,12 @@ func (s *Client) GetClusterKubeconfig(_ context.Context, clusterID string, durat
 
 // CreateNodePool implements Service.
 func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (string, error) {
+	if in.Flavor == "" {
+		return "", errors.New("CreateNodePool: flavor is required")
+	}
+	if in.RootVolumeSize <= 0 {
+		return "", errors.New("CreateNodePool: rootVolume size must be >= 40 GiB")
+	}
 	billingMode := model.GetNodeTemplateBillingModeEnum().E_0
 	if in.BillingMode == 1 {
 		billingMode = model.GetNodeTemplateBillingModeEnum().E_1
@@ -674,6 +680,11 @@ func (s *Client) ShowUpgradeTask(_ context.Context, clusterID, taskID string) (s
 		TaskId:    taskID,
 	})
 	if err != nil {
+		if clouderrors.IsNotFound(err) {
+			// Task expired/gone: report a sentinel so the controller clears
+			// the task ID instead of looping forever on a 404.
+			return "", errors.Wrap(err, "upgrade task not found")
+		}
 		return "", errors.Wrap(err, "ShowUpgradeClusterTask failed")
 	}
 	if resp.Status == nil || resp.Status.Phase == nil {
