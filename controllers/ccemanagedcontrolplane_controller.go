@@ -228,6 +228,17 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	}
 	conditions.MarkTrue(cp, conditions.AddonsConfiguredCondition, "AddonsConfigured", "CCE addons reconciled")
 
+	// Pod-identity associations (declarative set, mirrors EKS Pod Identity).
+	if err := r.reconcilePodIdentityAssociations(ctx, svc, clusterID, cp); err != nil {
+		conditions.MarkFalse(cp, conditions.PodIdentityAssociationsConfiguredCondition,
+			conditions.ReconciliationFailedReason, err.Error())
+		if uerr := r.Status().Update(ctx, cp); uerr != nil {
+			return ctrl.Result{}, uerr
+		}
+		return ctrl.Result{}, err
+	}
+	conditions.MarkTrue(cp, conditions.PodIdentityAssociationsConfiguredCondition, "PodIdentityAssociationsConfigured", "CCE pod-identity associations reconciled")
+
 	// Upgrade orchestration (FR-1.7, questionnaire Q11): first poll any
 	// in-flight upgrade task; then, when spec.version differs from the running
 	// version, drive the CCE upgrade workflow. A missing upgrade path is a
@@ -619,6 +630,51 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, 
 	for _, got := range current {
 		if _, keep := specByName[got.Name]; !keep {
 			if err := svc.DeleteAddonInstance(ctx, clusterID, got.ID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// reconcilePodIdentityAssociations reconciles the declared pod-identity
+// associations against the cloud: create missing, delete removed.
+func (r *CCEManagedControlPlaneReconciler) reconcilePodIdentityAssociations(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) error {
+	if len(cp.Spec.PodIdentityAssociations) == 0 {
+		return nil
+	}
+	current, err := svc.ListPodIdentityAssociations(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	key := func(ns, sa string) string { return ns + "/" + sa }
+	cloudByKey := map[string]cceService.PodIdentityAssociationInfo{}
+	for _, a := range current {
+		cloudByKey[key(a.Namespace, a.ServiceAccount)] = a
+	}
+	specByKey := map[string]controlplanev1beta1.PodIdentityAssociationSpec{}
+	for _, a := range cp.Spec.PodIdentityAssociations {
+		specByKey[key(a.Namespace, a.ServiceAccount)] = a
+	}
+
+	// Create missing.
+	for _, want := range cp.Spec.PodIdentityAssociations {
+		k := key(want.Namespace, want.ServiceAccount)
+		if _, exists := cloudByKey[k]; !exists {
+			if _, err := svc.CreatePodIdentityAssociation(ctx, cceService.PodIdentityAssociationInput{
+				ClusterID:      clusterID,
+				Namespace:      want.Namespace,
+				ServiceAccount: want.ServiceAccount,
+				AgencyName:     want.AgencyName,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	// Delete removed.
+	for _, got := range current {
+		if _, keep := specByKey[key(got.Namespace, got.ServiceAccount)]; !keep {
+			if err := svc.DeletePodIdentityAssociation(ctx, clusterID, got.ID); err != nil {
 				return err
 			}
 		}

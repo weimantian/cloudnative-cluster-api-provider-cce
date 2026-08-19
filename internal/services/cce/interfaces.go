@@ -213,6 +213,27 @@ type AddonInput struct {
 	Values map[string]interface{}
 }
 
+// PodIdentityAssociationInput declares a CCE pod-identity association
+// (binds a K8s ServiceAccount to a Huawei Cloud agency — the CCE equivalent
+// of EKS Pod Identity).
+type PodIdentityAssociationInput struct {
+	ClusterID      string
+	Namespace      string
+	ServiceAccount string
+	AgencyName     string
+	// AssociationID is the pod-identity association ID (for Delete).
+	AssociationID string
+}
+
+// PodIdentityAssociationInfo is a pod-identity association as reported by
+// ListPodIdentityAssociations.
+type PodIdentityAssociationInfo struct {
+	ID             string
+	Namespace      string
+	ServiceAccount string
+	AgencyName     string
+}
+
 // AddonInfo is a CCE addon instance as reported by ListAddonInstances.
 type AddonInfo struct {
 	// ID is the addon instance ID.
@@ -267,4 +288,11 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	ListAddonInstances(ctx context.Context, clusterID string) ([]AddonInfo, error)
 	// DeleteAddonInstance removes an addon instance.
 	DeleteAddonInstance(ctx context.Context, clusterID, addonID string) error
+	// CreatePodIdentityAssociation binds a ServiceAccount to an agency and
+	// returns the association ID.
+	CreatePodIdentityAssociation(ctx context.Context, in PodIdentityAssociationInput) (string, error)
+	// ListPodIdentityAssociations lists the pod-identity associations.
+	ListPodIdentityAssociations(ctx context.Context, clusterID string) ([]PodIdentityAssociationInfo, error)
+	// DeletePodIdentityAssociation removes an association by ID.
+	DeletePodIdentityAssociation(ctx context.Context, clusterID, associationID string) error
 }

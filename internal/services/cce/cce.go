@@ -970,3 +970,64 @@ func indexByte(s string, b byte) int {
 	}
 	return -1
 }
+
+// CreatePodIdentityAssociation implements Service.
+func (s *Client) CreatePodIdentityAssociation(_ context.Context, in PodIdentityAssociationInput) (string, error) {
+	resp, err := s.cce.CreatePodIdentityAssociation(&model.CreatePodIdentityAssociationRequest{
+		ClusterId: in.ClusterID,
+		Body: &model.PodIdentityAssociation{
+			Namespace:      in.Namespace,
+			ServiceAccount: in.ServiceAccount,
+			AgencyName:     in.AgencyName,
+		},
+	})
+	if err != nil {
+		return "", errors.Wrapf(err, "CreatePodIdentityAssociation %s/%s failed", in.Namespace, in.ServiceAccount)
+	}
+	if resp.Uid == nil {
+		return "", errors.New("CreatePodIdentityAssociation returned no association ID")
+	}
+	return *resp.Uid, nil
+}
+
+// ListPodIdentityAssociations implements Service.
+func (s *Client) ListPodIdentityAssociations(_ context.Context, clusterID string) ([]PodIdentityAssociationInfo, error) {
+	resp, err := s.cce.ListPodIdentityAssociations(&model.ListPodIdentityAssociationsRequest{ClusterId: clusterID})
+	if err != nil {
+		return nil, errors.Wrap(err, "ListPodIdentityAssociations failed")
+	}
+	var out []PodIdentityAssociationInfo
+	if resp.Body != nil {
+		for _, a := range *resp.Body {
+			info := PodIdentityAssociationInfo{}
+			if a.Uid != nil {
+				info.ID = *a.Uid
+			}
+			if a.Namespace != nil {
+				info.Namespace = *a.Namespace
+			}
+			if a.ServiceAccount != nil {
+				info.ServiceAccount = *a.ServiceAccount
+			}
+			if a.AgencyName != nil {
+				info.AgencyName = *a.AgencyName
+			}
+			out = append(out, info)
+		}
+	}
+	return out, nil
+}
+
+// DeletePodIdentityAssociation implements Service.
+func (s *Client) DeletePodIdentityAssociation(_ context.Context, clusterID, associationID string) error {
+	if _, err := s.cce.DeletePodIdentityAssociation(&model.DeletePodIdentityAssociationRequest{
+		ClusterId:     clusterID,
+		AssociationId: associationID,
+	}); err != nil {
+		if clouderrors.IsNotFound(err) {
+			return nil
+		}
+		return errors.Wrapf(err, "DeletePodIdentityAssociation %s failed", associationID)
+	}
+	return nil
+}

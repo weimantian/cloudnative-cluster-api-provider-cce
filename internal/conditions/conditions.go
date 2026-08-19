@@ -35,6 +35,9 @@ const (
 	// AddonsConfiguredCondition reports whether the declared CCE addons are
 	// installed/upgraded/removed as specified.
 	AddonsConfiguredCondition = "AddonsConfigured"
+	// PodIdentityAssociationsConfiguredCondition reports whether the declared
+	// pod-identity associations are created/removed as specified.
+	PodIdentityAssociationsConfiguredCondition = "PodIdentityAssociationsConfigured"
 	// UpgradeReadyCondition reports the cluster upgrade state (FR-1.7,
 	// questionnaire Q11). True when spec.version matches the running version.
 	UpgradeReadyCondition = "UpgradeReady"

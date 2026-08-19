@@ -31,7 +31,7 @@
 | IAM 认证模式 | AccessConfig(API/ConfigMap/API_AND_CONFIG_MAP) | ❌ | CCE 认证模式(authenticatingProxy/认证代理) | 🟡 待调研 |
 | OIDC provider | OIDCProviderStatus | ❌ | CCE 无 EKS 式 OIDC(有 pod-identity 替代) | 🟡 用 pod-identity 替代 |
 | 身份提供者 | IdentityProviderStatus | ❌ | CCE 认证代理/OIDC 需调研 | 🟡 |
-| pod identity | EKSPodIdentityAssociationConfigured | ❌ | CCE pod-identity(4.11.6 CreatePodIdentityAssociation) | 🔴 待实现 |
+| pod identity | EKSPodIdentityAssociationConfigured | ✅ 已实现(spec.podIdentityAssociations[] 声明式差量 + `PodIdentityAssociationsConfigured` condition) | CCE pod-identity(4.11.6 CreatePodIdentityAssociation/4.11.7 List/4.11.10 Delete) | ✅ 已实现 |
 | access entry | AccessEntry | ❌ | CCE 访问策略(4.11.1 CreateAccessPolicy) | 🔴 待实现 |
 | addons | EKSAddonsConfigured + Addon CRD | ✅ 已实现(spec.addons[] 声明式差量:create/upgrade/delete + `AddonsConfigured` condition) | CCE 插件(4.4 CreateAddonInstance/UpdateAddonInstance/ListAddonInstances/DeleteAddonInstance) | ✅ 已实现 |
 | Fargate | FargateProfile CRD | ❌ | CCE Autopilot/超节点(ListHyperNodes 4.2.18) | 🔴 远期 |

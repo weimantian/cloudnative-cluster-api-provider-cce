@@ -63,6 +63,27 @@ type CCEManagedControlPlaneSpec struct {
 	// those no longer listed — mirrors CAPA EKS addons).
 	// +optional
 	Addons []AddonSpec `json:"addons,omitempty"`
+
+	// PodIdentityAssociations bind Kubernetes ServiceAccounts to Huawei Cloud
+	// agencies (the CCE equivalent of EKS Pod Identity). Declarative set:
+	// create missing, delete removed.
+	// +optional
+	PodIdentityAssociations []PodIdentityAssociationSpec `json:"podIdentityAssociations,omitempty"`
+}
+
+// PodIdentityAssociationSpec declares a ServiceAccount -> agency binding.
+type PodIdentityAssociationSpec struct {
+	// Namespace of the ServiceAccount (immutable per association).
+	// +kubebuilder:validation:Required
+	Namespace string `json:"namespace"`
+
+	// ServiceAccount name (one association per ServiceAccount).
+	// +kubebuilder:validation:Required
+	ServiceAccount string `json:"serviceAccount"`
+
+	// AgencyName is the Huawei Cloud agency (委托) to bind.
+	// +kubebuilder:validation:Required
+	AgencyName string `json:"agencyName"`
 }
 
 // AddonSpec declares a CCE addon to install.

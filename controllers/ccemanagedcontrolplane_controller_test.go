@@ -359,3 +359,57 @@ func TestControlPlaneReconcileAddons(t *testing.T) {
 		t.Errorf("expected AddonsConfigured=True, got %v", c)
 	}
 }
+
+// TestControlPlaneReconcilePodIdentity verifies declarative pod-identity
+// association management: create missing, delete removed.
+func TestControlPlaneReconcilePodIdentity(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-podid"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	cp.Spec.PodIdentityAssociations = []controlplanev1beta1.PodIdentityAssociationSpec{
+		{Namespace: "default", ServiceAccount: "app-sa", AgencyName: "app-agency"},
+	}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to update control plane spec: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	// Cloud already has one association that is no longer in spec -> delete.
+	fakeSvc.PodIdentities = []cceService.PodIdentityAssociationInfo{
+		{ID: "podid-old", Namespace: "kube-system", ServiceAccount: "old-sa", AgencyName: "old-agency"},
+	}
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+
+	if len(fakeSvc.PodIdentityCreate) != 1 {
+		t.Fatalf("expected 1 create, got %d", len(fakeSvc.PodIdentityCreate))
+	}
+	created := fakeSvc.PodIdentityCreate[0]
+	if created.Namespace != "default" || created.ServiceAccount != "app-sa" || created.AgencyName != "app-agency" {
+		t.Errorf("unexpected create input: %+v", created)
+	}
+	if len(fakeSvc.PodIdentityDelete) != 1 || fakeSvc.PodIdentityDelete[0] != "podid-old" {
+		t.Errorf("expected delete podid-old, got %v", fakeSvc.PodIdentityDelete)
+	}
+
+	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	if c := capiconditions.Get(got, conditions.PodIdentityAssociationsConfiguredCondition); c == nil || c.Status != metav1.ConditionTrue {
+		t.Errorf("expected PodIdentityAssociationsConfigured=True, got %v", c)
+	}
+}

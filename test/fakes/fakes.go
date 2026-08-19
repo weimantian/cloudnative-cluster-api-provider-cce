@@ -38,6 +38,9 @@ type FakeCCEService struct {
 	UpdateAddonInstanceFn  func(ctx context.Context, in cceService.AddonInput) error
 	ListAddonInstancesFn   func(ctx context.Context, clusterID string) ([]cceService.AddonInfo, error)
 	DeleteAddonInstanceFn  func(ctx context.Context, clusterID, addonID string) error
+	CreatePodIdentityFn    func(ctx context.Context, in cceService.PodIdentityAssociationInput) (string, error)
+	ListPodIdentityFn      func(ctx context.Context, clusterID string) ([]cceService.PodIdentityAssociationInfo, error)
+	DeletePodIdentityFn    func(ctx context.Context, clusterID, associationID string) error
 
 	// Records for assertions.
 	CreatedClusters     []cceService.CreateClusterInput
@@ -51,6 +54,9 @@ type FakeCCEService struct {
 	AddonUpdateCalls    []cceService.AddonInput
 	AddonDeleteCalls    []string               // addon IDs
 	Addons              []cceService.AddonInfo // returned by ListAddonInstances
+	PodIdentityCreate   []cceService.PodIdentityAssociationInput
+	PodIdentityDelete   []string // association IDs
+	PodIdentities       []cceService.PodIdentityAssociationInfo
 }
 
 // NewFakeCCEService returns a fake with healthy defaults.
@@ -118,6 +124,17 @@ func NewFakeCCEService() *FakeCCEService {
 	}
 	f.DeleteAddonInstanceFn = func(_ context.Context, _, addonID string) error {
 		f.AddonDeleteCalls = append(f.AddonDeleteCalls, addonID)
+		return nil
+	}
+	f.CreatePodIdentityFn = func(_ context.Context, in cceService.PodIdentityAssociationInput) (string, error) {
+		f.PodIdentityCreate = append(f.PodIdentityCreate, in)
+		return "podid-" + in.Namespace + "-" + in.ServiceAccount, nil
+	}
+	f.ListPodIdentityFn = func(_ context.Context, _ string) ([]cceService.PodIdentityAssociationInfo, error) {
+		return f.PodIdentities, nil
+	}
+	f.DeletePodIdentityFn = func(_ context.Context, _, associationID string) error {
+		f.PodIdentityDelete = append(f.PodIdentityDelete, associationID)
 		return nil
 	}
 	return f
@@ -241,4 +258,19 @@ func (f *FakeCCEService) ListAddonInstances(ctx context.Context, clusterID strin
 // DeleteAddonInstance implements cceService.Service.
 func (f *FakeCCEService) DeleteAddonInstance(ctx context.Context, clusterID, addonID string) error {
 	return f.DeleteAddonInstanceFn(ctx, clusterID, addonID)
+}
+
+// CreatePodIdentityAssociation implements cceService.Service.
+func (f *FakeCCEService) CreatePodIdentityAssociation(ctx context.Context, in cceService.PodIdentityAssociationInput) (string, error) {
+	return f.CreatePodIdentityFn(ctx, in)
+}
+
+// ListPodIdentityAssociations implements cceService.Service.
+func (f *FakeCCEService) ListPodIdentityAssociations(ctx context.Context, clusterID string) ([]cceService.PodIdentityAssociationInfo, error) {
+	return f.ListPodIdentityFn(ctx, clusterID)
+}
+
+// DeletePodIdentityAssociation implements cceService.Service.
+func (f *FakeCCEService) DeletePodIdentityAssociation(ctx context.Context, clusterID, associationID string) error {
+	return f.DeletePodIdentityFn(ctx, clusterID, associationID)
 }
