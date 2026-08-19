@@ -90,6 +90,25 @@ func (m *CCEManagedMachinePool) validate() error {
 	if len(m.Spec.SecurityGroups) > 5 {
 		allErrs = append(allErrs, field.TooMany(field.NewPath("spec", "securityGroups"), len(m.Spec.SecurityGroups), 5))
 	}
+	// Required nodeTemplate fields per the official CreateNodePool API:
+	// az ("通过api创建节点不支持随机可用区"), os (required unless a private
+	// image is used), rootVolume (size 40-1024 GiB). Fail fast at the API
+	// boundary instead of letting the platform reject the request.
+	if m.Spec.AvailabilityZone == "" {
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "availabilityZone"),
+			"availabilityZone is required (CCE does not support random AZ via API)"))
+	}
+	if m.Spec.OS == "" {
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "os"),
+			"os is required unless a private image is used, e.g. \"Huawei Cloud EulerOS 2.0\""))
+	}
+	if m.Spec.RootVolume == nil {
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "rootVolume"),
+			"rootVolume is required (official size range 40-1024 GiB)"))
+	} else if m.Spec.RootVolume.Size < 40 || m.Spec.RootVolume.Size > 1024 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "rootVolume", "size"),
+			m.Spec.RootVolume.Size, "root volume size must be within [40, 1024] GiB"))
+	}
 	if len(allErrs) == 0 {
 		return nil
 	}

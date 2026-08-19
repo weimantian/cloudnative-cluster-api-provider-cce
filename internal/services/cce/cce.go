@@ -425,11 +425,19 @@ func (s *Client) UpdateNodePool(_ context.Context, in UpdateNodePoolInput) error
 	if in.IgnoreInitialNodeCount {
 		spec.IgnoreInitialNodeCount = boolPtr(true)
 	}
-	if len(in.CustomSecurityGroups) > 0 {
-		spec.CustomSecurityGroups = &in.CustomSecurityGroups
-	}
+	// Always send customSecurityGroups (empty slice = reset to default SG).
+	spec.CustomSecurityGroups = &in.CustomSecurityGroups
 	if in.Autoscaling != nil {
 		spec.Autoscaling = toNodePoolAutoscaling(in.Autoscaling)
+	}
+	if in.TaintPolicyOnExistingNodes != "" {
+		spec.TaintPolicyOnExistingNodes = stringPtr(in.TaintPolicyOnExistingNodes)
+	}
+	if in.LabelPolicyOnExistingNodes != "" {
+		spec.LabelPolicyOnExistingNodes = stringPtr(in.LabelPolicyOnExistingNodes)
+	}
+	if in.UserTagsPolicyOnExistingNodes != "" {
+		spec.UserTagsPolicyOnExistingNodes = stringPtr(in.UserTagsPolicyOnExistingNodes)
 	}
 	if _, err := s.cce.UpdateNodePool(&model.UpdateNodePoolRequest{
 		ClusterId:  in.ClusterID,
@@ -444,7 +452,14 @@ func (s *Client) UpdateNodePool(_ context.Context, in UpdateNodePoolInput) error
 // toNodePoolAutoscaling maps the provider-side autoscaling spec to the SDK
 // model. A nil input is mapped to disabled (enable=false) so an explicit
 // "disable autoscaling" update works.
+// toNodePoolAutoscaling maps the provider-side autoscaling spec to the SDK
+// model. Called only when the caller explicitly wants to set/change
+// autoscaling; a nil input means "do not touch autoscaling" and is guarded
+// here (callers also guard with `if in.Autoscaling != nil`).
 func toNodePoolAutoscaling(in *NodePoolAutoscaling) *model.NodePoolNodeAutoscaling {
+	if in == nil {
+		return nil
+	}
 	return &model.NodePoolNodeAutoscaling{
 		Enable:       boolPtr(in.Enable),
 		MinNodeCount: int32Ptr(in.MinNodeCount),

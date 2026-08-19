@@ -186,6 +186,16 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		if features.Enabled(features.NodePoolAutoscaling) {
 			update.Autoscaling = toProviderAutoscaling(pool.Spec.Autoscaling)
 		}
+		// When the spec declares taints/labels, sync them onto existing nodes
+		// too (official taint/labelPolicyOnExistingNodes=refresh) — guards
+		// against drift such as a node reset that cleared user taints/labels
+		// (questionnaire Q11b, cce_10_0198).
+		if len(pool.Spec.Taints) > 0 {
+			update.TaintPolicyOnExistingNodes = "refresh"
+		}
+		if len(pool.Spec.Labels) > 0 {
+			update.LabelPolicyOnExistingNodes = "refresh"
+		}
 		if err := svc.UpdateNodePool(ctx, update); err != nil {
 			conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
@@ -193,7 +203,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		}
 		pool.Status.LastAppliedSecurityGroups = append([]string(nil), pool.Spec.SecurityGroups...)
 		pool.Status.LastAppliedAutoscaling = pool.Spec.Autoscaling
-		log.Info("Node pool attributes updated (security groups / autoscaling)", "nodePoolID", pool.Status.NodePoolID)
+		log.Info("Node pool attributes updated (security groups / autoscaling / taints / labels)", "nodePoolID", pool.Status.NodePoolID)
 	}
 
 	// Refresh observed state from the cloud (Active node count is a

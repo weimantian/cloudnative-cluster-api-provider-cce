@@ -6,7 +6,23 @@ Licensed under the MIT No Attribution (MIT-0) License.
 
 package v1beta1
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
+)
+
+// validPool returns a pool that passes the required-field validation so tests
+// can focus on the field under test.
+func validPool() *CCEManagedMachinePool {
+	return &CCEManagedMachinePool{Spec: CCEManagedMachinePoolSpec{
+		ClusterName:      "test-cluster",
+		Flavor:           "c6.large.2",
+		AvailabilityZone: "cn-north-4a",
+		OS:               "Huawei Cloud EulerOS 2.0",
+		RootVolume:       &common.NodeVolume{Size: 40, Type: "SSD"},
+	}}
+}
 
 func TestMachinePoolFlavorValidation(t *testing.T) {
 	cases := []struct {
@@ -26,9 +42,8 @@ func TestMachinePoolFlavorValidation(t *testing.T) {
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {
-			m := &CCEManagedMachinePool{}
+			m := validPool()
 			m.Spec.Flavor = tc.flavor
-			m.Spec.ClusterName = "test-cluster"
 			err := m.validate()
 			if (err == nil) != tc.wantOK {
 				t.Errorf("validate() with flavor %q: got err=%v, wantOK=%v", tc.flavor, err, tc.wantOK)
@@ -42,12 +57,14 @@ func TestMachinePoolFlavorAllowlist(t *testing.T) {
 	ValidFlavors = []string{"c6.large.2", "c7.large.2"}
 	defer func() { ValidFlavors = old }()
 
-	ok := &CCEManagedMachinePool{Spec: CCEManagedMachinePoolSpec{ClusterName: "c", Flavor: "c6.large.2"}}
+	ok := validPool()
+	ok.Spec.Flavor = "c6.large.2"
 	if err := ok.validate(); err != nil {
 		t.Errorf("expected allowlisted flavor to pass, got %v", err)
 	}
 
-	rejected := &CCEManagedMachinePool{Spec: CCEManagedMachinePoolSpec{ClusterName: "c", Flavor: "c6.xlarge.4"}}
+	rejected := validPool()
+	rejected.Spec.Flavor = "c6.xlarge.4"
 	if err := rejected.validate(); err == nil {
 		t.Error("expected flavor outside allowlist to be rejected")
 	}

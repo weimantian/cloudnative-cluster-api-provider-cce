@@ -150,11 +150,21 @@ type UpdateNodePoolInput struct {
 	InitialNodeCount int32
 	// IgnoreInitialNodeCount leaves the expected count untouched.
 	IgnoreInitialNodeCount bool
-	// CustomSecurityGroups to apply to newly scaled nodes (Q5).
+	// CustomSecurityGroups to apply to newly scaled nodes (Q5). An empty slice
+	// resets to the node default security group (official: "未指定安全组ID,
+	// 新建节点将添加Node节点默认安全组").
 	CustomSecurityGroups []string
 	// Autoscaling maps to NodePoolNodeAutoscaling (feature gate
 	// NodePoolAutoscaling; nil = leave autoscaling untouched).
 	Autoscaling *NodePoolAutoscaling
+	// TaintPolicyOnExistingNodes: "refresh" syncs spec taints to existing
+	// nodes, "ignore" leaves them (official NodePoolSpecUpdate).
+	TaintPolicyOnExistingNodes string
+	// LabelPolicyOnExistingNodes: "refresh" syncs spec labels to existing
+	// nodes, "ignore" leaves them.
+	LabelPolicyOnExistingNodes string
+	// UserTagsPolicyOnExistingNodes: "refresh" | "ignore" for user tags.
+	UserTagsPolicyOnExistingNodes string
 }
 
 // QuotaInfo is the cluster quota for the project.
