@@ -125,8 +125,9 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		// Empty whitelist defaults to 0.0.0.0/0 (official PublicAccess model).
 		spec.PublicAccess = &model.PublicAccess{}
 	}
-	// TODO(P0): hostNetwork/authentication mapping and verification items —
-	// see docs/research-sources.md questionnaire Q4/Q5.
+	if in.HostNetworkVpcID != "" && in.HostNetworkSubnetID != "" {
+		spec.HostNetwork = &model.HostNetwork{Vpc: in.HostNetworkVpcID, Subnet: in.HostNetworkSubnetID}
+	}
 
 	cluster := &model.Cluster{
 		Kind:       "Cluster",

@@ -115,7 +115,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		}
 	}
 
-	region, err := r.clusterRegion(ctx, cluster, cp)
+	region, vpcID, nodeSubnetID, err := r.clusterNetwork(ctx, cluster, cp)
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.CredentialsReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
@@ -141,7 +141,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	// Ensure the CCE cluster exists (idempotent create).
 	clusterID := cp.Status.ClusterID
 	if clusterID == "" {
-		id, err := svc.CreateCluster(ctx, toCreateClusterInput(cp))
+		id, err := svc.CreateCluster(ctx, toCreateClusterInput(cp, vpcID, nodeSubnetID))
 		if err != nil {
 			conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
@@ -237,7 +237,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta1.CCEManagedControlPlane) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	region, err := r.clusterRegion(ctx, cluster, cp)
+	region, _, _, err := r.clusterNetwork(ctx, cluster, cp)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -297,23 +297,29 @@ func (r *CCEManagedControlPlaneReconciler) SetupWithManager(ctx context.Context,
 
 // ---- helpers ----
 
-// clusterRegion reads the region from the CCECluster shell (infrastructureRef).
-func (r *CCEManagedControlPlaneReconciler) clusterRegion(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta1.CCEManagedControlPlane) (string, error) {
+// clusterNetwork reads the region and host network (VPC + node subnet) from
+// the CCECluster shell (infrastructureRef) — official hostNetwork is required
+// at cluster creation (A2, verified by the real CCE smoke test).
+func (r *CCEManagedControlPlaneReconciler) clusterNetwork(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta1.CCEManagedControlPlane) (region, vpcID, subnetID string, err error) {
 	if cluster.Spec.InfrastructureRef.Name == "" {
-		return "", errors.New("cluster has no infrastructureRef")
+		return "", "", "", errors.New("cluster has no infrastructureRef")
 	}
 	cceCluster := &infrav1beta1.CCECluster{}
 	key := types.NamespacedName{Namespace: cp.Namespace, Name: cluster.Spec.InfrastructureRef.Name}
 	if err := r.Get(ctx, key, cceCluster); err != nil {
-		return "", errors.Wrapf(err, "failed to get CCECluster %s", key)
+		return "", "", "", errors.Wrapf(err, "failed to get CCECluster %s", key)
 	}
 	if cceCluster.Spec.Region == "" {
-		return "", errors.New("CCECluster spec.region is empty")
+		return "", "", "", errors.New("CCECluster spec.region is empty")
 	}
-	return cceCluster.Spec.Region, nil
+	vpcID = cceCluster.Spec.Network.VPC.ID
+	if len(cceCluster.Spec.Network.Subnets) > 0 {
+		subnetID = cceCluster.Spec.Network.Subnets[0].ID
+	}
+	return cceCluster.Spec.Region, vpcID, subnetID, nil
 }
 
-func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane) cceService.CreateClusterInput {
+func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane, vpcID, nodeSubnetID string) cceService.CreateClusterInput {
 	return cceService.CreateClusterInput{
 		Name:                 cp.Spec.ClusterName,
 		Category:             cp.Spec.Category,
@@ -322,6 +328,8 @@ func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane) cceSer
 		ContainerNetworkMode: cp.Spec.ContainerNetwork.Mode,
 		ContainerNetworkCIDR: cp.Spec.ContainerNetwork.CIDR,
 		ENISubnets:           cp.Spec.ContainerNetwork.ENISubnets,
+		HostNetworkVpcID:     vpcID,
+		HostNetworkSubnetID:  nodeSubnetID,
 		ServiceCIDR:          cp.Spec.ServiceNetwork.CIDR,
 		CustomSAN:            cp.Spec.CustomSan,
 		PublicAccess:         cp.Spec.EndpointAccess.Public,

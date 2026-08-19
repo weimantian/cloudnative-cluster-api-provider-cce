@@ -43,12 +43,17 @@ type CreateClusterInput struct {
 	ContainerNetworkMode string // overlay_l2 | vpc-router | eni
 	ContainerNetworkCIDR string
 	ENISubnets           []string
-	ServiceCIDR          string
-	CustomSAN            []string
-	PublicAccess         bool
-	AgencyName           string
-	BillingMode          int32
-	Tags                 map[string]string
+	// HostNetworkVpcID is the VPC the cluster nodes live in (official
+	// hostNetwork.vpc is required — A2).
+	HostNetworkVpcID string
+	// HostNetworkSubnetID is the node subnet (official hostNetwork.subnet).
+	HostNetworkSubnetID string
+	ServiceCIDR         string
+	CustomSAN           []string
+	PublicAccess        bool
+	AgencyName          string
+	BillingMode         int32
+	Tags                map[string]string
 }
 
 // CreateNodePoolInput maps the CCEManagedMachinePool spec to the CCE

@@ -131,6 +131,8 @@ func TestSmoke(t *testing.T) {
 			Version:              version,
 			ContainerNetworkMode: "eni",
 			ENISubnets:           []string{eniSubnetID},
+			HostNetworkVpcID:     vpcID,
+			HostNetworkSubnetID:  subnetID,
 			ServiceCIDR:          "10.247.0.0/16",
 			PublicAccess:         false,
 			BillingMode:          0,

@@ -1,0 +1,275 @@
+/*
+Copyright 2025 Huawei Cloud.
+
+Licensed under the MIT No Attribution (MIT-0) License.
+*/
+
+// Command smoke-setup bootstraps the Huawei Cloud resources needed by the CCE
+// smoke test in a fresh project:
+//
+//   - one VPC (10.0.0.0/16)
+//   - two subnets: node subnet (10.0.1.0/24) and eni/container subnet
+//     (10.0.2.0/24)
+//   - one SSH keypair (capi-smoke-key)
+//   - cheapest 2vCPU/4GiB ECS flavor in the region (CCE node minimum)
+//
+// It prints an env snippet for scripts/smoke-cce.sh. Credentials are read
+// from CLOUD_SDK_AK / CLOUD_SDK_SK / CCE_SMOKE_REGION (never hardcoded).
+package main
+
+import (
+	"context"
+	"fmt"
+	"os"
+	"sort"
+	"strconv"
+	"strings"
+
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
+	ecsv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
+	ecsRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/region"
+	vpcv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2"
+	vpcmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
+	vpcRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/region"
+)
+
+const (
+	vpcName     = "capi-smoke-vpc"
+	subnetNode  = "capi-smoke-subnet-node"
+	subnetENI   = "capi-smoke-subnet-eni"
+	keypairName = "capi-smoke-key"
+	vpcCIDR     = "10.0.0.0/16"
+)
+
+func main() {
+	ctx := context.Background()
+	ak := os.Getenv("CLOUD_SDK_AK")
+	sk := os.Getenv("CLOUD_SDK_SK")
+	regionID := os.Getenv("CCE_SMOKE_REGION")
+	if ak == "" || sk == "" {
+		fatal("CLOUD_SDK_AK and CLOUD_SDK_SK must be set")
+	}
+	if regionID == "" {
+		regionID = "cn-north-4"
+	}
+
+	cred, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).SafeBuild()
+	must(err, "build credentials")
+
+	vpcRegionObj, err := vpcRegion.SafeValueOf(regionID)
+	must(err, "resolve vpc region")
+	vpcHC, err := vpcv2.VpcClientBuilder().WithRegion(vpcRegionObj).WithCredential(cred).
+		WithHttpConfig(config.DefaultHttpConfig()).SafeBuild()
+	must(err, "build vpc client")
+	vpcClient := vpcv2.NewVpcClient(vpcHC)
+
+	ecsRegionObj, err := ecsRegion.SafeValueOf(regionID)
+	must(err, "resolve ecs region")
+	ecsHC, err := ecsv2.EcsClientBuilder().WithRegion(ecsRegionObj).WithCredential(cred).
+		WithHttpConfig(config.DefaultHttpConfig()).SafeBuild()
+	must(err, "build ecs client")
+	ecsClient := ecsv2.NewEcsClient(ecsHC)
+
+	// 1. VPC (reuse if present).
+	vpcID := findVPCByName(ctx, vpcClient, vpcName)
+	if vpcID == "" {
+		resp, err := vpcClient.CreateVpc(&vpcmodel.CreateVpcRequest{Body: &vpcmodel.CreateVpcRequestBody{
+			Vpc: &vpcmodel.CreateVpcOption{Name: stringPtr(vpcName), Cidr: stringPtr(vpcCIDR)},
+		}})
+		must(err, "CreateVpc")
+		vpcID = mustID(resp.Vpc.Id, "vpc")
+	}
+	fmt.Printf("VPC: %s (%s)\n", vpcName, vpcID)
+
+	// 2. Subnets (reuse by name).
+	nodeSubnetID := findSubnetByName(ctx, vpcClient, vpcID, subnetNode)
+	if nodeSubnetID == "" {
+		nodeSubnetID = createSubnet(ctx, vpcClient, vpcID, subnetNode, "10.0.1.0/24")
+	}
+	eniSubnetID := findSubnetByName(ctx, vpcClient, vpcID, subnetENI)
+	if eniSubnetID == "" {
+		eniSubnetID = createSubnet(ctx, vpcClient, vpcID, subnetENI, "10.0.2.0/24")
+	}
+	nodeSubnetNeutron, eniSubnetNeutron := neutronSubnetIDs(ctx, vpcClient, vpcID)
+	fmt.Printf("Node subnet: %s (id=%s neutron=%s)\n", subnetNode, nodeSubnetID, nodeSubnetNeutron)
+	fmt.Printf("ENI  subnet: %s (id=%s neutron=%s)\n", subnetENI, eniSubnetID, eniSubnetNeutron)
+
+	// 3. Keypair (nova API; reuse if present).
+	keypairs, err := ecsClient.NovaListKeypairs(&model.NovaListKeypairsRequest{})
+	if err == nil {
+		for _, kp := range derefKeypairs(keypairs) {
+			if kp.Keypair != nil && kp.Keypair.Name == keypairName {
+				fmt.Printf("Keypair: %s (exists)\n", keypairName)
+				goto keypairDone
+			}
+		}
+	}
+	{
+		_, err := ecsClient.NovaCreateKeypair(&model.NovaCreateKeypairRequest{Body: &model.NovaCreateKeypairRequestBody{
+			Keypair: &model.NovaCreateKeypairOption{Name: keypairName},
+		}})
+		must(err, "CreateKeypair")
+		fmt.Printf("Keypair: %s (created)\n", keypairName)
+	}
+keypairDone:
+
+	// 4. Cheapest 2vCPU/4GiB flavor.
+	flavor, err := cheapestFlavor(ctx, ecsClient)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "note: flavor lookup failed: %v\n", err)
+	} else {
+		fmt.Printf("Cheapest 2C4G flavor: %s (%s)\n", flavor.Name, flavor.Id)
+	}
+
+	fmt.Println("\n--- export for scripts/smoke-cce.sh ---")
+	fmt.Printf("export CCE_SMOKE_REGION=%q\n", regionID)
+	fmt.Printf("export CCE_SMOKE_VPC=%q\n", vpcID)
+	fmt.Printf("export CCE_SMOKE_SUBNET=%q\n", nodeSubnetID)
+	// eniNetwork.subnets[].subnetID requires the NEUTRON subnet id (official
+	// CreateCluster doc; verified by the real CCE smoke test).
+	if eniSubnetNeutron != "" {
+		eniSubnetID = eniSubnetNeutron
+	}
+	fmt.Printf("export CCE_SMOKE_ENI_SUBNET=%q  # neutron_subnet_id\n", eniSubnetID)
+	fmt.Printf("export CCE_SMOKE_KEYPAIR=%q\n", keypairName)
+	if flavor != nil {
+		fmt.Printf("export CCE_SMOKE_FLAVOR=%q\n", flavor.Id)
+	}
+	fmt.Println("export CCE_SMOKE_CLUSTER_FLAVOR='cce.s1.small'  # cheapest cluster (1 control node)")
+	fmt.Println("export CCE_SMOKE_CASES='cluster,pool,scale,delete'")
+}
+
+func createSubnet(ctx context.Context, c *vpcv2.VpcClient, vpcID, name, cidr string) string {
+	gw := cidr[:strings.LastIndex(cidr, ".")] + ".1"
+	resp, err := c.CreateSubnet(&vpcmodel.CreateSubnetRequest{Body: &vpcmodel.CreateSubnetRequestBody{
+		Subnet: &vpcmodel.CreateSubnetOption{Name: name, Cidr: cidr, VpcId: vpcID, GatewayIp: gw},
+	}})
+	must(err, "CreateSubnet "+name)
+	return mustID(resp.Subnet.Id, "subnet")
+}
+
+func findVPCByName(ctx context.Context, c *vpcv2.VpcClient, name string) string {
+	resp, err := c.ListVpcs(&vpcmodel.ListVpcsRequest{})
+	if err != nil {
+		return ""
+	}
+	for _, v := range derefVpcs(resp) {
+		if v.Name == name {
+			return v.Id
+		}
+	}
+	return ""
+}
+
+func neutronSubnetIDs(ctx context.Context, c *vpcv2.VpcClient, vpcID string) (node, eni string) {
+	resp, err := c.ListSubnets(&vpcmodel.ListSubnetsRequest{VpcId: &vpcID})
+	if err != nil {
+		return "", ""
+	}
+	for _, s := range derefSubnets(resp) {
+		switch s.Name {
+		case subnetNode:
+			node = s.NeutronSubnetId
+		case subnetENI:
+			eni = s.NeutronSubnetId
+		}
+	}
+	return node, eni
+}
+
+func findSubnetByName(ctx context.Context, c *vpcv2.VpcClient, vpcID, name string) string {
+	resp, err := c.ListSubnets(&vpcmodel.ListSubnetsRequest{VpcId: &vpcID})
+	if err != nil {
+		return ""
+	}
+	for _, s := range derefSubnets(resp) {
+		if s.Name == name {
+			return s.Id
+		}
+	}
+	return ""
+}
+
+func cheapestFlavor(ctx context.Context, c *ecsv2.EcsClient) (*model.Flavor, error) {
+	resp, err := c.ListFlavors(&model.ListFlavorsRequest{})
+	if err != nil {
+		return nil, err
+	}
+	var candidates []model.Flavor
+	for _, f := range derefFlavors(resp) {
+		vcpus, _ := strconv.Atoi(f.Vcpus)
+		if vcpus >= 2 && f.Ram >= 4096 {
+			candidates = append(candidates, f)
+		}
+	}
+	sort.Slice(candidates, func(i, j int) bool {
+		vi, _ := strconv.Atoi(candidates[i].Vcpus)
+		vj, _ := strconv.Atoi(candidates[j].Vcpus)
+		if vi != vj {
+			return vi < vj
+		}
+		return candidates[i].Ram < candidates[j].Ram
+	})
+	if len(candidates) == 0 {
+		return nil, fmt.Errorf("no 2C4G flavor found")
+	}
+	// Prefer common x86 general-purpose families (more likely purchasable).
+	for _, prefix := range []string{"s6.", "c6.", "s7.", "c7.", "t6.", "e3.", "e7.", "kc1.", "kC1."} {
+		for i := range candidates {
+			if strings.HasPrefix(candidates[i].Id, prefix) {
+				return &candidates[i], nil
+			}
+		}
+	}
+	return &candidates[0], nil
+}
+
+func mustID(id, kind string) string {
+	if id == "" {
+		fatal("create " + kind + " returned no id")
+	}
+	return id
+}
+
+func stringPtr(s string) *string { return &s }
+
+func derefVpcs(resp *vpcmodel.ListVpcsResponse) []vpcmodel.Vpc {
+	if resp == nil || resp.Vpcs == nil {
+		return nil
+	}
+	return *resp.Vpcs
+}
+
+func derefSubnets(resp *vpcmodel.ListSubnetsResponse) []vpcmodel.Subnet {
+	if resp == nil || resp.Subnets == nil {
+		return nil
+	}
+	return *resp.Subnets
+}
+
+func derefFlavors(resp *model.ListFlavorsResponse) []model.Flavor {
+	if resp == nil || resp.Flavors == nil {
+		return nil
+	}
+	return *resp.Flavors
+}
+
+func derefKeypairs(resp *model.NovaListKeypairsResponse) []model.NovaListKeypairsResult {
+	if resp == nil || resp.Keypairs == nil {
+		return nil
+	}
+	return *resp.Keypairs
+}
+
+func must(err error, what string) {
+	if err != nil {
+		fatal("%s: %v", what, err)
+	}
+}
+
+func fatal(format string, args ...interface{}) {
+	fmt.Fprintf(os.Stderr, "ERROR: "+format+"\n", args...)
+	os.Exit(1)
+}
