@@ -158,6 +158,14 @@
 | **Q11 升级** | ⚠️ 升级编排 API 可用(CreateUpgradeWorkFlow/CreatePreCheck/UpgradeCluster/PostCheck 均可调用并校验版本),但**跨小版本升级被拒**:v1.34.8-r2→v1.35/v1.36、v1.35.5-r2→v1.36 均返回 "not supported to upgrade ... only support to <current>"——当前账号/区域疑似仅支持补丁级升级或跨版本升级需特定条件;**升级耗时无法实测,需咨询华为云当前升级策略** |
 | **新约束(实测)** | ⚠️ 同一 VPC 下多个 vpc-router 集群的**容器网段不能重叠**(报 CCE_CM.0410 "Container network CIDR conflict")——创建新集群必须规划唯一容器网段 |
 
+## 第三轮真实 CCE 冒烟确认记录(TestSmokeRemaining / TestSmokeUpgradeInfo)
+
+| 项 | 实测结果 |
+|---|---|
+| **Q13 公网可达性** | ✅✅ **实测打通**:创建 EIP 后通过 `UpdateClusterEip(BIND)` 绑定 API Server,从本机探测 **`https://120.46.211.3:5443` reachable=true**——公网访问完整路径确认:创建时 `publicAccess` 不自动分配公网 endpoint,需显式绑定 EIP;绑定后 5443 公网可达(与官方"绑定 EIP 会短暂重启集群 API Server"一致) |
+| **Q14 限流阈值** | ✅✅ **实测触发**:10 并发 × 100 次 = **1000 次 ShowCluster 调用,速率 ~71 req/s 持续约 14 秒 → 限流 703 次,其他错误 0 次**。真实阈值远低于文档推测的 200 req/s(APIGW 默认值),CCE 管理面实际流控在 ~70 req/s 持续突发时即大量 429——**轮询/重试实现必须以指数退避 + 抖动为默认,不能按 200 req/s 规划** |
+| **Q11 升级路径(定论)** | ✅ 在 v1.34 集群上 `ShowClusterUpgradeInfo` 返回 release=`v1.34.8`、patch=`r2`,**offered 升级目标=空列表 `[]`**——平台 API 层面对该版本**当前不提供任何升级目标**,与之前 CreateUpgradeWorkFlow 的 "only support to current" 完全一致。**Q11 定论:升级编排 API 全可用,但"哪些版本可升、何时开放"由平台策略决定,代码侧必须把"无可用目标"作为正常状态处理(文档化 + 日志提示),耗时量级在无路径时不可实测,需咨询华为云升级策略** |
+
 ## 真实 CCE 冒烟确认记录(2026-08-18,cn-north-4,账号实测)
 
 > 在真实华为云 CCE 账号上完成冒烟(`internal/services/cce/smoke_test.go`,`-tags smoke`),以下项由文档推断升级为**实测确认**:
@@ -191,8 +199,8 @@
 | Q8 | 删除 | ✅ 异步 1~3 分钟;delete_evs 默认残留、delete_eni/net 默认删;ondemand_node_policy 默认删按需节点保留纳管节点;休眠中不可删 | 存在节点池时直接删集群;删除不存在集群的错误码 |
 | Q9 | 单节点 | ✅ AddNode=重装 ECS(清数据)+严格前置(≥2C4G/单网卡/数据盘);CCE 自动安装;DefaultPool 无弹性 | CAPI Machine 路径取舍 |
 | Q10 | Autopilot | ✅ Serverless 无节点 API;50 集群/区域;按 CPU/内存计费 | CAPI 对接方式(远期) |
-| Q11 | 升级 | ✅ 仅原地升级(inPlaceRollingUpdate);TargetVersion 必填;升级中暂停节点池伸缩;补丁可直升 | 耗时量级;仅升 platformVersion 行为 |
+| Q11 | 升级 | ✅ 仅原地升级(inPlaceRollingUpdate);TargetVersion 必填;升级中暂停节点池伸缩;补丁可直升;**实测:ShowClusterUpgradeInfo 返回 offered 目标=空(平台策略,需按正常状态处理)** | 升级耗时量级(当前无可用升级路径,无法实测);仅升 platformVersion 行为 |
 | Q12 | 计费/休眠 | ✅ billingMode 默认按需;休眠停控制节点费用、节点/EIP 照常;唤醒 3~5 分钟 | 包周期是否禁休眠;唤醒失败错误码 |
-| Q13 | 网络路径 | ✅ 公网 https://EIP:5443;私网 VPC 内 IP/VIP;跨 VPC=对等/专线/VPN | 跨 Region 方案 |
-| Q14 | 限流/错误码 | ✅ 错误码表公开(404=01404001、429=01429002/003、配额 01400007 系);限流 APIGW.0308 每 API 每秒 200 次 | QPS 具体值;Retry-After |
+| Q13 | 网络路径 | ✅ 公网 https://EIP:5443;**实测:EIP 绑定后公网可达(reachable=true)**;私网 VPC 内 IP/VIP;跨 VPC=对等/专线/VPN | 跨 Region 方案 |
+| Q14 | 限流/错误码 | ✅ 错误码表公开(404=01404001、429=01429002/003、配额 01400007 系);**实测:持续 ~71 req/s 即大量限流(703/1000),阈值远低于 APIGW 默认 200 req/s → 必须退避重试** | Retry-After 头 |
 

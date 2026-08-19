@@ -185,10 +185,10 @@
 | Q8 | 删除语义与资源残留 | ✅ 异步 1~3 分钟;delete_evs 默认残留、delete_eni/net 默认删;ondemand_node_policy 默认删按需节点;休眠中不可删 | 有节点池时直接删集群;删不存在集群错误码 | cce_02_0241 + cce_10_0212 |
 | Q9 | AddNode 单节点路径可行性 | ✅ AddNode=重装 ECS(清数据)+严格前置(≥2C4G/单网卡/数据盘);CCE 自动安装;DefaultPool 无弹性 | CAPI Machine 路径取舍 | AddNode.html + cce_10_0198 |
 | Q10 | Autopilot 对接(远期) | ✅ Serverless 无节点 API;50 集群/区域;按 CPU/内存计费 | CAPI 对接方式(远期) | 集群类型对比 + autopilot 约束 |
-| Q11 | 集群升级工作流 | ✅ 仅原地升级;TargetVersion 必填;升级 API 可用(实测);**但跨小版本升级被拒("only support to current",疑似仅补丁级)** | 升级耗时;升级策略需咨询华为云 | 升级 API + 冒烟 |
+| Q11 | 集群升级工作流 | ✅ 仅原地升级;TargetVersion 必填;升级 API 可用(实测);**实测定论:ShowClusterUpgradeInfo 返回 offered 升级目标=空(平台当前不提供跨版本路径,"无可用目标"需作为正常状态处理)** | 升级耗时(无路径不可实测);升级策略需咨询华为云 | 升级 API + 冒烟 |
 | Q12 | 计费与休眠/唤醒 | ✅ billingMode 默认按需;休眠停控制节点费用、节点/EIP 照常;唤醒 3~5 分钟 | 包周期是否禁休眠;唤醒失败错误码 | cce_02_0374/0375 + price |
-| Q13 | 管理集群→API Server 网络路径 | ✅ 公网 https://EIP:5443;私网 VPC 内 IP/VIP;跨 VPC=对等/专线/VPN | 跨 Region 方案 | cce_10_0864 + bestpractice |
-| Q14 | API 限流与错误码全集 | ✅ 错误码表公开;限流 APIGW.0308;**200 次快速调用实测 0 限流(普通轮询安全)** | QPS 具体值;Retry-After | ErrorCode.html + 冒烟 |
+| Q13 | 管理集群→API Server 网络路径 | ✅ 公网 https://EIP:5443;**实测:EIP 绑定后公网可达(reachable=true)**;私网 VPC 内 IP/VIP;跨 VPC=对等/专线/VPN | 跨 Region 方案 | cce_10_0864 + bestpractice + 冒烟 |
+| Q14 | API 限流与错误码全集 | ✅ 错误码表公开;限流 APIGW.0308;**实测:持续 ~71 req/s 即大量限流(703/1000),阈值远低于 APIGW 默认 200 req/s → 轮询/重试必须退避+抖动** | Retry-After | ErrorCode.html + 冒烟 |
 
 ## 五、参考来源(问题依据)
 

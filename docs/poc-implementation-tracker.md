@@ -30,14 +30,14 @@
 | # | 代码位置 | 问卷项 | 依赖的确认结论 | 确认后的实现动作 | 验收方式 | 落地状态 |
 |---|---|---|---|---|---|---|
 | C1 | `controllers/ccemanagedcontrolplane_controller.go:35-36` kubeconfig 有效期(365 天) | **Q2** | 有效期上限(1~1827,`-1`=5 年?默认值);过期失效语义;external/internal 切换 | 有效期参数化(可配);实现到期前自动刷新(FR-3.3,reconcile 检查 Secret 有效期) | 单测(轮换)+ 冒烟(降级/恢复) | ✅已实现(kubeconfig 轮换,30 天阈值) |
-| C2 | `controllers/ccemanagedcontrolplane_controller.go` kubeconfig server 地址 | Q2/Q13 | internal 地址形态;跨 VPC/Region 网络路径 | 按确认选择 endpoint 回填策略(public/private)与 kubeconfig current-context;补充网络路径文档 | 冒烟(管理集群可达性) | ✅已确认(Q2/Q13) |
+| C2 | `controllers/ccemanagedcontrolplane_controller.go` kubeconfig server 地址 | Q2/Q13 | internal 地址形态;跨 VPC/Region 网络路径 | 按确认选择 endpoint 回填策略(public/private)与 kubeconfig current-context;补充网络路径文档 | 冒烟(管理集群可达性) | ✅已确认(Q2/Q13);**实测:UpdateClusterEip 绑定 EIP 后 https://EIP:5443 公网可达(reachable=true)** |
 | C3 | `internal/services/cce/cce.go` CreateNodePool 安全组绑定 | Q5 | 节点池安全组上限(≤5)行为、Standard 是否支持、修改生效方式 | 按确认完善 securityGroups 映射与校验;集群级安全组策略(如需) | webhook 单测 + 冒烟 | ✅已确认(Q5),Standard 支持待实测 |
 
 ### D 组:错误处理与运维
 
 | # | 代码位置 | 问卷项 | 依赖的确认结论 | 确认后的实现动作 | 验收方式 | 落地状态 |
 |---|---|---|---|---|---|---|
-| D1 | `internal/services/errors/errors.go:18-21,44` 错误码全集与限流 | **Q14** | ✅ 已确认(官方 ErrorCode.html):404=`CCE.01404001`;409=`CCE.01409001`;403 权限=`CCE.01403001`、状态不允许=`CCE.01403003~09`;400 配额=`CCE.01400007/08/09/10/11/12/13/19/20/25`;429=`CCE.01429002/003`、`APIGW.0308`(默认每 API 每秒 200 次);分页:ListNodes limit 1-2000+marker;配额查询 `ShowQuotas` | ✅ 已落地(errors.go 已按官方码更新:IsNotFound/IsConflict/IsThrottled/IsQuotaExceeded);补:控制器按分类退避(429 → 指数退避);实测 Retry-After 与 QPS 阈值 | 单测(分类矩阵)+ 冒烟(高频调用) | 已确认,代码已落地 |
+| D1 | `internal/services/errors/errors.go:18-21,44` 错误码全集与限流 | **Q14** | ✅ 已确认(官方 ErrorCode.html):404=`CCE.01404001`;409=`CCE.01409001`;403 权限=`CCE.01403001`、状态不允许=`CCE.01403003~09`;400 配额=`CCE.01400007/08/09/10/11/12/13/19/20/25`;429=`CCE.01429002/003`、`APIGW.0308`;分页:ListNodes limit 1-2000+marker;配额查询 `ShowQuotas`;**实测:持续 ~71 req/s 即大量限流(1000 并发调用 703 次 429),阈值远低于 APIGW 默认 200 req/s → 控制器 429 退避(指数+抖动)必须实现** | ✅ 已落地(errors.go 已按官方码更新:IsNotFound/IsConflict/IsThrottled/IsQuotaExceeded);补:控制器按分类退避(429 → 指数退避) | 单测(分类矩阵)+ 冒烟(高频调用,已 PASS) | 已确认+代码已落地+冒烟通过 |
 | D2 | `config/samples/cluster-template.yaml:38-57` VPC/子网/ENI 子网/版本占位 | Q4/Q11/Q13 | 各 VERIFY 占位的确切值 | 样例改为变量说明 + `scripts/check-prerequisites.sh` 增加 VPC/子网/配额/权限预检(FR-GOV/部署规范) | 脚本单测 | ✅已确认(Q4/Q11/Q13) |
 | D3 | IAM 最小权限与委托(文档/凭证) | **Q6** | 最小权限集合;AK/SK 账号约束;agencyName 语义 | 更新 README/部署文档的权限清单;预检脚本校验;`agencyName` 默认值按确认调整 | 文档审查 + 冒烟 | ✅已确认(Q6) |
 | D4 | 计费与休眠/唤醒 | Q12 | billingMode 语义;空集群计费;Awake/Hibernate | 按确认补充 billing 文档与(可选)休眠唤醒支持;样例计费提示更新 | 文档审查 | ✅已确认(Q12) |
@@ -48,7 +48,7 @@
 |---|---|---|---|---|---|---|
 | E1 | (无代码)单节点路径 | **Q9** | AddNode/AddNodesToNodePool 引导要求 | 若可行:新增 `CCEMachine`(P2,FR-2.8);若不可行:从 roadmap 移除并文档说明 | — | ✅已确认(Q9,建议只走节点池) |
 | E2 | (无代码)Autopilot | Q10 | Autopilot 与 CAPI 对接方式 | P2 评估(Cluster + 无 MachinePool) | — | ✅已确认(Q10) |
-| E3 | (无代码)集群升级 | Q11 | CreateUpgradeWorkFlow 参数与升级状态 | P1 实现 FR-1.7(改 version 触发升级工作流 + conditions) | e2e(升级) | ✅已确认(Q11),实现前实测耗时 |
+| E3 | (无代码)集群升级 | Q11 | CreateUpgradeWorkFlow 参数与升级状态 | P1 实现 FR-1.7(改 version 触发升级工作流 + conditions) | e2e(升级) | ✅已确认(Q11);**实测定论:ShowClusterUpgradeInfo 返回 offered 升级目标=空(平台当前不提供跨版本路径)→ 升级工作流实现时必须把"无可用目标"作为正常状态(文档化+日志),耗时量级在无路径时不可实测,需咨询华为云** |
 
 ## 二、执行批次与顺序建议
 
