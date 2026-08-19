@@ -59,7 +59,19 @@
 | **第三批(文档/运维)** | Q6、Q7、Q12、Q13 | 权限/配额预检脚本、网络路径文档、计费说明 |
 | **远期** | Q9、Q10、Q11 | 单节点路径(P2)、Autopilot(P2)、升级(P1) |
 
-## 三、落地完成标准(总)
+## 三、官方 API 参考审查未修项(能力增强/取舍,详见 [api-review-findings.md](api-review-findings.md))
+
+| # | 项 | 位置 | 说明/建议 | 状态 |
+|---|---|---|---|---|
+| U1 | 升级前等待 PreCheck Success 再发 UpgradeCluster | `internal/services/cce/cce.go` StartUpgrade | 当前创建 PreCheck 后立即 UpgradeCluster;应轮询 precheck 至 Success(C3) | ⏳ 待排期 |
+| U2 | RetryUpgradeClusterTask / ShowUpgradeWorkFlow / UpgradeWorkFlowUpdate | Service + controller | 失败自动重试(受控次数)、工作流状态跟踪(感知 Cancel)(C4) | ⏳ 待排期 |
+| U3 | UpgradeNodePool(同步节点池) | Service 接口 | 存量节点配置同步;当前用 update 的 taint/label refresh 部分替代(B8) | ⏳ 待排期 |
+| U4 | CreateClusterInput.Tags / CreateNodePoolInput.Tags 映射 | Service | clusterTags/userTags 未映射,声明未用(A9) | ⏳ 待排期 |
+| U5 | 升级 phase 常量补齐(Init/Queuing/Running/Pause) | `interfaces.go` | 避免 default 分支吞掉未来新增 phase(C7) | ⏳ 待排期 |
+| U6 | CRD 约束补充(k8sTags ≤20、nodePool 名 1-63 小写) | webhook/CRD | 文档约束未在入口校验(审查备注) | ⏳ 待排期 |
+| U7 | az/os/rootVolume 改 CRD required | `ccemanagedmachinepool_types.go` | 当前 webhook 强校验、注释 optional;改 required 会破坏向后兼容,需评估(B4) | ⏳ 待评估 |
+
+## 四、落地完成标准(总)
 
 1. 问卷 14 项全部有华为云结论(填写到 `cce-verification-questionnaire.md` 汇总表);
 2. 本清单 A–E 组所有行"落地状态"= 已完成(附提交号);
