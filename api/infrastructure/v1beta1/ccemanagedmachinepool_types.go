@@ -84,6 +84,23 @@ type CCEManagedMachinePoolSpec struct {
 	// +optional
 	Autoscaling AutoscalingSpec `json:"autoscaling,omitempty"`
 
+	// UpdateConfig controls how spec changes are rolled onto existing nodes
+	// (CCE 同步节点池 UpgradeNodePool, the analogue of CAPA's UpdateConfig /
+	// rolling update). Node attributes such as securityGroups, taints, labels
+	// and OS only apply to newly created nodes, so the controller calls
+	// UpgradeNodePool to synchronise them onto running nodes.
+	// +optional
+	UpdateConfig UpdateConfigSpec `json:"updateConfig,omitempty"`
+}
+
+// UpdateConfigSpec maps the CCE 同步节点池 (UpgradeNodePool) parameters.
+type UpdateConfigSpec struct {
+	// MaxUnavailable is the maximum number of nodes made unavailable per
+	// rolling batch (official range [1,20]; default 1).
+	// +kubebuilder:validation:Minimum=1
+	// +kubebuilder:validation:Maximum=20
+	// +optional
+	MaxUnavailable int32 `json:"maxUnavailable,omitempty"`
 }
 
 // AutoscalingSpec maps the CCE node pool autoscaling configuration

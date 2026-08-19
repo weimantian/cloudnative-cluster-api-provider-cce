@@ -48,6 +48,10 @@ func (m *CCEManagedMachinePool) Default(_ context.Context, obj *CCEManagedMachin
 	if obj.Spec.NodePoolName == "" {
 		obj.Spec.NodePoolName = obj.Name
 	}
+	// Default the rolling-update batch size to 1 (official range [1,20]).
+	if obj.Spec.UpdateConfig.MaxUnavailable == 0 {
+		obj.Spec.UpdateConfig.MaxUnavailable = 1
+	}
 	return nil
 }
 
@@ -113,6 +117,11 @@ func (m *CCEManagedMachinePool) validate() error {
 	} else if m.Spec.RootVolume.Size < 40 || m.Spec.RootVolume.Size > 1024 {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "rootVolume", "size"),
 			m.Spec.RootVolume.Size, "root volume size must be within [40, 1024] GiB"))
+	}
+	// Official UpgradeNodePool (同步节点池) constraint: maxUnavailable in [1,20].
+	if mu := m.Spec.UpdateConfig.MaxUnavailable; mu != 0 && (mu < 1 || mu > 20) {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "updateConfig", "maxUnavailable"),
+			mu, "maxUnavailable must be within [1, 20]"))
 	}
 	if len(allErrs) == 0 {
 		return nil

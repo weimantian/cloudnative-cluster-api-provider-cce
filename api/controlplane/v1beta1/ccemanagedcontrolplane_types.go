@@ -75,6 +75,42 @@ type CCEManagedControlPlaneSpec struct {
 	// create missing, delete removed.
 	// +optional
 	PodIdentityAssociations []PodIdentityAssociationSpec `json:"podIdentityAssociations,omitempty"`
+
+	// Logging configures control-plane log collection (mirrors CAPA EKS
+	// Logging). Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
+	// +optional
+	Logging *ControlPlaneLoggingSpec `json:"logging,omitempty"`
+}
+
+// ControlPlaneLoggingSpec maps the CCE ClusterLogConfig (ttl_in_days +
+// log_configs).
+type ControlPlaneLoggingSpec struct {
+	// TTLInDays is the log retention in days (official range 0-30).
+	// +kubebuilder:validation:Minimum=0
+	// +kubebuilder:validation:Maximum=30
+	// +optional
+	TTLInDays int32 `json:"ttlInDays,omitempty"`
+
+	// Logs lists the components to collect.
+	// +optional
+	Logs []ControlPlaneLogSpec `json:"logs,omitempty"`
+}
+
+// ControlPlaneLogSpec declares one log collection item.
+type ControlPlaneLogSpec struct {
+	// Name is the log type: kube-apiserver, kube-controller-manager,
+	// kube-scheduler, audit, or a system addon name.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Type is the component type: control, audit, or system-addon.
+	// +kubebuilder:validation:Enum=control;audit;system-addon
+	// +optional
+	Type string `json:"type,omitempty"`
+
+	// Enable turns collection on/off for this item.
+	// +optional
+	Enable bool `json:"enable,omitempty"`
 }
 
 // PodIdentityAssociationSpec declares a ServiceAccount -> agency binding.

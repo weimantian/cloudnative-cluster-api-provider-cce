@@ -21,42 +21,55 @@ import (
 // ShowCluster -> Available, kubeconfig -> valid content, node pool ->
 // "nodepool-1", desired count as requested).
 type FakeCCEService struct {
-	ShowClusterFn          func(ctx context.Context, clusterID string) (*cceService.ClusterInfo, error)
-	CreateClusterFn        func(ctx context.Context, in cceService.CreateClusterInput) (string, error)
-	DeleteClusterFn        func(ctx context.Context, in cceService.DeleteClusterInput) error
-	GetClusterKubeconfigFn func(ctx context.Context, clusterID string, durationDays int32) (string, error)
-	ShowQuotasFn           func(ctx context.Context) (*cceService.QuotaInfo, error)
-	CreateNodePoolFn       func(ctx context.Context, in cceService.CreateNodePoolInput) (string, error)
-	ScaleNodePoolFn        func(ctx context.Context, clusterID, nodePoolID string, desiredCount int32) error
-	UpdateNodePoolFn       func(ctx context.Context, in cceService.UpdateNodePoolInput) error
-	DeleteNodePoolFn       func(ctx context.Context, clusterID, nodePoolID string) error
-	ListNodePoolsFn        func(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error)
-	GetUpgradeInfoFn       func(ctx context.Context, clusterID string) (*cceService.UpgradeInfo, error)
-	StartUpgradeFn         func(ctx context.Context, clusterID, targetVersion string) (string, error)
-	ShowUpgradeTaskFn      func(ctx context.Context, clusterID, taskID string) (string, error)
-	CreateAddonInstanceFn  func(ctx context.Context, in cceService.AddonInput) (string, error)
-	UpdateAddonInstanceFn  func(ctx context.Context, in cceService.AddonInput) error
-	ListAddonInstancesFn   func(ctx context.Context, clusterID string) ([]cceService.AddonInfo, error)
-	DeleteAddonInstanceFn  func(ctx context.Context, clusterID, addonID string) error
-	CreatePodIdentityFn    func(ctx context.Context, in cceService.PodIdentityAssociationInput) (string, error)
-	ListPodIdentityFn      func(ctx context.Context, clusterID string) ([]cceService.PodIdentityAssociationInfo, error)
-	DeletePodIdentityFn    func(ctx context.Context, clusterID, associationID string) error
+	ShowClusterFn            func(ctx context.Context, clusterID string) (*cceService.ClusterInfo, error)
+	CreateClusterFn          func(ctx context.Context, in cceService.CreateClusterInput) (string, error)
+	DeleteClusterFn          func(ctx context.Context, in cceService.DeleteClusterInput) error
+	GetClusterKubeconfigFn   func(ctx context.Context, clusterID string, durationDays int32) (string, error)
+	ShowQuotasFn             func(ctx context.Context) (*cceService.QuotaInfo, error)
+	CreateNodePoolFn         func(ctx context.Context, in cceService.CreateNodePoolInput) (string, error)
+	ScaleNodePoolFn          func(ctx context.Context, clusterID, nodePoolID string, desiredCount int32) error
+	UpdateNodePoolFn         func(ctx context.Context, in cceService.UpdateNodePoolInput) error
+	DeleteNodePoolFn         func(ctx context.Context, clusterID, nodePoolID string) error
+	ListNodePoolsFn          func(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error)
+	GetUpgradeInfoFn         func(ctx context.Context, clusterID string) (*cceService.UpgradeInfo, error)
+	StartUpgradeFn           func(ctx context.Context, clusterID, targetVersion string) (string, error)
+	ShowUpgradeTaskFn        func(ctx context.Context, clusterID, taskID string) (string, error)
+	CreateAddonInstanceFn    func(ctx context.Context, in cceService.AddonInput) (string, error)
+	UpdateAddonInstanceFn    func(ctx context.Context, in cceService.AddonInput) error
+	ListAddonInstancesFn     func(ctx context.Context, clusterID string) ([]cceService.AddonInfo, error)
+	DeleteAddonInstanceFn    func(ctx context.Context, clusterID, addonID string) error
+	CreatePodIdentityFn      func(ctx context.Context, in cceService.PodIdentityAssociationInput) (string, error)
+	ListPodIdentityFn        func(ctx context.Context, clusterID string) ([]cceService.PodIdentityAssociationInfo, error)
+	DeletePodIdentityFn      func(ctx context.Context, clusterID, associationID string) error
+	UpgradeNodePoolFn        func(ctx context.Context, clusterID, nodePoolID string, maxUnavailable int32) error
+	ShowClusterLogConfigFn   func(ctx context.Context, clusterID string) (*cceService.LogConfigInfo, error)
+	UpdateClusterLogConfigFn func(ctx context.Context, clusterID string, ttlInDays int32, logs []cceService.LogConfigInput) error
 
 	// Records for assertions.
-	CreatedClusters     []cceService.CreateClusterInput
-	DeletedClusters     []cceService.DeleteClusterInput
-	CreatedNodePools    []cceService.CreateNodePoolInput
-	ScaleCalls          []int32
-	UpdateNodePoolCalls []cceService.UpdateNodePoolInput
-	KubeconfigCalls     int
-	StartUpgradeCalls   []string // target versions
-	AddonCreateCalls    []cceService.AddonInput
-	AddonUpdateCalls    []cceService.AddonInput
-	AddonDeleteCalls    []string               // addon IDs
-	Addons              []cceService.AddonInfo // returned by ListAddonInstances
-	PodIdentityCreate   []cceService.PodIdentityAssociationInput
-	PodIdentityDelete   []string // association IDs
-	PodIdentities       []cceService.PodIdentityAssociationInfo
+	CreatedClusters      []cceService.CreateClusterInput
+	DeletedClusters      []cceService.DeleteClusterInput
+	CreatedNodePools     []cceService.CreateNodePoolInput
+	ScaleCalls           []int32
+	UpdateNodePoolCalls  []cceService.UpdateNodePoolInput
+	KubeconfigCalls      int
+	StartUpgradeCalls    []string // target versions
+	AddonCreateCalls     []cceService.AddonInput
+	AddonUpdateCalls     []cceService.AddonInput
+	AddonDeleteCalls     []string               // addon IDs
+	Addons               []cceService.AddonInfo // returned by ListAddonInstances
+	PodIdentityCreate    []cceService.PodIdentityAssociationInput
+	PodIdentityDelete    []string // association IDs
+	PodIdentities        []cceService.PodIdentityAssociationInfo
+	UpgradeNodePoolCalls []struct {
+		ClusterID      string
+		NodePoolID     string
+		MaxUnavailable int32
+	}
+	LogConfigCalls []struct {
+		ClusterID string
+		TTLInDays int32
+		Logs      []cceService.LogConfigInput
+	}
 }
 
 // NewFakeCCEService returns a fake with healthy defaults.
@@ -95,6 +108,13 @@ func NewFakeCCEService() *FakeCCEService {
 	}
 	f.UpdateNodePoolFn = func(_ context.Context, in cceService.UpdateNodePoolInput) error {
 		f.UpdateNodePoolCalls = append(f.UpdateNodePoolCalls, in)
+		return nil
+	}
+	f.UpgradeNodePoolFn = func(_ context.Context, _, _ string, _ int32) error { return nil }
+	f.ShowClusterLogConfigFn = func(_ context.Context, _ string) (*cceService.LogConfigInfo, error) {
+		return &cceService.LogConfigInfo{}, nil
+	}
+	f.UpdateClusterLogConfigFn = func(_ context.Context, _ string, _ int32, _ []cceService.LogConfigInput) error {
 		return nil
 	}
 	f.DeleteNodePoolFn = func(_ context.Context, _, _ string) error { return nil }
@@ -273,4 +293,29 @@ func (f *FakeCCEService) ListPodIdentityAssociations(ctx context.Context, cluste
 // DeletePodIdentityAssociation implements cceService.Service.
 func (f *FakeCCEService) DeletePodIdentityAssociation(ctx context.Context, clusterID, associationID string) error {
 	return f.DeletePodIdentityFn(ctx, clusterID, associationID)
+}
+
+// UpgradeNodePool implements cceService.Service.
+func (f *FakeCCEService) UpgradeNodePool(ctx context.Context, clusterID, nodePoolID string, maxUnavailable int32) error {
+	f.UpgradeNodePoolCalls = append(f.UpgradeNodePoolCalls, struct {
+		ClusterID      string
+		NodePoolID     string
+		MaxUnavailable int32
+	}{clusterID, nodePoolID, maxUnavailable})
+	return f.UpgradeNodePoolFn(ctx, clusterID, nodePoolID, maxUnavailable)
+}
+
+// ShowClusterLogConfig implements cceService.Service.
+func (f *FakeCCEService) ShowClusterLogConfig(ctx context.Context, clusterID string) (*cceService.LogConfigInfo, error) {
+	return f.ShowClusterLogConfigFn(ctx, clusterID)
+}
+
+// UpdateClusterLogConfig implements cceService.Service.
+func (f *FakeCCEService) UpdateClusterLogConfig(ctx context.Context, clusterID string, ttlInDays int32, logs []cceService.LogConfigInput) error {
+	f.LogConfigCalls = append(f.LogConfigCalls, struct {
+		ClusterID string
+		TTLInDays int32
+		Logs      []cceService.LogConfigInput
+	}{clusterID, ttlInDays, logs})
+	return f.UpdateClusterLogConfigFn(ctx, clusterID, ttlInDays, logs)
 }

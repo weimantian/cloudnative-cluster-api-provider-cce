@@ -255,6 +255,26 @@ type AddonInfo struct {
 	Status string
 }
 
+// LogConfigInput declares one control-plane log collection item.
+type LogConfigInput struct {
+	// Name is the log type (kube-apiserver/kube-controller-manager/
+	// kube-scheduler/audit, or a system addon name).
+	Name string
+	// Type is the component type: control, audit, or system-addon.
+	Type string
+	// Enable turns collection on/off.
+	Enable bool
+}
+
+// LogConfigInfo is the current cluster log configuration as reported by
+// ShowClusterConfig.
+type LogConfigInfo struct {
+	// TTLInDays is the log retention in days (0-30).
+	TTLInDays int32
+	// Logs lists the configured log items.
+	Logs []LogConfigInput
+}
+
 // Service is the CCE API surface consumed by the provider controllers.
 type Service interface { // ShowCluster returns the current state of a CCE cluster.
 	ShowCluster(ctx context.Context, clusterID string) (*ClusterInfo, error)
@@ -304,4 +324,11 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	ListPodIdentityAssociations(ctx context.Context, clusterID string) ([]PodIdentityAssociationInfo, error)
 	// DeletePodIdentityAssociation removes an association by ID.
 	DeletePodIdentityAssociation(ctx context.Context, clusterID, associationID string) error
+	// UpgradeNodePool rolls the node pool's configuration onto existing nodes
+	// (CCE 同步节点池), maxUnavailable nodes at a time (1-20).
+	UpgradeNodePool(ctx context.Context, clusterID, nodePoolID string, maxUnavailable int32) error
+	// UpdateClusterLogConfig applies the control-plane log collection config.
+	UpdateClusterLogConfig(ctx context.Context, clusterID string, ttlInDays int32, logs []LogConfigInput) error
+	// ShowClusterLogConfig returns the current control-plane log config.
+	ShowClusterLogConfig(ctx context.Context, clusterID string) (*LogConfigInfo, error)
 }

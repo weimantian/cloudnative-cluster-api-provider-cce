@@ -1377,3 +1377,68 @@ func TestSmokeUpgradeWorkflow(t *testing.T) {
 		t.Logf("E3 RESULT: upgrade still in phase %q after poll window (task %s)", phase, taskID)
 	}
 }
+
+// TestSmokeLogging verifies control-plane log collection end-to-end: apply a
+// config via UpdateClusterLogConfig and read it back with ShowClusterConfig.
+// Mirrors CAPA EKS Logging (questionnaire Q-LOG).
+func TestSmokeLogging(t *testing.T) {
+	ctx := context.Background()
+	ak := smokeRequired(t, "CCE_SMOKE_AK")
+	sk := smokeRequired(t, "CCE_SMOKE_SK")
+	region := smokeEnv("CCE_SMOKE_REGION", "cn-north-4")
+	vpcID := smokeRequired(t, "CCE_SMOKE_VPC")
+	subnetID := smokeRequired(t, "CCE_SMOKE_SUBNET")
+
+	svc, err := NewClient(region, ak, sk)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	clusterName := fmt.Sprintf("capi-log-%d", time.Now().Unix()%100000)
+	containerCIDR := fmt.Sprintf("10.%d.0.0/16", 50+(time.Now().Unix()%200))
+	clusterID, err := svc.CreateCluster(ctx, CreateClusterInput{
+		Name:                 clusterName,
+		Category:             "CCE",
+		Flavor:               smokeEnv("CCE_SMOKE_CLUSTER_FLAVOR", "cce.s1.small"),
+		ContainerNetworkMode: "vpc-router",
+		ContainerNetworkCIDR: containerCIDR,
+		HostNetworkVpcID:     vpcID,
+		HostNetworkSubnetID:  subnetID,
+		ServiceCIDR:          "10.247.0.0/16",
+		BillingMode:          0,
+	})
+	if err != nil {
+		t.Fatalf("CreateCluster failed: %v", err)
+	}
+	t.Logf("logging: cluster %s", clusterID)
+	defer func() {
+		_ = svc.DeleteCluster(ctx, DeleteClusterInput{ClusterID: clusterID, DeleteEVS: true, DeleteENI: true, DeleteELB: true, OnDemandNodePolicy: "delete"})
+	}()
+	if _, err := waitForPhase(ctx, svc, clusterID, "Available", smokeClusterWait, smokePollInterval); err != nil {
+		t.Fatalf("cluster not Available: %v", err)
+	}
+
+	want := []LogConfigInput{
+		{Name: "kube-apiserver", Type: "control", Enable: true},
+		{Name: "kube-controller-manager", Type: "control", Enable: true},
+		{Name: "kube-scheduler", Type: "control", Enable: true},
+		{Name: "audit", Type: "audit", Enable: true},
+	}
+	if err := svc.UpdateClusterLogConfig(ctx, clusterID, 7, want); err != nil {
+		t.Fatalf("UpdateClusterLogConfig failed: %v", err)
+	}
+	got, err := svc.ShowClusterLogConfig(ctx, clusterID)
+	if err != nil {
+		t.Fatalf("ShowClusterLogConfig failed: %v", err)
+	}
+	t.Logf("Q-LOG RESULT: ttl=%d logItems=%d", got.TTLInDays, len(got.Logs))
+	for _, l := range got.Logs {
+		t.Logf("Q-LOG item: name=%s type=%s enable=%v", l.Name, l.Type, l.Enable)
+	}
+	if got.TTLInDays != 7 {
+		t.Errorf("Q-LOG: expected ttl 7, got %d", got.TTLInDays)
+	}
+	if len(got.Logs) == 0 {
+		t.Errorf("Q-LOG: expected log config items to be returned, got none")
+	}
+}

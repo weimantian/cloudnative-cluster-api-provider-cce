@@ -7,6 +7,7 @@ Licensed under the MIT No Attribution (MIT-0) License.
 package v1beta1
 
 import (
+	"context"
 	"testing"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
@@ -67,5 +68,45 @@ func TestMachinePoolFlavorAllowlist(t *testing.T) {
 	rejected.Spec.Flavor = "c6.xlarge.4"
 	if err := rejected.validate(); err == nil {
 		t.Error("expected flavor outside allowlist to be rejected")
+	}
+}
+
+func TestMachinePoolUpdateConfigDefaults(t *testing.T) {
+	m := validPool()
+	if err := m.Default(context.Background(), m); err != nil {
+		t.Fatalf("Default returned error: %v", err)
+	}
+	if m.Spec.UpdateConfig.MaxUnavailable != 1 {
+		t.Errorf("expected MaxUnavailable defaulted to 1, got %d", m.Spec.UpdateConfig.MaxUnavailable)
+	}
+
+	// An explicit value must be preserved.
+	explicit := validPool()
+	explicit.Spec.UpdateConfig.MaxUnavailable = 3
+	if err := explicit.Default(context.Background(), explicit); err != nil {
+		t.Fatalf("Default returned error: %v", err)
+	}
+	if explicit.Spec.UpdateConfig.MaxUnavailable != 3 {
+		t.Errorf("expected explicit MaxUnavailable=3 preserved, got %d", explicit.Spec.UpdateConfig.MaxUnavailable)
+	}
+}
+
+func TestMachinePoolUpdateConfigValidation(t *testing.T) {
+	for _, mu := range []int32{-1, 21, 100} {
+		m := validPool()
+		m.Spec.UpdateConfig.MaxUnavailable = mu
+		if err := m.validate(); err == nil {
+			t.Errorf("expected MaxUnavailable=%d to be rejected", mu)
+		}
+	}
+	// 0 is the "unset" sentinel: defaulted to 1, not rejected.
+	unset := validPool()
+	if err := unset.validate(); err != nil {
+		t.Errorf("expected MaxUnavailable=0 (unset) to pass, got %v", err)
+	}
+	ok := validPool()
+	ok.Spec.UpdateConfig.MaxUnavailable = 20
+	if err := ok.validate(); err != nil {
+		t.Errorf("expected MaxUnavailable=20 to pass, got %v", err)
 	}
 }

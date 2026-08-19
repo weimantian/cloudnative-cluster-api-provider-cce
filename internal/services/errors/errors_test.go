@@ -15,8 +15,8 @@ import (
 
 func sdk(code string, status int) error {
 	return errors.Wrap(&sdkerr.ServiceResponseError{
-		StatusCode: status,
-		ErrorCode:  code,
+		StatusCode:   status,
+		ErrorCode:    code,
 		ErrorMessage: "x",
 	}, "wrapped")
 }

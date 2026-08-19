@@ -1029,6 +1029,29 @@ func (s *Client) ListPodIdentityAssociations(_ context.Context, clusterID string
 	return out, nil
 }
 
+// UpgradeNodePool implements Service. Rolls the pool configuration onto
+// existing nodes (official: maxUnavailable in [1,20] is the max nodes made
+// unavailable per batch).
+func (s *Client) UpgradeNodePool(_ context.Context, clusterID, nodePoolID string, maxUnavailable int32) error {
+	if maxUnavailable < 1 || maxUnavailable > 20 {
+		return errors.Errorf("UpgradeNodePool: maxUnavailable must be in [1,20], got %d", maxUnavailable)
+	}
+	kind := "NodePool"
+	apiVersion := "v3"
+	if _, err := s.cce.UpgradeNodePool(&model.UpgradeNodePoolRequest{
+		ClusterId:  clusterID,
+		NodepoolId: nodePoolID,
+		Body: &model.UpgradeNodePool{
+			Kind:       &kind,
+			ApiVersion: &apiVersion,
+			Spec:       &model.NodePoolUpgradeSpec{MaxUnavailable: int32Ptr(maxUnavailable)},
+		},
+	}); err != nil {
+		return errors.Wrapf(err, "UpgradeNodePool %s failed", nodePoolID)
+	}
+	return nil
+}
+
 // DeletePodIdentityAssociation implements Service.
 func (s *Client) DeletePodIdentityAssociation(_ context.Context, clusterID, associationID string) error {
 	if _, err := s.cce.DeletePodIdentityAssociation(&model.DeletePodIdentityAssociationRequest{
@@ -1041,6 +1064,77 @@ func (s *Client) DeletePodIdentityAssociation(_ context.Context, clusterID, asso
 		return errors.Wrapf(err, "DeletePodIdentityAssociation %s failed", associationID)
 	}
 	return nil
+}
+
+// UpdateClusterLogConfig implements Service. Maps the declarative log spec to
+// ClusterLogConfig (ttl_in_days 0-30 + log_configs[] with name/type/enable).
+func (s *Client) UpdateClusterLogConfig(_ context.Context, clusterID string, ttlInDays int32, logs []LogConfigInput) error {
+	if ttlInDays < 0 || ttlInDays > 30 {
+		return errors.Errorf("UpdateClusterLogConfig: ttlInDays must be in [0,30], got %d", ttlInDays)
+	}
+	logConfigs := make([]model.ClusterLogConfigLogConfigs, 0, len(logs))
+	for _, l := range logs {
+		t := l.Type
+		if t == "" {
+			// Official default for control-plane components.
+			t = "control"
+		}
+		logConfigs = append(logConfigs, model.ClusterLogConfigLogConfigs{
+			Name:   stringPtr(l.Name),
+			Enable: boolPtr(l.Enable),
+			Type:   logConfigType(t),
+		})
+	}
+	if _, err := s.cce.UpdateClusterLogConfig(&model.UpdateClusterLogConfigRequest{
+		ClusterId: clusterID,
+		Body: &model.ClusterLogConfig{
+			TtlInDays:  int32Ptr(ttlInDays),
+			LogConfigs: &logConfigs,
+		},
+	}); err != nil {
+		return errors.Wrapf(err, "UpdateClusterLogConfig for %s failed", clusterID)
+	}
+	return nil
+}
+
+// ShowClusterLogConfig implements Service.
+func (s *Client) ShowClusterLogConfig(_ context.Context, clusterID string) (*LogConfigInfo, error) {
+	resp, err := s.cce.ShowClusterConfig(&model.ShowClusterConfigRequest{ClusterId: clusterID})
+	if err != nil {
+		return nil, errors.Wrapf(err, "ShowClusterConfig for %s failed", clusterID)
+	}
+	info := &LogConfigInfo{}
+	if resp.TtlInDays != nil {
+		info.TTLInDays = *resp.TtlInDays
+	}
+	if resp.LogConfigs != nil {
+		for _, l := range *resp.LogConfigs {
+			item := LogConfigInput{}
+			if l.Name != nil {
+				item.Name = *l.Name
+			}
+			if l.Enable != nil {
+				item.Enable = *l.Enable
+			}
+			if l.Type != nil {
+				item.Type = l.Type.Value()
+			}
+			info.Logs = append(info.Logs, item)
+		}
+	}
+	return info, nil
+}
+
+// logConfigType maps a declarative log type to the SDK enum.
+func logConfigType(t string) *model.ClusterLogConfigLogConfigsType {
+	v := model.GetClusterLogConfigLogConfigsTypeEnum().CONTROL
+	switch t {
+	case "audit":
+		v = model.GetClusterLogConfigLogConfigsTypeEnum().AUDIT
+	case "system-addon":
+		v = model.GetClusterLogConfigLogConfigsTypeEnum().SYSTEM_ADDON
+	}
+	return &v
 }
 
 // toClusterTags builds the CCE clusterTags array: the owned tag plus any

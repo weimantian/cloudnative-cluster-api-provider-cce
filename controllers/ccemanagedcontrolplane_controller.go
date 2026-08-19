@@ -245,6 +245,17 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	}
 	conditions.MarkTrue(cp, conditions.PodIdentityAssociationsConfiguredCondition, "PodIdentityAssociationsConfigured", "CCE pod-identity associations reconciled")
 
+	// Control-plane log collection (mirrors CAPA EKS Logging).
+	if err := r.reconcileLogging(ctx, svc, clusterID, cp); err != nil {
+		conditions.MarkFalse(cp, conditions.LoggingConfiguredCondition,
+			conditions.ReconciliationFailedReason, err.Error())
+		if uerr := r.Status().Update(ctx, cp); uerr != nil {
+			return ctrl.Result{}, uerr
+		}
+		return ctrl.Result{}, err
+	}
+	conditions.MarkTrue(cp, conditions.LoggingConfiguredCondition, "LoggingConfigured", "CCE control-plane log config reconciled")
+
 	// Upgrade orchestration (FR-1.7, questionnaire Q11): first poll any
 	// in-flight upgrade task; then, when spec.version differs from the running
 	// version, drive the CCE upgrade workflow. A missing upgrade path is a
@@ -686,4 +697,58 @@ func (r *CCEManagedControlPlaneReconciler) reconcilePodIdentityAssociations(ctx 
 		}
 	}
 	return nil
+}
+
+// reconcileLogging reconciles the declared control-plane log collection config
+// against the cloud (mirrors CAPA EKS Logging). Declarative: TTL + the exact
+// log item set, compared against ShowClusterConfig, applied via
+// UpdateClusterLogConfig on drift.
+func (r *CCEManagedControlPlaneReconciler) reconcileLogging(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) error {
+	if cp.Spec.Logging == nil {
+		return nil
+	}
+	want := cceService.LogConfigInfo{
+		TTLInDays: cp.Spec.Logging.TTLInDays,
+		Logs:      make([]cceService.LogConfigInput, 0, len(cp.Spec.Logging.Logs)),
+	}
+	for _, l := range cp.Spec.Logging.Logs {
+		want.Logs = append(want.Logs, cceService.LogConfigInput{Name: l.Name, Type: l.Type, Enable: l.Enable})
+	}
+	got, err := svc.ShowClusterLogConfig(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	if logConfigEqual(got, &want) {
+		return nil
+	}
+	return svc.UpdateClusterLogConfig(ctx, clusterID, want.TTLInDays, want.Logs)
+}
+
+// logConfigEqual reports whether two log configs match (order-insensitive on
+// the log item set; empty type on either side is treated as "control").
+func logConfigEqual(a, b *cceService.LogConfigInfo) bool {
+	if a.TTLInDays != b.TTLInDays {
+		return false
+	}
+	if len(a.Logs) != len(b.Logs) {
+		return false
+	}
+	key := func(l cceService.LogConfigInput) string {
+		t := l.Type
+		if t == "" {
+			t = "control"
+		}
+		return l.Name + "/" + t + "/" + strconv.FormatBool(l.Enable)
+	}
+	set := map[string]int{}
+	for _, l := range a.Logs {
+		set[key(l)]++
+	}
+	for _, l := range b.Logs {
+		if set[key(l)] == 0 {
+			return false
+		}
+		set[key(l)]--
+	}
+	return true
 }

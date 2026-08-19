@@ -229,9 +229,26 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			}
 			return ctrl.Result{}, err
 		}
+		// Roll the updated attributes onto existing nodes (CCE 同步节点池 /
+		// UpgradeNodePool — the analogue of CAPA's UpdateConfig rolling update).
+		// UpdateNodePool alone only affects newly created nodes (Q5/Q11b).
+		// Default the batch size defensively (do not rely on webhook defaulting,
+		// which may be disabled); official range [1,20].
+		maxUnavailable := pool.Spec.UpdateConfig.MaxUnavailable
+		if maxUnavailable == 0 {
+			maxUnavailable = 1
+		}
+		if err := svc.UpgradeNodePool(ctx, clusterID, pool.Status.NodePoolID, maxUnavailable); err != nil {
+			conditions.MarkFalse(pool, conditions.NodePoolScalingCondition,
+				conditions.ReconciliationFailedReason, err.Error())
+			if uerr := r.Status().Update(ctx, pool); uerr != nil {
+				return ctrl.Result{}, uerr
+			}
+			return ctrl.Result{}, err
+		}
 		pool.Status.LastAppliedSecurityGroups = append([]string(nil), pool.Spec.SecurityGroups...)
 		pool.Status.LastAppliedAutoscaling = pool.Spec.Autoscaling
-		log.Info("Node pool attributes updated (security groups / autoscaling / taints / labels)", "nodePoolID", pool.Status.NodePoolID)
+		log.Info("Node pool attributes updated and rolled onto existing nodes", "nodePoolID", pool.Status.NodePoolID)
 	}
 
 	// Refresh observed state from the cloud (Active node count is a

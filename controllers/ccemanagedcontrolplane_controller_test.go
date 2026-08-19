@@ -413,3 +413,111 @@ func TestControlPlaneReconcilePodIdentity(t *testing.T) {
 		t.Errorf("expected PodIdentityAssociationsConfigured=True, got %v", c)
 	}
 }
+
+// TestControlPlaneReconcileLogging verifies declarative control-plane log
+// collection: apply on drift, skip when already matching.
+func TestControlPlaneReconcileLogging(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-logging"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	cp.Spec.Logging = &controlplanev1beta1.ControlPlaneLoggingSpec{
+		TTLInDays: 7,
+		Logs: []controlplanev1beta1.ControlPlaneLogSpec{
+			{Name: "kube-apiserver", Type: "control", Enable: true},
+			{Name: "audit", Type: "audit", Enable: true},
+		},
+	}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to update control plane spec: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	// Cloud reports a different config (audit off) -> drift must be applied.
+	fakeSvc.ShowClusterLogConfigFn = func(_ context.Context, _ string) (*cceService.LogConfigInfo, error) {
+		return &cceService.LogConfigInfo{
+			TTLInDays: 3,
+			Logs: []cceService.LogConfigInput{
+				{Name: "kube-apiserver", Type: "control", Enable: true},
+				{Name: "audit", Type: "audit", Enable: false},
+			},
+		}, nil
+	}
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.LogConfigCalls) != 1 {
+		t.Fatalf("expected 1 UpdateClusterLogConfig call, got %d", len(fakeSvc.LogConfigCalls))
+	}
+	call := fakeSvc.LogConfigCalls[0]
+	if call.ClusterID != "cluster-1" || call.TTLInDays != 7 {
+		t.Errorf("unexpected log config call: %+v", call)
+	}
+	if len(call.Logs) != 2 || call.Logs[1].Name != "audit" || !call.Logs[1].Enable {
+		t.Errorf("expected audit enabled in update, got %+v", call.Logs)
+	}
+
+	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	if c := capiconditions.Get(got, conditions.LoggingConfiguredCondition); c == nil || c.Status != metav1.ConditionTrue {
+		t.Errorf("expected LoggingConfigured=True, got %v", c)
+	}
+}
+
+// TestControlPlaneReconcileLoggingNoDrift verifies no update when the cloud
+// config already matches the spec.
+func TestControlPlaneReconcileLoggingNoDrift(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-logging-nodrift"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	cp.Spec.Logging = &controlplanev1beta1.ControlPlaneLoggingSpec{
+		TTLInDays: 7,
+		Logs: []controlplanev1beta1.ControlPlaneLogSpec{
+			{Name: "audit", Type: "audit", Enable: true},
+		},
+	}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to update control plane spec: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeSvc.ShowClusterLogConfigFn = func(_ context.Context, _ string) (*cceService.LogConfigInfo, error) {
+		return &cceService.LogConfigInfo{
+			TTLInDays: 7,
+			Logs: []cceService.LogConfigInput{
+				{Name: "audit", Type: "audit", Enable: true},
+			},
+		}, nil
+	}
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.LogConfigCalls) != 0 {
+		t.Errorf("expected no UpdateClusterLogConfig when config matches, got %d calls", len(fakeSvc.LogConfigCalls))
+	}
+}

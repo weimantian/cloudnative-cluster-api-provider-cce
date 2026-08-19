@@ -193,6 +193,45 @@ spec:
                     type: string
                 type: object
                 x-kubernetes-map-type: atomic
+              logging:
+                description: |-
+                  Logging configures control-plane log collection (mirrors CAPA EKS
+                  Logging). Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
+                properties:
+                  logs:
+                    description: Logs lists the components to collect.
+                    items:
+                      description: ControlPlaneLogSpec declares one log collection
+                        item.
+                      properties:
+                        enable:
+                          description: Enable turns collection on/off for this item.
+                          type: boolean
+                        name:
+                          description: |-
+                            Name is the log type: kube-apiserver, kube-controller-manager,
+                            kube-scheduler, audit, or a system addon name.
+                          type: string
+                        type:
+                          description: 'Type is the component type: control, audit,
+                            or system-addon.'
+                          enum:
+                          - control
+                          - audit
+                          - system-addon
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  ttlInDays:
+                    description: TTLInDays is the log retention in days (official
+                      range 0-30).
+                    format: int32
+                    maximum: 30
+                    minimum: 0
+                    type: integer
+                type: object
               podIdentityAssociations:
                 description: |-
                   PodIdentityAssociations bind Kubernetes ServiceAccounts to Huawei Cloud

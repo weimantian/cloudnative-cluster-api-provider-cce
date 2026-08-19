@@ -374,6 +374,18 @@ func TestMachinePoolReconcileSecurityGroupDrift(t *testing.T) {
 	if len(u.CustomSecurityGroups) != 1 || u.CustomSecurityGroups[0] != "sg-2" {
 		t.Errorf("expected CustomSecurityGroups [sg-2], got %v", u.CustomSecurityGroups)
 	}
+	// The attribute drift must also trigger a rolling update of existing nodes
+	// (UpgradeNodePool), defaulted to maxUnavailable=1 when unspecified.
+	if len(fakeSvc.UpgradeNodePoolCalls) != 1 {
+		t.Fatalf("expected 1 UpgradeNodePool call, got %d", len(fakeSvc.UpgradeNodePoolCalls))
+	}
+	uc := fakeSvc.UpgradeNodePoolCalls[0]
+	if uc.NodePoolID != "nodepool-1" || uc.ClusterID != "cluster-1" {
+		t.Errorf("unexpected UpgradeNodePool target: %+v", uc)
+	}
+	if uc.MaxUnavailable != 1 {
+		t.Errorf("expected default MaxUnavailable=1, got %d", uc.MaxUnavailable)
+	}
 
 	// A third reconcile with no changes must not call UpdateNodePool again.
 	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(got)}); err != nil {
@@ -381,6 +393,9 @@ func TestMachinePoolReconcileSecurityGroupDrift(t *testing.T) {
 	}
 	if len(fakeSvc.UpdateNodePoolCalls) != 1 {
 		t.Errorf("expected no extra UpdateNodePool when nothing drifted, got %d calls", len(fakeSvc.UpdateNodePoolCalls))
+	}
+	if len(fakeSvc.UpgradeNodePoolCalls) != 1 {
+		t.Errorf("expected no extra UpgradeNodePool when nothing drifted, got %d calls", len(fakeSvc.UpgradeNodePoolCalls))
 	}
 }
 

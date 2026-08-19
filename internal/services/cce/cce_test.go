@@ -7,6 +7,7 @@ Licensed under the MIT No Attribution (MIT-0) License.
 package cce
 
 import (
+	"strings"
 	"testing"
 
 	"k8s.io/client-go/tools/clientcmd"
@@ -113,5 +114,46 @@ func TestAssembleKubeconfig(t *testing.T) {
 	empty := &model.CreateKubernetesClusterCertResponse{Clusters: &[]model.Clusters{}}
 	if _, err := assembleKubeconfig(empty); err == nil {
 		t.Error("expected error for empty clusters")
+	}
+}
+
+func TestUpgradeNodePoolBounds(t *testing.T) {
+	// Bounds are validated before any SDK call, so a nil SDK client is safe
+	// for the invalid range (which returns before touching the SDK).
+	c := &Client{}
+	for _, mu := range []int32{-1, 0, 21, 100} {
+		err := c.UpgradeNodePool(t.Context(), "cluster", "pool", mu)
+		if err == nil {
+			t.Errorf("expected error for maxUnavailable=%d", mu)
+		} else if !strings.Contains(err.Error(), "maxUnavailable must be in [1,20]") {
+			t.Errorf("maxUnavailable=%d: expected bounds error, got %q", mu, err.Error())
+		}
+	}
+}
+
+func TestLogConfigTypeMapping(t *testing.T) {
+	cases := map[string]string{
+		"control":      "control",
+		"audit":        "audit",
+		"system-addon": "system-addon",
+		"":             "control", // default
+		"unknown":      "control", // fallback to control
+	}
+	for in, want := range cases {
+		if got := logConfigType(in); got == nil || got.Value() != want {
+			t.Errorf("logConfigType(%q) = %v, want %q", in, got, want)
+		}
+	}
+}
+
+func TestUpdateClusterLogConfigBounds(t *testing.T) {
+	// TTL bounds are validated before any SDK call, so a nil SDK client is
+	// safe for the invalid range.
+	c := &Client{}
+	for _, ttl := range []int32{-1, 31} {
+		err := c.UpdateClusterLogConfig(t.Context(), "cluster", ttl, nil)
+		if err == nil || !strings.Contains(err.Error(), "ttlInDays must be in [0,30]") {
+			t.Errorf("ttl=%d: expected bounds error, got %v", ttl, err)
+		}
 	}
 }
