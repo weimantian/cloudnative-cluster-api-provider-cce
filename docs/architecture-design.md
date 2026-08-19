@@ -1,11 +1,13 @@
 # cce-provider-for-cluster-api 架构设计文档
 
-- 版本:v0.1(draft)
-- 状态:设计评审稿
-- 配套文档:[调研依据与事实清单](research-sources.md)、[需求设计文档](requirements-design.md)、[CAPA 架构分析报告](CAPA架构分析报告.md)、[CAPHW 架构分析报告](CAPHW架构分析报告.md)、[ACKProvider 架构分析报告](ACKProvider架构分析报告.md)
+- 版本:v0.2(设计+PoC 验证版)
+- 状态:设计定稿(实现已按本设计落地,并经真实 CCE 冒烟与 clusterctl 部署验证)
+- 配套文档:[调研依据与事实清单](research-sources.md)、[需求设计文档](requirements-design.md)、[华为云 CCE 对齐问卷](cce-verification-questionnaire.md)、[验证结论记录](cce-verification-findings.md)、[clusterctl 部署演练记录](clusterctl-deployment-validation.md)、[CAPA 架构分析报告](CAPA架构分析报告.md)、[CAPHW 架构分析报告](CAPHW架构分析报告.md)、[ACKProvider 架构分析报告](ACKProvider架构分析报告.md)
 
 > **事实基准声明**:本文所有设计结论均基于《调研依据与事实清单》中列出的真实来源(华为云官方 Go SDK 模型、华为云官方 API/用户指南文档、CAPA / alibabacloud-provider-for-Cluster-API / cluster-api-provider-huawei 源码)。
 > 凡是标注 **[需验证]** 的条目,均为无法从现有公开资料完全确认、**需要对接真实华为云 CCE 实测或咨询华为云确认**后才能在实现中定稿的点,清单见 [附录 A](#附录-a需对接华为云-cce-验证的事项清单)。
+>
+> **验证状态(2026-08-19)**:附录 A 的 14 项中,Q1/Q2/Q3/Q5/Q7/Q8/Q13/Q14 已由真实 CCE 冒烟实测确认,Q4/Q6/Q9/Q10/Q12 已由官方文档确认,Q11 已实测定论(平台当前无跨版本升级目标,"无可用目标"为正常状态);剩余需华为云/工单确认的仅 Q11 升级耗时与 Q14 Retry-After 头。逐项状态见 [验证结论记录](cce-verification-findings.md) 汇总表。
 
 ---
 
@@ -137,6 +139,9 @@ spec:
   additionalTags: {}                        # 打到 CCE 集群的标签(tag)
 status:
   ready: false
+  initialization:                           # CAPI InfrastructureCluster 契约字段(实测确认)
+    provisioned: false                      # status.initialization.provisioned:
+                                            #   CAPI Cluster 控制器据此置 InfrastructureProvisioned
   clusterID: ""                             # CCE 集群 UUID(回写)
   controlPlaneEndpoint:                     # API Server 地址(由内核回填,见 §4.2)
     host: 10.0.0.10
@@ -293,17 +298,19 @@ status:
 ### 4.4 幂等与并发控制
 
 - 所有"创建前必查"(`ShowCluster`/`ListNodePools`),创建用幂等键(固定命名 + Tag),防止重复 reconcile 创建双资源(参照 ACK Provider 固定名 Get 判存在模式,controlplane_controller.go:255-339)。
-- 控制面创建/删除期间用 condition 状态机互斥;`MachinePool` 扩缩容与 CCE autoscaling 并存时的协调见 [需验证] 3。
+- **创建失败幂等接管(实测确认)**:`CreateCluster` 冲突(已存在 `CCE.01409001` / 容器网段冲突 `CCE_CM.0410`)时,按名称查回已有集群 ID 接管——覆盖"创建成功但响应丢失"(限流边界,实测 `APIGW.0308` 写操作 10 次/分钟)场景,避免永久失败。见 `internal/services/cce/cce.go`。
+- 控制面创建/删除期间用 condition 状态机互斥;`MachinePool` 扩缩容与 CCE autoscaling 并存时的协调已实测确认(autoscaling 配置与手动 `ScaleNodePool` 互不覆盖,见 Q3/B3)。
 - finalizer 防误删;删除期间 owner Cluster 的删除顺序依赖 CAPI 核心按依赖图执行(MachinePool 先于 Cluster)。
 
 ### 4.5 错误处理与重试
 
-- 错误分类(service 层统一 `ErrorHandler`,模式来自 CAPHW `pkg/errors`,代码事实):
-  - NotFound(404/错误码)→ 视为幂等分支
-  - Conflict/AlreadyExists(如 ELB.8907 式错误)→ 转查询分支
-  - 限流/Throttle → 指数退避(RequeueAfter 递增,上限如 5min)
-  - 永久错误(参数非法/权限不足)→ MarkFalse(Failure)并记录事件,停止无意义重试
-- CCE/ECS/VPC API 的限流阈值、错误码全集 **[需验证] 14**,实现前向华为云确认或实测抓取。
+- 错误分类(service 层统一错误处理,官方错误码全集已落地 `internal/services/errors/errors.go`,见 Q14):
+  - NotFound(404/`CCE.01404001`)→ 视为幂等分支
+  - Conflict/AlreadyExists(`CCE.01409001`、`CCE_CM.0410`)→ 转查询/接管分支
+  - 限流/Throttle(`APIGW.0308`、`CCE.01429002/003`)→ **延迟 requeue(1 分钟)+ nil error**(`resultAfterError`),避免 controller-runtime 默认退避覆盖延迟;实测写操作限流 10 次/分钟、读操作 ~70 req/s 触发(见 Q14)
+  - 配额超限(`CCE.01400007...`)→ 5 分钟 requeue
+  - 权限不足(401/403)→ 30 分钟 requeue + MarkFalse(Failure)记录事件
+- CCE/ECS/VPC API 的限流阈值、错误码全集 **[需验证] 14** → **已实测关闭**:错误码表已按官方 ErrorCode.html 落地;限流阈值实测见 [验证结论记录](cce-verification-findings.md) Q14。
 
 ---
 
@@ -522,7 +529,9 @@ cce-provider-for-cluster-api/
 
 ## 附录 A:需对接华为云 CCE 验证的事项清单
 
-> 以下 14 项无法从公开资料完全确认,必须**对接真实华为云 CCE 实测或咨询华为云**后才能定稿实现细节(完整描述见 [research-sources.md §4](research-sources.md)):
+> 以下 14 项无法从公开资料完全确认,必须**对接真实华为云 CCE 实测或咨询华为云**后才能定稿实现细节(完整描述见 [research-sources.md §4](research-sources.md))。
+>
+> **逐项当前状态(2026-08-19)**:见 [需求设计文档附录 A](requirements-design.md#附录-a需对接华为云-cce-验证事项索引) 状态表与 [验证结论记录](cce-verification-findings.md)——8 项实测确认、5 项文档确认、Q11 定论;仅 Q11 升级耗时与 Q14 Retry-After 待华为云/工单。
 
 1. 空集群(0 节点)创建可行性、计费与配额影响。
 2. `CreateKubernetesClusterCert` 证书有效期上限、external/internal kubeconfig 切换与可达性。

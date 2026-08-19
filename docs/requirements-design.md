@@ -1,10 +1,12 @@
 # cce-provider-for-cluster-api 需求设计文档
 
-- 版本:v0.1(draft)
-- 状态:设计评审稿
-- 配套文档:[调研依据与事实清单](research-sources.md)、[架构设计文档](architecture-design.md)、[CAPA 架构分析报告](CAPA架构分析报告.md)、[CAPHW 架构分析报告](CAPHW架构分析报告.md)、[ACKProvider 架构分析报告](ACKProvider架构分析报告.md)
+- 版本:v0.2(需求+PoC 验证版)
+- 状态:需求定稿(全部 P0/P1 项已实现,经真实 CCE 冒烟与 clusterctl 部署验证;P2 项为远期)
+- 配套文档:[调研依据与事实清单](research-sources.md)、[架构设计文档](architecture-design.md)、[华为云 CCE 对齐问卷](cce-verification-questionnaire.md)、[验证结论记录](cce-verification-findings.md)、[clusterctl 部署演练记录](clusterctl-deployment-validation.md)、[CAPA 架构分析报告](CAPA架构分析报告.md)、[CAPHW 架构分析报告](CAPHW架构分析报告.md)、[ACKProvider 架构分析报告](ACKProvider架构分析报告.md)
 
 > **事实基准声明**:同架构文档,所有需求项的依据均来自真实来源(华为云官方 SDK/文档、CAPA 与阿里云 ACK Provider 源码);无法从公开资料确认处标注 **[需验证]**,需对接真实华为云 CCE 确认(完整清单见 [research-sources.md §4](research-sources.md))。
+>
+> **验证状态(2026-08-19)**:各 FR 中引用的 [需验证] 项已逐项确认——Q1/Q2/Q3/Q5/Q7/Q8/Q13/Q14 真实冒烟实测、Q4/Q6/Q9/Q10/Q12 官方文档确认、Q11 实测定论(无跨版本目标为正常状态);落地状态逐项见 [验证结论记录](cce-verification-findings.md) 与 [落地跟踪](poc-implementation-tracker.md)。**P0/P1 全部实现;仅 Q11 升级耗时、Q14 Retry-After 需华为云/工单补充。**
 
 ---
 
@@ -49,12 +51,12 @@
 | 编号 | 需求 | 优先级 | 依据/说明 |
 |---|---|---|---|
 | FR-1.1 | 通过 `CCECluster` + `CCEManagedControlPlane` 声明式创建 CCE 集群(Standard/Turbo) | P0 | CCE API `CreateCluster`(官方文档 cce_02_0236);字段含 category/flavor/version/containerNetwork/serviceNetwork/authentication/customSan 等 |
-| FR-1.2 | 集群创建幂等:重复 reconcile 不重复创建(先 `ShowCluster`/`ListClusters` 判存在) | P0 | ACK Provider 固定名 Get 判存在模式(/tmp/capal controlplane_controller.go:255-339) |
+| FR-1.2 | 集群创建幂等:重复 reconcile 不重复创建(固定命名 + 创建冲突时按名称接管 adopt-by-name,实测确认) | P0 | ACK Provider 固定名 Get 判存在模式;实测补充:创建成功但响应丢失(限流边界)时按名称接管已有集群 |
 | FR-1.3 | 等待集群 phase=Available 后回写 `status.clusterID`、`status.controlPlaneEndpoint` | P0 | 官方 phase 枚举(Available/Unavailable/ScalingUp/ScalingDown);`ShowClusterEndpoints` 返回 url+type |
 | FR-1.4 | 集群更新:支持可变更字段(描述、标签、日志、插件等)对齐;网段等不可变字段变更由 webhook 拒绝 | P0 | 官方:隧道模式网段创建后不可改,vpc-router/eni 可增不可改 |
 | FR-1.5 | 集群删除:先删依赖(节点池→插件→集群),容忍 404,轮询至消失后移除 finalizer | P0 | 参照 CAPA reconcileDelete 的依赖计数 + 错误聚合模式([CAPA 架构分析报告](CAPA架构分析报告.md) §3.1) |
 | FR-1.6 | `Unavailable` 等异常状态集群的状态上报与失败条件 | P0 | 官方 phase:Unavailable 需手动删除 |
-| FR-1.7 | 集群升级(改 version 触发 CCE 升级工作流) | P1 | CCE API `CreateUpgradeWorkFlow/CreatePreCheck/CreatePostCheck`(SDK 事实);升级行为细节 **[需验证] 11** |
+| FR-1.7 | 集群升级(改 version 触发 CCE 升级工作流) | P1(已实现) | CCE API `CreateUpgradeWorkFlow/CreatePreCheck/CreatePostCheck`(SDK 事实);升级行为细节 **[需验证] 11 → 已定论:平台当前无跨版本目标,空目标为正常状态** |
 | FR-1.8 | 集群休眠/唤醒(AwakeCluster) | P2 | SDK 有 `AwakeCluster`;运维策略,优先级低 |
 | FR-1.9 | 集群标签(AdditionalTags)同步 `BatchCreateClusterTags` | P1 | SDK 事实;用于资源归属识别 |
 
@@ -67,7 +69,7 @@
 | FR-2.3 | 状态回写:`status.replicas/availableReplicas`(按节点 `Active` 数)、`status.nodePoolID` | P0 | 参照 ACK Provider AliyunManagedMachinePoolStatus;节点状态枚举见 SDK model_node_status.go |
 | FR-2.4 | 节点池删除 → `DeleteNodePool` → 轮询至不存在 → 移除 finalizer | P0 | SDK 事实 |
 | FR-2.5 | 控制面未就绪时节点池等待(WaitingForControlPlane 条件) | P0 | CAPA 模式:MachinePool 控制器须等 ControlPlane.Status.Ready([CAPA 架构分析报告](CAPA架构分析报告.md) §3.3) |
-| FR-2.6 | 节点池自动扩缩容(autoscaling enable/min/max)映射 | P1 | 与 CAPI 扩缩容双驱动语义冲突处理 **[需验证] 3**;首版关闭节点池 autoscaling |
+| FR-2.6 | 节点池自动扩缩容(autoscaling enable/min/max)映射 | P1(已实现,Alpha gate 默认关) | 与 CAPI 扩缩容双驱动语义冲突处理 **[需验证] 3 → 已实测:并存不冲突(B3)**;`--feature-gates=NodePoolAutoscaling=true` 启用 |
 | FR-2.7 | 节点池安全组绑定(Turbo ≥1.21,≤5 个) | P1 | 官方文档 cce_02_0354 |
 | FR-2.8 | 单节点路径(`CCEMachine` ↔ CCE CreateNode/AddNode) | P2 | 引导语义 **[需验证] 9**;若不可行则移除 |
 | FR-2.9 | 节点滚动替换(节点异常自动重建) | P2 | CCE 节点池自身能力评估后映射 |
@@ -78,8 +80,8 @@
 |---|---|---|---|
 | FR-3.1 | 集群就绪后调用 `CreateKubernetesClusterCert` 获取 kubeconfig,写入 `<cluster>-kubeconfig` Secret | P0 | SDK 事实;对标 CAPA `<cluster>-kubeconfig` 与 ACK Provider controller_kubeconfig.go |
 | FR-3.2 | 支持 `clusterctl get kubeconfig` | P0 | Secret key `value` 规范(CAPI 约定) |
-| FR-3.3 | 证书轮换(有效期到期前自动刷新) | P1 | `ClusterCertDuration` 有效期上限 **[需验证] 2** |
-| FR-3.4 | 私网/公网 kubeconfig 选择(current-context external/internal) | P1 | 官方响应字段;网络可达性 **[需验证] 13** |
+| FR-3.3 | 证书轮换(有效期到期前自动刷新) | P1(已实现) | `ClusterCertDuration` 有效期上限 **[需验证] 2 → 已确认:1~1827 天,重新签发即时生效** |
+| FR-3.4 | 私网/公网 kubeconfig 选择(current-context external/internal) | P1 | 官方响应字段;网络可达性 **[需验证] 13 → 已确认:公网 https://EIP:5443 实测可达** |
 
 ### 3.4 凭证与安全
 
@@ -175,7 +177,7 @@
 | NFR-4 安全 | 凭证最小暴露;RBAC 最小权限;镜像无真实凭证;密钥不进日志 | §3.4 |
 | NFR-5 兼容性 | 遵循 CAPI 版本矩阵(metadata.yaml 声明);K8s/CAPI 版本升级 CI 验证 | 用户聊天确认的社区对齐要求 |
 | NFR-6 可维护性 | 分层(controller/scope/service)可单测;代码规范(Go lint/boilerplate);docs/book 文档 | 对齐 SIG 规范 |
-| NFR-7 限流友好 | CCE/ECS/VPC API 限流阈值内工作,指数退避,不风暴 | 限流阈值 **[需验证] 14** |
+| NFR-7 限流友好 | CCE/ECS/VPC API 限流阈值内工作,退避,不风暴 | 限流阈值 **[需验证] 14 → 已实测**:读 ~70 req/s、写 10 次/分钟(APIGW.0308);实现为限流/配额错误返回延迟 requeue+nil error(`resultAfterError`),不产生 error 风暴 |
 | NFR-8 成本可控 | 空集群计费与资源回收(删除不留 EIP/EVS/ELB 残留) | 残留行为 **[需验证] 8** |
 
 ---
@@ -268,17 +270,21 @@
 
 ## 附录 A:需对接华为云 CCE 验证事项索引
 
-1. 空集群(0 节点)创建、计费、配额影响
-2. 证书有效期上限;external/internal kubeconfig 切换与可达性
-3. UpdateNodePool(initialNodeCount)扩缩容语义;与节点池 autoscaling 协调
-4. Turbo(eni)对 VPC/子网硬性要求(ENI 子网、网段不重叠)
-5. 安全组创建/关联行为(master/node/eni;每池 ≤5 边界)
-6. 管理 CCE 最小 IAM 权限与 AK/SK 账号约束(项目/委托)
-7. 默认配额(集群/节点池/节点/VPC/子网/ENI)与超配错误码
-8. DeleteCluster 删除时长/依赖与残留(EIP/EVS/ELB;Unavailable 可删性)
-9. AddNode/AddNodesToNodePool 对已有 ECS 的引导要求(决定单节点路径)
-10. Autopilot 在 CAPI 模型中的表达(远期)
-11. CreateUpgradeWorkFlow 参数与升级状态
-12. 计费模式(按需/包周期;空集群成本;休眠唤醒)
-13. 管理集群访问 CCE API Server 的网络路径(公网/对等/专线)
-14. CCE/ECS/VPC API 限流阈值与错误码全集
+> 状态说明:**实测确认** = 真实 CCE 冒烟验证;文档确认 = 官方文档/SDK 可确证;待华为云 = 需工单/抓包补充。逐项证据见 [cce-verification-findings.md](cce-verification-findings.md)。
+
+| # | 事项 | 当前状态(2026-08-19) |
+|---|---|---|
+| 1 | 空集群(0 节点)创建、计费、配额影响 | ✅ 实测确认(Q1):空集群创建成功至 Available |
+| 2 | 证书有效期上限;external/internal kubeconfig 切换与可达性 | ✅ 实测确认(Q2):重新签发即时生效,有效期 1~1827 天 |
+| 3 | UpdateNodePool(initialNodeCount)扩缩容语义;与节点池 autoscaling 协调 | ✅ 实测确认(Q3/B3):`desiredNodeCount`/`initialNodeCount` 均为**绝对值**;autoscaling 与手动伸缩并存 |
+| 4 | Turbo(eni)对 VPC/子网硬性要求(ENI 子网、网段不重叠) | ✅ 文档确认+实测(Q4):eni 子网需 neutron_subnet_id;同 VPC 容器网段不可重叠(CCE_CM.0410) |
+| 5 | 安全组创建/关联行为(master/node/eni;每池 ≤5 边界) | ✅ 实测确认(Q5):Standard 接受 customSecurityGroups;每池 ≤5 |
+| 6 | 管理 CCE 最小 IAM 权限与 AK/SK 账号约束(项目/委托) | ✅ 文档确认(Q6):细粒度 action 表;证书生成依赖 cluster:get |
+| 7 | 默认配额(集群/节点池/节点/VPC/子网/ENI)与超配错误码 | ✅ 实测确认(Q7):集群配额 limit=50/区域 |
+| 8 | DeleteCluster 删除时长/依赖与残留(EIP/EVS/ELB;Unavailable 可删性) | ✅ 实测确认(Q8):异步删除;delete_evs/eni/net 传参防残留;复核无残留 |
+| 9 | AddNode/AddNodesToNodePool 对已有 ECS 的引导要求(决定单节点路径) | ✅ 文档确认(Q9):重装 ECS 不可免干预,首版只走节点池 |
+| 10 | Autopilot 在 CAPI 模型中的表达(远期) | ✅ 文档确认(Q10):远期评估 |
+| 11 | CreateUpgradeWorkFlow 参数与升级状态 | ✅ 实测定论(Q11):API 全可用;**平台当前无跨版本目标(空列表),耗时需华为云** |
+| 12 | 计费模式(按需/包周期;空集群成本;休眠唤醒) | ✅ 文档确认(Q12) |
+| 13 | 管理集群访问 CCE API Server 的网络路径(公网/对等/专线) | ✅ 实测确认(Q13):EIP 绑定后 https://EIP:5443 可达 |
+| 14 | CCE/ECS/VPC API 限流阈值与错误码全集 | ✅ 实测确认(Q14):错误码表落地;**读 ~70 req/s、写 10 次/分钟触发限流;Retry-After 待抓包** |
