@@ -227,6 +227,7 @@ clusterctl delete --infrastructure cce
 - [华为云 CCE 对齐问卷](docs/cce-verification-questionnaire.md) · [验证结论记录](docs/cce-verification-findings.md)
 - [clusterctl 部署演练记录(kind + 真实 CCE)](docs/clusterctl-deployment-validation.md)
 - [官方 API 参考文档审查记录](docs/api-review-findings.md)
+- [全量代码审计记录](docs/code-audit-findings.md)
 - [CAPA 源码分析报告](docs/CAPA架构分析报告.md) · [阿里云 ACK Provider 源码分析报告](docs/ACKProvider架构分析报告.md) · [CAPHW 源码分析报告](docs/CAPHW架构分析报告.md)
 
 ## 依赖与致谢
