@@ -52,6 +52,9 @@
 3. **MachinePool.spec.replicas 未从拥有者同步**:声明 `machinepools get;list;watch` 却从不 Get,`kubectl scale machinepool` 不生效。建议 reconcile 中 Get 拥有者同步 replicas。
 4. **CreateCluster adopt-by-name 无所有权/状态校验**:冲突后按名收养,不校验 phase/VPC 归属,可能收养异参集群。建议 ShowCluster 校验 phase + 关键参数。
 
+### 设计取舍(审计建议但有意保留)
+- **containerNetwork.mode 默认 eni**:审计建议改 overlay_l2(避免"只填 clusterName 默认即失败"),但架构定位为 Turbo+eni 默认(与 EKS 托管模式对齐),保留现状;用户需显式给 mode/category。
+
 ### 低危
 - `cmd/main.go` zap Development:true(生产应 false)
 - metrics :8080 无鉴权、缺 seccompProfile/runAsUser
