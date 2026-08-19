@@ -55,6 +55,7 @@ func (r *CCEManagedMachinePoolReconciler) newCCEService(regionID, ak, sk string)
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=machinepools,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters/status,verbs=get
+// +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=cceclusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=controlplane.cluster.x-k8s.io,resources=ccemanagedcontrolplanes,verbs=get;list;watch
 
 // Reconcile implements the reconcile loop of CCEManagedMachinePool.
@@ -214,11 +215,27 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			conditions.ReconciliationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
+	// Replicas should reflect the ACTUAL node count, not the desired target
+	// (spec.initialNodeCount) — status.currentNode is the expected total,
+	// status.activeNode is the ready count (official NodePoolStatus). Mark a
+	// pool whose node pool disappeared out-of-band as NotReady so it is
+	// reconciled (recreated) instead of scaling a deleted pool forever.
+	found := false
 	for _, p := range pools {
 		if p.NodePoolID == pool.Status.NodePoolID {
-			pool.Status.Replicas = p.DesiredNodeCount
-			pool.Status.AvailableReplicas = p.NodeCount
+			found = true
+			pool.Status.Replicas = p.NodeCount
+			pool.Status.AvailableReplicas = p.ActiveNodeCount
 		}
+	}
+	if !found {
+		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
+			conditions.ReconciliationFailedReason, "node pool not found in cloud, recreating")
+		pool.Status.NodePoolID = ""
+		if err := r.Status().Update(ctx, pool); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
 	conditions.MarkTrue(pool, conditions.NodePoolReadyCondition, "NodePoolReady", "node pool is ready")

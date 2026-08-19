@@ -288,12 +288,18 @@ func (r *CCEManagedControlPlaneReconciler) pollUpgradeTask(ctx context.Context, 
 		cp.Status.Version = cp.Spec.Version
 		conditions.MarkTrue(cp, conditions.UpgradeReadyCondition, "UpgradeCompleted", "cluster upgraded to "+cp.Spec.Version)
 		log.Info("Cluster upgrade completed", "clusterID", clusterID, "version", cp.Spec.Version)
-		// Continue the normal reconcile (kubeconfig + Ready) below.
-		return ctrl.Result{}, false
+		// Persist and requeue so the NEXT reconcile observes the new version
+		// (reconcile's info.Version is stale here and would otherwise re-trigger
+		// an upgrade in this same pass).
+		return r.persistUpgradeStatus(ctx, cp)
 	case cceService.UpgradeTaskPhaseFailed:
+		// Clear the task ID: the previous behavior kept it forever and only a
+		// manual status edit could unblock; with it cleared, the next reconcile
+		// re-evaluates the target (declarative retry). Mark the failure so it
+		// is visible in conditions.
+		cp.Status.UpgradeTaskID = ""
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.ReconciliationFailedReason, "upgrade task failed")
-		// Keep the task ID so the failure is visible; a spec change clears it.
 		return r.persistUpgradeStatus(ctx, cp)
 	default: // Init/Queuing/Running/Pause
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,

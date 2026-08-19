@@ -85,7 +85,7 @@ func NewFakeCCEService() *FakeCCEService {
 	}
 	f.DeleteNodePoolFn = func(_ context.Context, _, _ string) error { return nil }
 	f.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
-		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", DesiredNodeCount: 3}}, nil
+		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", DesiredNodeCount: 3, NodeCount: 3, ActiveNodeCount: 3}}, nil
 	}
 	f.GetUpgradeInfoFn = func(_ context.Context, _ string) (*cceService.UpgradeInfo, error) {
 		return &cceService.UpgradeInfo{CurrentVersion: "v1.30.0", TargetVersions: []string{"v1.31.0"}}, nil

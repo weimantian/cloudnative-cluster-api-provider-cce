@@ -149,6 +149,20 @@ func (v *Validator) Validate(ctx context.Context, in ValidateInput) ([]Issue, er
 		issues = append(issues, Issue{Field: "containerNetwork.cidr",
 			Message: "container CIDR overlaps the service CIDR (official hard constraint)"})
 	}
+	// 4b. Container CIDR must not overlap the VPC CIDR or any subnet CIDR
+	// (official hard constraint for vpc-router/overlay modes).
+	if in.ContainerMode != "eni" && in.ContainerCIDR != "" {
+		if vpcCIDR != "" && cidrsOverlap(in.ContainerCIDR, vpcCIDR) {
+			issues = append(issues, Issue{Field: "containerNetwork.cidr",
+				Message: "container CIDR overlaps the VPC CIDR (official hard constraint)"})
+		}
+		for id, c := range subnetCIDRs {
+			if cidrsOverlap(in.ContainerCIDR, c) {
+				issues = append(issues, Issue{Field: "containerNetwork.cidr",
+					Message: "container CIDR overlaps subnet " + id + " (" + c + ")"})
+			}
+		}
+	}
 
 	// 5. eni subnet count limit + recommendation to separate from node subnets.
 	if in.ContainerMode == "eni" {

@@ -82,6 +82,13 @@ func (c *CCEManagedControlPlane) validate() error {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "containerNetwork", "eniSubnets"),
 			"eni mode requires at least one ENI subnet (official eniNetwork.subnets)"))
 	}
+	// Subscription billing (mode=1) requires periodType/periodNum which the
+	// CRD does not expose yet — reject it explicitly instead of letting the
+	// create loop fail forever on a missing required field.
+	if c.Spec.Billing.Mode == 1 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "billing", "mode"), "1",
+			"subscription billing is not supported yet (periodType/periodNum not exposed)"))
+	}
 	if len(allErrs) == 0 {
 		return nil
 	}

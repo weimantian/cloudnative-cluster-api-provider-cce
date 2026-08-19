@@ -426,6 +426,9 @@ func (s *Client) findNodePoolIDByName(ctx context.Context, clusterID, name strin
 // Final confirmation still requires a live test (questionnaire Q3: create a
 // 2-node pool and pass desiredNodeCount=2 — absolute => stays 2, delta => 4).
 func (s *Client) ScaleNodePool(_ context.Context, clusterID, nodePoolID string, desiredCount int32) error {
+	if desiredCount < 0 {
+		return errors.Errorf("ScaleNodePool: desired node count must be >= 0, got %d", desiredCount)
+	}
 	if _, err := s.cce.ScaleNodePool(&model.ScaleNodePoolRequest{
 		ClusterId:  clusterID,
 		NodepoolId: nodePoolID,
@@ -585,9 +588,14 @@ func (s *Client) GetUpgradeInfo(_ context.Context, clusterID string) (*UpgradeIn
 //     CCE_CM.0101.
 func (s *Client) StartUpgrade(_ context.Context, clusterID, targetVersion string) (string, error) {
 	// Resolve the full current version (release-patch) so the workflow and
-	// pre-check carry identical values.
+	// pre-check carry identical values. A query failure is fatal — proceeding
+	// with an empty version would only surface as a cryptic CCE_CM.0101.
 	currentVersion := ""
-	if up, err := s.cce.ShowClusterUpgradeInfo(&model.ShowClusterUpgradeInfoRequest{ClusterId: clusterID}); err == nil && up.Spec != nil && up.Spec.VersionInfo != nil {
+	up, err := s.cce.ShowClusterUpgradeInfo(&model.ShowClusterUpgradeInfoRequest{ClusterId: clusterID})
+	if err != nil {
+		return "", errors.Wrap(err, "ShowClusterUpgradeInfo failed")
+	}
+	if up.Spec != nil && up.Spec.VersionInfo != nil {
 		if vi := up.Spec.VersionInfo; vi.Release != nil {
 			currentVersion = *vi.Release
 			if vi.Patch != nil && *vi.Patch != "" {

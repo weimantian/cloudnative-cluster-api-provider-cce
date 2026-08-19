@@ -285,6 +285,19 @@ func TestControlPlaneReconcileUpgradeCompletes(t *testing.T) {
 	if c := capiconditions.Get(got, conditions.UpgradeReadyCondition); c == nil || c.Status != metav1.ConditionTrue {
 		t.Errorf("expected UpgradeReady=True after success, got %v", c)
 	}
+
+	// Success now persists + requeues (so the next reconcile observes the new
+	// version and does not re-trigger an upgrade in the same pass). The next
+	// reconcile should then complete kubeconfig + Ready.
+	if _, err := r.Reconcile(ctxBG, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("third Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.StartUpgradeCalls) != 1 {
+		t.Errorf("expected no new upgrade after completion, got %v", fakeSvc.StartUpgradeCalls)
+	}
+	if err := k8sClient.Get(ctxBG, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
 	if !got.Status.Ready || !got.Status.Initialized {
 		t.Error("expected control plane Ready after upgrade completed")
 	}
