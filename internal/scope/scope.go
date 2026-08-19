@@ -28,9 +28,11 @@ type Credentials struct {
 }
 
 // ResolveCredentials reads the per-cluster credentials Secret
-// (<cluster>-credentials, keys accessKey/secretKey) and falls back to the
-// CLOUD_SDK_AK / CLOUD_SDK_SK environment variables (see
-// deploy/variables.md).
+// (<cluster>-credentials, keys accessKey/secretKey). Environment fallback
+// (CLOUD_SDK_AK / CLOUD_SDK_SK) is used ONLY when no Secret name is given;
+// when a Secret is explicitly referenced but missing, this is an error rather
+// than a silent fallback — otherwise a typo would silently run the provider
+// against the global account (cross-tenant risk).
 func ResolveCredentials(ctx context.Context, c client.Client, namespace, secretName string) (*Credentials, error) {
 	if secretName == "" {
 		return credentialsFromEnv()
@@ -39,8 +41,7 @@ func ResolveCredentials(ctx context.Context, c client.Client, namespace, secretN
 	key := types.NamespacedName{Namespace: namespace, Name: secretName}
 	if err := c.Get(ctx, key, secret); err != nil {
 		if apierrors.IsNotFound(err) {
-			// Fall back to environment credentials.
-			return credentialsFromEnv()
+			return nil, errors.Errorf("credentials Secret %s not found (create it with keys accessKey/secretKey)", key)
 		}
 		return nil, errors.Wrapf(err, "failed to read credentials Secret %s", key)
 	}

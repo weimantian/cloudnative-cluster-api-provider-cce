@@ -8,6 +8,8 @@ package controllers
 
 import (
 	"context"
+	"net/url"
+	"strconv"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -156,28 +158,44 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	info, err := svc.ShowCluster(ctx, clusterID)
 	if err != nil {
 		if clouderrors.IsNotFound(err) {
-			// Cluster deleted out of band — reset so it is recreated.
+			// Cluster deleted out of band — reset and persist so the next
+			// reconcile recreates it (the ID must be cleared in the stored
+			// status, otherwise this loops forever).
 			cp.Status.ClusterID = ""
 			conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 				conditions.ReconciliationFailedReason, "CCE cluster not found, recreating")
+			if uerr := r.Status().Update(ctx, cp); uerr != nil {
+				return ctrl.Result{}, uerr
+			}
 			return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 		}
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
+		if uerr := r.Status().Update(ctx, cp); uerr != nil {
+			return ctrl.Result{}, uerr
+		}
 		return resultAfterError(err)
 	}
 	if info.Phase != "Available" {
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 			conditions.ReconciliationInProgressReason, "CCE cluster phase: "+info.Phase)
+		if uerr := r.Status().Update(ctx, cp); uerr != nil {
+			return ctrl.Result{}, uerr
+		}
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
-	// Backfill the API server endpoint (official ShowClusterEndpoints model).
+	// Backfill the API server endpoint. Official endpoint type values are
+	// "Internal"/"External" (model_cluster_endpoints.go), NOT "public"/
+	// "private" — matching on the wrong strings left the endpoint empty.
 	for _, ep := range info.Endpoints {
-		endpoint := &clusterv1.APIEndpoint{Host: ep.URL, Port: 5443}
-		if ep.Type == "public" || (ep.Type == "private" && (cp.Status.ControlPlaneEndpoint == nil || cp.Status.ControlPlaneEndpoint.IsZero())) {
+		host, port := splitEndpointURL(ep.URL)
+		if port == 0 {
+			port = 5443
+		}
+		endpoint := &clusterv1.APIEndpoint{Host: host, Port: port}
+		if ep.Type == "External" || (ep.Type == "Internal" && (cp.Status.ControlPlaneEndpoint == nil || cp.Status.ControlPlaneEndpoint.IsZero())) {
 			cp.Status.ControlPlaneEndpoint = endpoint
-			cp.Spec.ControlPlaneEndpoint = endpoint
 		}
 	}
 	cp.Status.Version = info.Version
@@ -362,7 +380,14 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 	}
 
 	if cp.Status.ClusterID != "" {
-		if _, err := svc.ShowCluster(ctx, cp.Status.ClusterID); err == nil {
+		if _, err := svc.ShowCluster(ctx, cp.Status.ClusterID); err != nil {
+			// Only a 404 means the cluster is already gone. Any transient error
+			// (throttle/network) must NOT fall through to removing the
+			// finalizer — that would leak the CCE cluster forever.
+			if !clouderrors.IsNotFound(err) {
+				return ctrl.Result{}, errors.Wrap(err, "failed to check CCE cluster before deletion")
+			}
+		} else {
 			// Delete with explicit options to avoid leftovers (official
 			// defaults leave EVS/storage behind — questionnaire Q8).
 			if err := svc.DeleteCluster(ctx, cceService.DeleteClusterInput{
@@ -459,4 +484,22 @@ func containsVersion(targets []string, requested string) bool {
 		}
 	}
 	return false
+}
+
+// splitEndpointURL parses a CCE endpoint URL (https://10.0.0.10:5443) into
+// host and port. Port 0 is returned when absent (callers then default it).
+func splitEndpointURL(raw string) (string, int32) {
+	u, err := url.Parse(raw)
+	if err != nil || u.Host == "" {
+		return "", 0
+	}
+	host := u.Hostname()
+	if host == "" {
+		host = u.Host
+	}
+	port := int32(0)
+	if p, err := strconv.Atoi(u.Port()); err == nil {
+		port = int32(p)
+	}
+	return host, port
 }

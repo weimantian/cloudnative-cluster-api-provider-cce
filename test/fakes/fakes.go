@@ -53,7 +53,7 @@ func NewFakeCCEService() *FakeCCEService {
 			ClusterID: clusterID,
 			Phase:     "Available",
 			Version:   "v1.30.0",
-			Endpoints: []cceService.Endpoint{{URL: "https://10.0.0.10", Type: "private"}},
+			Endpoints: []cceService.Endpoint{{URL: "https://10.0.0.10:5443", Type: "Internal"}},
 		}, nil
 	}
 	f.CreateClusterFn = func(_ context.Context, in cceService.CreateClusterInput) (string, error) {

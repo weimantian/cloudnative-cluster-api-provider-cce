@@ -109,16 +109,30 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 	}
 
 	// Validate the referenced network (VPC/subnet existence and CIDR
-	// compatibility) per the official rules (questionnaire Q4/Q7). When no
-	// credentials are configured yet (env fallback missing) the validation is
-	// skipped with a warning — the CCE API will reject bad networks at create
-	// time (CCE.01400002/01400005).
-	if creds, err := scope.ResolveCredentials(ctx, r.Client, cceCluster.Namespace, cluster.Name+"-credentials"); err == nil {
+	// compatibility) per the official rules (questionnaire Q4/Q7). A
+	// credentials resolution FAILURE (secret missing/corrupt) must not
+	// silently skip validation and mark Ready — that would let a bad network
+	// config through to a confusing CCE error later. Only an explicit
+	// "no credentials configured at all" (empty secretName) is a skip-with-
+	// warning.
+	creds, credErr := scope.ResolveCredentials(ctx, r.Client, cceCluster.Namespace, cluster.Name+"-credentials")
+	if credErr != nil {
+		conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
+			conditions.ReconciliationFailedReason, credErr.Error())
+		if err := r.Status().Update(ctx, cceCluster); err != nil {
+			return ctrl.Result{}, err
+		}
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	}
+	if creds != nil {
 		validator, verr := r.newNetworkValidator(cceCluster.Spec.Region, creds.AccessKey, creds.SecretKey)
 		if verr != nil {
 			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 				conditions.ReconciliationFailedReason, verr.Error())
-			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, verr
+			if err := r.Status().Update(ctx, cceCluster); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, nil
 		}
 		// Read the container/service CIDR from the control plane spec.
 		containerMode, containerCIDR, serviceCIDR, eniSubnets := "", "", "", []string{}
@@ -142,7 +156,10 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		if verr != nil {
 			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 				conditions.ReconciliationFailedReason, verr.Error())
-			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, verr
+			if err := r.Status().Update(ctx, cceCluster); err != nil {
+				return ctrl.Result{}, err
+			}
+			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, nil
 		}
 		var hardMsgs []string
 		for _, i := range issues {
@@ -160,10 +177,8 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 			if err := r.Status().Update(ctx, cceCluster); err != nil {
 				return ctrl.Result{}, err
 			}
-			return ctrl.Result{RequeueAfter: 2 * time.Minute}, errors.New("network validation failed: " + strings.Join(hardMsgs, "; "))
+			return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
 		}
-	} else {
-		log.Info("Skipping network validation: no credentials configured (env fallback missing)")
 	}
 	conditions.MarkTrue(cceCluster, conditions.NetworkReadyCondition, "NetworkValidated", "network references validated")
 

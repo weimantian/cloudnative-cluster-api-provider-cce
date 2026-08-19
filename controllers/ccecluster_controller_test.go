@@ -27,6 +27,7 @@ func TestCCEClusterReconcileReady(t *testing.T) {
 	createNamespace(t, ns)
 
 	cluster, _, _ := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
 
 	fakeNet := fakes.NewFakeNetworkValidator()
 	r := &CCEClusterReconciler{
@@ -36,8 +37,7 @@ func TestCCEClusterReconcileReady(t *testing.T) {
 		},
 	}
 
-	// No credentials Secret configured => validation is skipped and the
-	// cluster shell becomes ready.
+	// With credentials resolved, validation runs and the shell becomes ready.
 	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)}); err != nil {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
@@ -76,8 +76,12 @@ func TestCCEClusterReconcileNetworkFailure(t *testing.T) {
 		},
 	}
 
-	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)}); err == nil {
-		t.Fatal("expected Reconcile to fail on network validation")
+	res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)})
+	if err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if res.RequeueAfter == 0 {
+		t.Error("expected a requeue after network validation failure")
 	}
 
 	got := &infrav1beta1.CCECluster{}

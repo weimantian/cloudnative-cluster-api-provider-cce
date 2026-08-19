@@ -88,7 +88,7 @@ func TestControlPlaneReconcileSuccess(t *testing.T) {
 	if got.Status.ClusterID != "cluster-1" {
 		t.Errorf("expected ClusterID cluster-1, got %q", got.Status.ClusterID)
 	}
-	if got.Status.ControlPlaneEndpoint == nil || got.Status.ControlPlaneEndpoint.Host != "https://10.0.0.10" || got.Status.ControlPlaneEndpoint.Port != 5443 {
+	if got.Status.ControlPlaneEndpoint == nil || got.Status.ControlPlaneEndpoint.Host != "10.0.0.10" || got.Status.ControlPlaneEndpoint.Port != 5443 {
 		t.Errorf("unexpected endpoint: %+v", got.Status.ControlPlaneEndpoint)
 	}
 	for _, cType := range []string{conditions.CredentialsReadyCondition, conditions.CCEClusterReadyCondition, conditions.KubeconfigReadyCondition} {

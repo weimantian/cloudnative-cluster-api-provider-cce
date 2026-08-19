@@ -270,6 +270,11 @@ func (s *Client) DeleteCluster(_ context.Context, in DeleteClusterInput) error {
 	// Deletion is async (200 = job accepted); the controller polls ShowCluster
 	// until the cluster is gone (verified live against real CCE — Q8).
 	if _, err := s.cce.DeleteCluster(req); err != nil {
+		if clouderrors.IsNotFound(err) {
+			// Idempotent delete: already gone is success (aligns with
+			// DeleteNodePool).
+			return nil
+		}
 		return errors.Wrapf(err, "DeleteCluster %s failed", in.ClusterID)
 	}
 	return nil
@@ -324,7 +329,7 @@ func (s *Client) GetClusterKubeconfig(_ context.Context, clusterID string, durat
 }
 
 // CreateNodePool implements Service.
-func (s *Client) CreateNodePool(_ context.Context, in CreateNodePoolInput) (string, error) {
+func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (string, error) {
 	billingMode := model.GetNodeTemplateBillingModeEnum().E_0
 	if in.BillingMode == 1 {
 		billingMode = model.GetNodeTemplateBillingModeEnum().E_1
@@ -379,12 +384,35 @@ func (s *Client) CreateNodePool(_ context.Context, in CreateNodePoolInput) (stri
 		Body:      pool,
 	})
 	if err != nil {
+		// Idempotent create: if the pool already exists (a previous create
+		// succeeded but the response was lost to throttling — the same failure
+		// mode CreateCluster handles), adopt it by name instead of failing on a
+		// 409 forever.
+		if clouderrors.IsConflict(err) {
+			if id, ferr := s.findNodePoolIDByName(ctx, in.ClusterID, in.Name); ferr == nil && id != "" {
+				return id, nil
+			}
+		}
 		return "", errors.Wrap(err, "CreateNodePool failed")
 	}
 	if resp.Metadata == nil || resp.Metadata.Uid == nil {
 		return "", errors.New("CreateNodePool returned no node pool ID")
 	}
 	return *resp.Metadata.Uid, nil
+}
+
+// findNodePoolIDByName looks up a node pool ID by name within a cluster.
+func (s *Client) findNodePoolIDByName(ctx context.Context, clusterID, name string) (string, error) {
+	pools, err := s.ListNodePools(ctx, clusterID)
+	if err != nil {
+		return "", errors.Wrap(err, "ListNodePools failed")
+	}
+	for _, p := range pools {
+		if p.Name == name {
+			return p.NodePoolID, nil
+		}
+	}
+	return "", errors.Errorf("node pool %q not found in cluster %s", name, clusterID)
 }
 
 // ScaleNodePool implements Service.
