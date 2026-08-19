@@ -28,10 +28,18 @@ const (
 	ErrCodeInsufficientClusterQuota = "CCE.01400007"
 	// ErrCodeInsufficientServerQuota: 400 Insufficient server (ECS) quota.
 	ErrCodeInsufficientServerQuota = "CCE.01400008"
+	// ErrCodeInsufficientCPUQuota: 400 Insufficient CPU quota.
+	ErrCodeInsufficientCPUQuota = "CCE.01400009"
+	// ErrCodeInsufficientMemoryQuota: 400 Insufficient memory quota.
+	ErrCodeInsufficientMemoryQuota = "CCE.01400010"
 	// ErrCodeInsufficientSecurityGroupQuota: 400 Insufficient security group quota.
 	ErrCodeInsufficientSecurityGroupQuota = "CCE.01400011"
+	// ErrCodeInsufficientEIPQuota: 400 Insufficient EIP quota.
+	ErrCodeInsufficientEIPQuota = "CCE.01400012"
 	// ErrCodeInsufficientVolumeQuota: 400 Insufficient volume quota.
 	ErrCodeInsufficientVolumeQuota = "CCE.01400013"
+	// ErrCodeInsufficientResourceTenantQuota: 400 Insufficient resource tenant quota.
+	ErrCodeInsufficientResourceTenantQuota = "CCE.01400019"
 	// ErrCodeInsufficientVPCQuota: 400 Insufficient VPC quota.
 	ErrCodeInsufficientVPCQuota = "CCE.01400020"
 	// ErrCodeInsufficientSubENIQuota: 400 unsupported flavor with insufficient sub-ENI quota.
@@ -42,6 +50,8 @@ const (
 	ErrCodeAuthenticationFailure = "CCE.01401001"
 	// ErrCodePermissionDenied: 403 access denied / insufficient permission.
 	ErrCodePermissionDenied = "CCE.01403001"
+	// ErrCodeAccountRestricted: 403 account restricted.
+	ErrCodeAccountRestricted = "CCE.01403002"
 	// ErrCodeNoAgencyPermission: 403 no permission to create/authorize agencies.
 	ErrCodeNoAgencyPermission = "CCE.01403008"
 	// ErrCodeResourceAlreadyExists: 409 the resource already exists.
@@ -56,6 +66,10 @@ const (
 	ErrCodeResourceLocked = "CCE.01429002"
 	// ErrCodeConcurrencyLimit: 429 the concurrency limit of tasks has been reached.
 	ErrCodeConcurrencyLimit = "CCE.01429003"
+	// ErrCodeContainerCIDRConflictCM: 400 container network CIDR conflict
+	// (CCE_CM.0410, observed live; the CCE_CM.* family is not listed in the
+	// official error-code table but is returned by the platform).
+	ErrCodeContainerCIDRConflictCM = "CCE_CM.0410"
 )
 
 // IsNotFound reports whether err is a "resource not found" SDK error.
@@ -68,25 +82,33 @@ func IsNotFound(err error) bool {
 }
 
 // IsConflict reports whether err is an "already exists" / invalid-state error.
+// Includes the official container-network CIDR conflict code (CCE.01400005,
+// ErrorCodes.txt) and the live-observed CCE_CM.0410 (same meaning, returned
+// by the platform as 400; not listed in the official error-code table).
 func IsConflict(err error) bool {
 	var sdkErr *sdkerr.ServiceResponseError
 	if errors.As(err, &sdkErr) {
 		return sdkErr.StatusCode == 409 ||
 			sdkErr.ErrorCode == ErrCodeResourceAlreadyExists ||
-			sdkErr.ErrorCode == ErrCodeResourceVersionExpired
+			sdkErr.ErrorCode == ErrCodeResourceVersionExpired ||
+			sdkErr.ErrorCode == ErrCodeContainerNetworkCIDRConflict ||
+			sdkErr.ErrorCode == ErrCodeContainerCIDRConflictCM
 	}
 	return false
 }
 
 // IsPermissionDenied reports whether err is an authentication/permission error
-// (401 CCE.01401001, 403 CCE.01403001/01403008); surfaced as a permanent
-// failure condition (no retry).
+// (401 CCE.01401001, 403 CCE.01403001/01403002/01403008). The 403 state-conflict
+// codes (CCE.01403003~06/09 — "wait and retry") are deliberately NOT matched
+// here: they are transient conditions, not permission failures, so they must
+// not be parked on the long 30-minute backoff.
 func IsPermissionDenied(err error) bool {
 	var sdkErr *sdkerr.ServiceResponseError
 	if errors.As(err, &sdkErr) {
-		return sdkErr.StatusCode == 401 || sdkErr.StatusCode == 403 ||
+		return sdkErr.StatusCode == 401 ||
 			sdkErr.ErrorCode == ErrCodeAuthenticationFailure ||
 			sdkErr.ErrorCode == ErrCodePermissionDenied ||
+			sdkErr.ErrorCode == ErrCodeAccountRestricted ||
 			sdkErr.ErrorCode == ErrCodeNoAgencyPermission
 	}
 	return false
@@ -104,16 +126,21 @@ func IsThrottled(err error) bool {
 	return false
 }
 
-// IsQuotaExceeded reports whether err is a quota-exceeded error
-// (CCE.01400007/08/09/10/11/12/13/19/20/25).
+// IsQuotaExceeded reports whether err is a quota-exceeded error. Official
+// quota codes (ErrorCodes.txt): cluster/server/security-group/volume/vpc/
+// subENI/CPU/memory/EIP/resource-tenant.
 func IsQuotaExceeded(err error) bool {
 	var sdkErr *sdkerr.ServiceResponseError
 	if errors.As(err, &sdkErr) {
 		switch sdkErr.ErrorCode {
 		case ErrCodeInsufficientClusterQuota,
 			ErrCodeInsufficientServerQuota,
+			ErrCodeInsufficientCPUQuota,
+			ErrCodeInsufficientMemoryQuota,
 			ErrCodeInsufficientSecurityGroupQuota,
+			ErrCodeInsufficientEIPQuota,
 			ErrCodeInsufficientVolumeQuota,
+			ErrCodeInsufficientResourceTenantQuota,
 			ErrCodeInsufficientVPCQuota,
 			ErrCodeInsufficientSubENIQuota:
 			return true

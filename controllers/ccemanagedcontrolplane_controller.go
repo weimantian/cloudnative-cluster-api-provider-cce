@@ -8,7 +8,6 @@ package controllers
 
 import (
 	"context"
-	"slices"
 	"strings"
 
 	"github.com/pkg/errors"
@@ -300,15 +299,22 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 		// Platform currently offers no upgrade target — normal state, not an
 		// error (questionnaire Q11, verified live across cluster shapes).
 		// Official prerequisite (cce_10_0197): the running patch must be the
-		// latest before a version upgrade; the platform rolls out upgrade
-		// targets over time, so this is transient.
+		// latest before a version upgrade; when suggestPatch is set, surface
+		// it so the user knows to upgrade the patch first.
+		msg := "no upgrade targets offered from " + info.CurrentVersion +
+			"; check Huawei Cloud upgrade policy"
+		if info.SuggestPatch != "" {
+			msg += "; upgrade the patch to " + info.SuggestPatch + " first"
+		}
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
-			conditions.UpgradeNotOfferedReason,
-			"no upgrade targets offered from "+info.CurrentVersion+
-				"; ensure the patch is up to date and check Huawei Cloud upgrade policy")
+			conditions.UpgradeNotOfferedReason, msg)
 		return r.persistUpgradeStatus(ctx, cp)
 	}
-	if !slices.Contains(info.TargetVersions, cp.Spec.Version) {
+	// The platform returns full target versions (e.g. v1.34.8-r2) while a
+	// user may specify a major version (e.g. v1.34) — the official API accepts
+	// a major version and resolves the latest patch. Match on the version
+	// prefix so a major-version spec is not rejected as unavailable.
+	if !containsVersion(info.TargetVersions, cp.Spec.Version) {
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.UpgradeTargetUnavailableReason,
 			"target version "+cp.Spec.Version+" not offered; available: "+strings.Join(info.TargetVersions, ", "))
@@ -441,4 +447,16 @@ func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane, vpcID,
 		AgencyName:           cp.Spec.AgencyName,
 		BillingMode:          cp.Spec.Billing.Mode,
 	}
+}
+
+// containsVersion reports whether targets contains a version matching the
+// requested one: exact match, or the requested version as a prefix of a full
+// target (e.g. "v1.34" matches "v1.34.8-r2").
+func containsVersion(targets []string, requested string) bool {
+	for _, t := range targets {
+		if t == requested || strings.HasPrefix(t, requested+".") {
+			return true
+		}
+	}
+	return false
 }

@@ -660,7 +660,7 @@ func TestSmokeUpgrade(t *testing.T) {
 	if _, err := client.CreatePostCheck(&model.CreatePostCheckRequest{
 		ClusterId: clusterID,
 		Body: &model.PostcheckClusterRequestBody{
-			Kind:       "PostCheck",
+			Kind:       "PostCheckTask",
 			ApiVersion: "v3",
 			Spec:       &model.PostcheckSpec{ClusterID: &clusterID, TargetVersion: &toVersion},
 		},
@@ -929,6 +929,10 @@ func TestSmokeUpgradeInfo(t *testing.T) {
 	}
 	t.Logf("Q11 RESULT: cluster %s platform release=%s patch=%s suggestPatch=%s; OFFERED upgrade targets=%v",
 		fromVersion, release, patch, suggest, targets)
+	clusterVersion := release
+	if patch != "" {
+		clusterVersion += "-" + patch
+	}
 	if len(targets) == 0 {
 		t.Log("Q11: no upgrade targets offered — the earlier 'only support to current' is the platform's current upgrade policy (no cross-minor path from this version)")
 		return
@@ -961,7 +965,7 @@ func TestSmokeUpgradeInfo(t *testing.T) {
 		}
 		if _, err := client.CreatePreCheck(&model.CreatePreCheckRequest{
 			ClusterId: clusterID,
-			Body:      &model.PrecheckClusterRequestBody{Kind: "PreCheck", ApiVersion: "v3", Spec: &model.PrecheckSpec{ClusterID: &clusterID, TargetVersion: &target}},
+			Body:      &model.PrecheckClusterRequestBody{Kind: "PreCheckTask", ApiVersion: "v3", Spec: &model.PrecheckSpec{ClusterID: &clusterID, ClusterVersion: &clusterVersion, TargetVersion: &target}},
 		}); err != nil {
 			t.Logf("Q11: CreatePreCheck failed: %v", err)
 		}

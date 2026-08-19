@@ -12,11 +12,14 @@ package cce
 
 import "context"
 
-// Endpoint is an API server endpoint of a CCE cluster.
+// Endpoint is an API server endpoint of a CCE cluster. It mirrors
+// Cluster.status.endpoints from ShowCluster (NOT the ShowClusterEndpoints API,
+// which returns privateEndpoint/publicEndpoint strings).
 type Endpoint struct {
 	// URL of the endpoint.
 	URL string
-	// Type: "public" or "private" (official ShowClusterEndpoints model).
+	// Type: "Internal" (VPC-internal) or "External" (public) per the official
+	// ClusterEndpoints model in ShowCluster.
 	Type string
 }
 
@@ -53,7 +56,14 @@ type CreateClusterInput struct {
 	PublicAccess        bool
 	AgencyName          string
 	BillingMode         int32
-	Tags                map[string]string
+	// PeriodType/PeriodNum are REQUIRED when BillingMode=1 (subscription):
+	// periodType month|year, periodNum month [1-9] / year [1-3] (official
+	// ClusterExtendParam; verified against CreateCluster.txt).
+	PeriodType  string
+	PeriodNum   int32
+	IsAutoRenew string // "true" | "false"
+	IsAutoPay   string // "true" | "false"
+	Tags        map[string]string
 }
 
 // CreateNodePoolInput maps the CCEManagedMachinePool spec to the CCE
@@ -93,11 +103,13 @@ type NodePoolAutoscaling struct {
 type NodePoolInfo struct {
 	NodePoolID string
 	Name       string
-	// DesiredNodeCount as reported by CCE.
+	// DesiredNodeCount as reported by CCE (spec.initialNodeCount).
 	DesiredNodeCount int32
-	// NodeCount is the number of nodes in the pool (Active count, subject to
-	// verification — questionnaire Q3).
+	// NodeCount is status.currentNode (expected total, incl. creating/
+	// deleting) as reported by CCE.
 	NodeCount int32
+	// ActiveNodeCount is status.activeNode (nodes in Active state).
+	ActiveNodeCount int32
 }
 
 // DeleteClusterInput carries the CCE DeleteCluster query options. Official
@@ -115,10 +127,17 @@ type DeleteClusterInput struct {
 	DeleteELB bool
 	// DeleteEFS deletes SFS Turbo volumes (official default: skip).
 	DeleteEFS bool
+	// DeleteOBS deletes OBS buckets (official default: skip).
+	DeleteOBS bool
+	// DeleteSFS deletes SFS volumes (official default: skip).
+	DeleteSFS bool
+	// DeleteSFS30 deletes SFS 3.0 volumes (official default: skip).
+	DeleteSFS30 bool
 	// OnDemandNodePolicy: delete | reset | retain (official default: delete
 	// on-demand nodes, retain admitted nodes).
 	OnDemandNodePolicy string
-	// PeriodicNodePolicy: reset | retain.
+	// PeriodicNodePolicy: reset | retain. Empty leaves the parameter unset so
+	// the official default (retain) applies.
 	PeriodicNodePolicy string
 }
 
@@ -153,6 +172,12 @@ type QuotaInfo struct {
 type UpgradeInfo struct {
 	// CurrentVersion is the running release, e.g. "v1.34.8".
 	CurrentVersion string
+	// Patch is the running patch, e.g. "r2".
+	Patch string
+	// SuggestPatch is the patch the platform recommends upgrading to first
+	// (official GetClusterUpgradeInfo: "推荐升级的目标补丁版本号,如r0"). Empty
+	// when no patch upgrade is suggested.
+	SuggestPatch string
 	// TargetVersions are the versions the platform offers as upgrade targets.
 	TargetVersions []string
 }

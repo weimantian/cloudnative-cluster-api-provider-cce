@@ -245,11 +245,29 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 			}
 		}
 		if cp.Status.ClusterID != "" {
-			if err := svc.DeleteNodePool(ctx, cp.Status.ClusterID, pool.Status.NodePoolID); err != nil {
+			// Idempotent delete + wait: keep requesting deletion until the
+			// node pool is actually gone from the cloud, then clear the ID so
+			// the finalizer can be removed (fix: the ID was never cleared,
+			// dead-locking deletion forever).
+			pools, err := svc.ListNodePools(ctx, cp.Status.ClusterID)
+			if err != nil {
 				return ctrl.Result{}, err
 			}
-			log.Info("Node pool deletion requested, waiting", "nodePoolID", pool.Status.NodePoolID)
-			return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+			stillExists := false
+			for _, p := range pools {
+				if p.NodePoolID == pool.Status.NodePoolID {
+					stillExists = true
+					break
+				}
+			}
+			if stillExists {
+				if err := svc.DeleteNodePool(ctx, cp.Status.ClusterID, pool.Status.NodePoolID); err != nil {
+					return ctrl.Result{}, err
+				}
+				log.Info("Node pool deletion requested, waiting", "nodePoolID", pool.Status.NodePoolID)
+				return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+			}
+			pool.Status.NodePoolID = ""
 		}
 	}
 

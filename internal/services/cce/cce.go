@@ -8,7 +8,6 @@ package cce
 
 import (
 	"context"
-	"strings"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
@@ -87,15 +86,29 @@ func (s *Client) ShowCluster(_ context.Context, clusterID string) (*ClusterInfo,
 
 // CreateCluster implements Service.
 func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (string, error) {
+	// hostNetwork (VPC + node subnet) is REQUIRED by the official API
+	// (CreateCluster.txt: "VPC是集群内节点之间的通信依赖,所以是必选的参数集").
+	// Fail fast here instead of sending a request the platform will reject.
+	if in.HostNetworkVpcID == "" || in.HostNetworkSubnetID == "" {
+		return "", errors.New("CreateCluster: hostNetwork vpc and subnet are required")
+	}
 	spec := &model.ClusterSpec{
-		Category:    clusterCategory(in.Category),
-		Flavor:      stringPtr(in.Flavor),
-		Version:     stringPtr(in.Version),
+		// category: empty is derived from the network mode per official docs
+		// ("容器网络参数设置为eni模式时,默认为Turbo;否则默认为CCE").
+		Category:    clusterCategory(in.Category, in.ContainerNetworkMode),
 		BillingMode: int32Ptr(in.BillingMode),
 		AgencyName:  stringPtr(in.AgencyName),
 		ContainerNetwork: &model.ContainerNetwork{
 			Mode: model.GetContainerNetworkModeEnum().OVERLAY_L2, // replaced below
 		},
+	}
+	// flavor/version: official defaults apply only when UNCONFIGURED — an
+	// explicit empty string would be rejected, so omit the fields when empty.
+	if in.Flavor != "" {
+		spec.Flavor = stringPtr(in.Flavor)
+	}
+	if in.Version != "" {
+		spec.Version = stringPtr(in.Version)
 	}
 	// containerNetwork mode mapping (official enum: overlay_l2/vpc-router/eni).
 	switch in.ContainerNetworkMode {
@@ -126,8 +139,19 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		// Empty whitelist defaults to 0.0.0.0/0 (official PublicAccess model).
 		spec.PublicAccess = &model.PublicAccess{}
 	}
-	if in.HostNetworkVpcID != "" && in.HostNetworkSubnetID != "" {
-		spec.HostNetwork = &model.HostNetwork{Vpc: in.HostNetworkVpcID, Subnet: in.HostNetworkSubnetID}
+	spec.HostNetwork = &model.HostNetwork{Vpc: in.HostNetworkVpcID, Subnet: in.HostNetworkSubnetID}
+	if in.BillingMode == 1 {
+		// Subscription clusters require periodType/periodNum (official
+		// ClusterExtendParam: "billingMode为1(包周期)时生效,且为必选").
+		if in.PeriodType == "" {
+			return "", errors.New("CreateCluster: periodType is required when billingMode=1 (subscription)")
+		}
+		spec.ExtendParam = &model.ClusterExtendParam{
+			PeriodType:  &in.PeriodType,
+			PeriodNum:   int32Ptr(in.PeriodNum),
+			IsAutoRenew: stringPtr(in.IsAutoRenew),
+			IsAutoPay:   stringPtr(in.IsAutoPay),
+		}
 	}
 
 	cluster := &model.Cluster{
@@ -144,7 +168,7 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		// of failing on a container-CIDR/exists conflict. If no same-name
 		// cluster is found, the conflict is a genuine configuration error and
 		// the original error is returned.
-		if clouderrors.IsConflict(err) || strings.Contains(err.Error(), "CCE_CM.0410") {
+		if clouderrors.IsConflict(err) {
 			if id, ferr := s.findClusterIDByName(ctx, in.Name); ferr == nil && id != "" {
 				return id, nil
 			}
@@ -216,12 +240,32 @@ func (s *Client) DeleteCluster(_ context.Context, in DeleteClusterInput) error {
 		req.OndemandNodePolicy = &v
 	}
 	switch in.PeriodicNodePolicy {
+	case "reset":
+		v := model.GetDeleteClusterRequestPeriodicNodePolicyEnum().RESET
+		req.PeriodicNodePolicy = &v
 	case "retain":
 		v := model.GetDeleteClusterRequestPeriodicNodePolicyEnum().RETAIN
 		req.PeriodicNodePolicy = &v
-	default: // "reset"
-		v := model.GetDeleteClusterRequestPeriodicNodePolicyEnum().RESET
-		req.PeriodicNodePolicy = &v
+	default:
+		// Official default is "retain" (keep servers, data preserved) — leave
+		// the parameter unset so the platform default applies (verified against
+		// DeleteCluster.txt; the previous "reset" default was reversed).
+	}
+	// delete_obs / delete_sfs / delete_sfs30: official defaults are "skip",
+	// which would leave OBS/SFS volumes behind. The provider always deletes
+	// everything it manages (Q8), so request deletion explicitly when the
+	// caller asks for it (kept minimal: not yet exposed on the input).
+	if in.DeleteOBS {
+		v := model.GetDeleteClusterRequestDeleteObsEnum().BLOCK
+		req.DeleteObs = &v
+	}
+	if in.DeleteSFS {
+		v := model.GetDeleteClusterRequestDeleteSfsEnum().BLOCK
+		req.DeleteSfs = &v
+	}
+	if in.DeleteSFS30 {
+		v := model.GetDeleteClusterRequestDeleteSfs30Enum().BLOCK
+		req.DeleteSfs30 = &v
 	}
 	// Deletion is async (200 = job accepted); the controller polls ShowCluster
 	// until the cluster is gone (verified live against real CCE — Q8).
@@ -258,8 +302,16 @@ func (s *Client) ShowQuotas(ctx context.Context) (*QuotaInfo, error) {
 // via CreateKubernetesClusterCert and assembles a standard kubeconfig
 // (mirrors the ACK provider's controller_kubeconfig.go approach).
 func (s *Client) GetClusterKubeconfig(_ context.Context, clusterID string, durationDays int32) (string, error) {
-	if durationDays < 1 {
+	// Official duration semantics (CreateKubernetesClusterCert.txt): range
+	// [1, 1827] days; -1 means the 5-year maximum (1827). Clamp anything
+	// outside so the API is never called with an invalid value.
+	switch {
+	case durationDays == -1:
+		durationDays = 1827
+	case durationDays < 1:
 		durationDays = 1
+	case durationDays > 1827:
+		durationDays = 1827
 	}
 	resp, err := s.cce.CreateKubernetesClusterCert(&model.CreateKubernetesClusterCertRequest{
 		ClusterId: clusterID,
@@ -273,9 +325,14 @@ func (s *Client) GetClusterKubeconfig(_ context.Context, clusterID string, durat
 
 // CreateNodePool implements Service.
 func (s *Client) CreateNodePool(_ context.Context, in CreateNodePoolInput) (string, error) {
+	billingMode := model.GetNodeTemplateBillingModeEnum().E_0
+	if in.BillingMode == 1 {
+		billingMode = model.GetNodeTemplateBillingModeEnum().E_1
+	}
 	template := &model.NodeTemplate{
-		Flavor:     stringPtr(in.Flavor),
-		RootVolume: &model.Volume{Size: in.RootVolumeSize, Volumetype: defaultString(in.RootVolumeType, "GPSSD")},
+		Flavor:      stringPtr(in.Flavor),
+		BillingMode: &billingMode,
+		RootVolume:  &model.Volume{Size: in.RootVolumeSize, Volumetype: defaultString(in.RootVolumeType, "GPSSD")},
 	}
 	if in.OS != "" {
 		template.Os = stringPtr(in.OS)
@@ -428,6 +485,16 @@ func (s *Client) ListNodePools(_ context.Context, clusterID string) ([]NodePoolI
 			if p.Spec != nil && p.Spec.InitialNodeCount != nil {
 				info.DesiredNodeCount = *p.Spec.InitialNodeCount
 			}
+			// status.currentNode = expected total, status.activeNode = nodes
+			// in Active state (official NodePoolStatus, verified live).
+			if p.Status != nil {
+				if p.Status.CurrentNode != nil {
+					info.NodeCount = *p.Status.CurrentNode
+				}
+				if p.Status.ActiveNode != nil {
+					info.ActiveNodeCount = *p.Status.ActiveNode
+				}
+			}
 			out = append(out, info)
 		}
 	}
@@ -445,11 +512,18 @@ func (s *Client) GetUpgradeInfo(_ context.Context, clusterID string) (*UpgradeIn
 	}
 	info := &UpgradeInfo{}
 	if resp.Spec != nil && resp.Spec.VersionInfo != nil {
-		if resp.Spec.VersionInfo.Release != nil {
-			info.CurrentVersion = *resp.Spec.VersionInfo.Release
+		vi := resp.Spec.VersionInfo
+		if vi.Release != nil {
+			info.CurrentVersion = *vi.Release
 		}
-		if resp.Spec.VersionInfo.TargetVersions != nil {
-			info.TargetVersions = *resp.Spec.VersionInfo.TargetVersions
+		if vi.Patch != nil {
+			info.Patch = *vi.Patch
+		}
+		if vi.SuggestPatch != nil {
+			info.SuggestPatch = *vi.SuggestPatch
+		}
+		if vi.TargetVersions != nil {
+			info.TargetVersions = *vi.TargetVersions
 		}
 	}
 	return info, nil
@@ -514,7 +588,7 @@ func (s *Client) StartUpgrade(_ context.Context, clusterID, targetVersion string
 	// official UpgradeStrategy constraint). userDefinedStep (batch size) is
 	// REQUIRED under inPlaceRollingUpdate (verified live: CCE_CM.0004 "Field
 	// user defined step must defined by inPlaceRollingUpdate strategy");
-	// official default is 20 per batch (1-40 per SDK, up to 120 per docs).
+	// official range [1-60], default 20 (UpgradeCluster.txt; SDK says 1-40).
 	upgradeResp, err := s.cce.UpgradeCluster(&model.UpgradeClusterRequest{
 		ClusterId: clusterID,
 		Body: &model.UpgradeClusterRequestBody{
@@ -644,8 +718,13 @@ func defaultString(v, def string) string {
 	return v
 }
 
-func clusterCategory(category string) *model.ClusterSpecCategory {
+func clusterCategory(category, networkMode string) *model.ClusterSpecCategory {
 	if category == "Turbo" {
+		c := model.GetClusterSpecCategoryEnum().TURBO
+		return &c
+	}
+	if category == "" && networkMode == "eni" {
+		// Official default: eni mode implies Turbo (CreateCluster.txt).
 		c := model.GetClusterSpecCategoryEnum().TURBO
 		return &c
 	}
