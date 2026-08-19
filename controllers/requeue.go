@@ -9,6 +9,8 @@ package controllers
 import (
 	"time"
 
+	ctrl "sigs.k8s.io/controller-runtime"
+
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
 )
 
@@ -29,4 +31,16 @@ func requeueAfterForError(err error) time.Duration {
 	default:
 		return defaultRequeue
 	}
+}
+
+// resultAfterError converts a classified CCE API error into a reconcile
+// result. Rate-limit and quota errors are transient platform conditions
+// (questionnaire Q14): return a delayed requeue with no error so the
+// controller-runtime backoff does not override the delay and the error is not
+// surfaced as a reconcile failure. All other errors pass through.
+func resultAfterError(err error) (ctrl.Result, error) {
+	if clouderrors.IsThrottled(err) || clouderrors.IsQuotaExceeded(err) {
+		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, nil
+	}
+	return ctrl.Result{}, err
 }

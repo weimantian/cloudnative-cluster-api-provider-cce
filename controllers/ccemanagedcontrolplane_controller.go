@@ -147,7 +147,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		if err != nil {
 			conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
-			return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, err
+			return resultAfterError(err)
 		}
 		clusterID = id
 		cp.Status.ClusterID = id
@@ -165,7 +165,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		}
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, err
+		return resultAfterError(err)
 	}
 	if info.Phase != "Available" {
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,

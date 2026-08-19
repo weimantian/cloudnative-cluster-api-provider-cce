@@ -167,6 +167,13 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 	}
 	conditions.MarkTrue(cceCluster, conditions.NetworkReadyCondition, "NetworkValidated", "network references validated")
 
+	// Ready condition + contract provisioned flag (CAPI v1beta2 contract):
+	// the CAPI Cluster controller gates
+	// Cluster.Status.Initialization.InfrastructureProvisioned on
+	// status.initialization.provisioned of the infrastructure cluster.
+	conditions.MarkTrue(cceCluster, clusterv1.ReadyCondition, "InfrastructureReady", "CCE infrastructure is ready")
+	cceCluster.Status.Initialization.Provisioned = true
+
 	// Backfill the CCE cluster ID from the control plane when available.
 	if cluster.Spec.ControlPlaneRef.Name != "" {
 		cp := &controlplanev1beta1.CCEManagedControlPlane{}

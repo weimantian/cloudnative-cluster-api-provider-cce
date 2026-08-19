@@ -6,6 +6,8 @@ resources:
   - ../crd
   - ../rbac
   - ../manager
-# Webhook resources are wired in when cert-manager is available (P0).
-# - ../webhook
-# - ../certmanager
+  # Webhook resources (configurations + service). Certificate delivery is
+  # deployment-specific: install cert-manager for automatic injection, or
+  # pre-create the webhook-service-cert Secret and inject caBundle (see the
+  # clusterctl deployment guide).
+  - ../webhook

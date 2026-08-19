@@ -45,6 +45,10 @@ spec:
             - containerPort: 9443
               name: webhook-server
               protocol: TCP
+          volumeMounts:
+            - name: webhook-certs
+              mountPath: /tmp/k8s-webhook-server/serving-certs
+              readOnly: true
           livenessProbe:
             httpGet:
               path: /healthz
@@ -70,5 +74,9 @@ spec:
             capabilities:
               drop:
                 - ALL
+      volumes:
+        - name: webhook-certs
+          secret:
+            secretName: webhook-service-cert
       serviceAccountName: cce-provider-controller-manager
       terminationGracePeriodSeconds: 10

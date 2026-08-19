@@ -43,6 +43,13 @@ type CCEClusterStatus struct {
 	// +optional
 	Ready bool `json:"ready,omitempty"`
 
+	// Initialization reports infrastructure provisioning state. Provisioned
+	// mirrors the CAPI InfrastructureCluster contract path
+	// status.initialization.provisioned, which the CAPI Cluster controller
+	// gates Cluster.Status.Initialization.InfrastructureProvisioned on.
+	// +optional
+	Initialization ClusterInitializationStatus `json:"initialization,omitempty"`
+
 	// ClusterID is the CCE cluster UUID (backfilled by the control plane
 	// controller).
 	// +optional
@@ -60,6 +67,15 @@ type CCEClusterStatus struct {
 	// Conditions defines current service state of the CCECluster.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// ClusterInitializationStatus reports the initialization state of the
+// infrastructure. Provisioned is the CAPI InfrastructureCluster contract
+// field (status.initialization.provisioned).
+type ClusterInitializationStatus struct {
+	// Provisioned indicates the infrastructure is provisioned (CAPI contract).
+	// +optional
+	Provisioned bool `json:"provisioned,omitempty"`
 }
 
 // +kubebuilder:object:root=true

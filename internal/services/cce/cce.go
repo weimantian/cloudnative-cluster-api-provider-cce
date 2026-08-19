@@ -8,6 +8,7 @@ package cce
 
 import (
 	"context"
+	"strings"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
@@ -137,6 +138,17 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 	}
 	resp, err := s.cce.CreateCluster(&model.CreateClusterRequest{Body: cluster})
 	if err != nil {
+		// Idempotent create: if the cluster already exists — e.g. a previous
+		// create succeeded but the response was lost to throttling (verified
+		// live: APIGW.0308 limit 10/min on writes) — adopt it by name instead
+		// of failing on a container-CIDR/exists conflict. If no same-name
+		// cluster is found, the conflict is a genuine configuration error and
+		// the original error is returned.
+		if clouderrors.IsConflict(err) || strings.Contains(err.Error(), "CCE_CM.0410") {
+			if id, ferr := s.findClusterIDByName(ctx, in.Name); ferr == nil && id != "" {
+				return id, nil
+			}
+		}
 		return "", errors.Wrap(err, "CreateCluster failed")
 	}
 	if resp.Metadata != nil && resp.Metadata.Uid != nil {
