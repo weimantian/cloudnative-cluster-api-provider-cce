@@ -48,7 +48,7 @@
 |---|---|---|---|---|---|---|
 | E1 | (无代码)单节点路径 | **Q9** | AddNode/AddNodesToNodePool 引导要求 | 若可行:新增 `CCEMachine`(P2,FR-2.8);若不可行:从 roadmap 移除并文档说明 | — | ✅已确认(Q9,建议只走节点池) |
 | E2 | (无代码)Autopilot | Q10 | Autopilot 与 CAPI 对接方式 | P2 评估(Cluster + 无 MachinePool) | — | ✅已确认(Q10) |
-| E3 | (无代码)集群升级 | Q11 | CreateUpgradeWorkFlow 参数与升级状态 | ✅ 已实现(FR-1.7):spec.version 与运行版本差异时驱动升级工作流(CreateUpgradeWorkFlow→CreatePreCheck→UpgradeCluster→ShowUpgradeClusterTask 轮询);status.UpgradeTaskID + UpgradeReady condition;**无可用目标=正常状态(UpgradeNotOffered)**;目标不在平台列表=UpgradeTargetUnavailable;升级成功→版本回填+Ready | 单测(启动/未提供/完成三路径,已 PASS)+ 冒烟(已 PASS:GetUpgradeInfo 空目标复证 Q11,StartUpgrade 被平台拒绝;端到端升级需等平台开放路径) | ✅已确认+已实现+单测+冒烟通过;升级耗时需咨询华为云 |
+| E3 | (无代码)集群升级 | Q11 | CreateUpgradeWorkFlow 参数与升级状态 | ✅ 已实现(FR-1.7):spec.version 与运行版本差异时驱动升级工作流(CreateUpgradeWorkFlow→CreatePreCheck→UpgradeCluster→ShowUpgradeClusterTask 轮询);status.UpgradeTaskID + UpgradeReady condition;**空目标=正常状态(UpgradeNotOffered)**;目标不在平台列表=UpgradeTargetUnavailable;升级成功→版本回填+Ready;**3 个真实 API 约束已修复(clusterID 必填/版本完整格式/userDefinedStep 必填)** | 单测(启动/未提供/完成三路径,已 PASS)+ 冒烟(已 PASS:v1.33→v1.34 目标开放并跑通工作流;升级执行在预检查失败 upgrade-limit-check/addon-limit-check,完整成功升级待实测) | ✅已确认+已实现+单测+冒烟通过;完整成功升级耗时待实测 |
 
 ## 二、执行批次与顺序建议
 

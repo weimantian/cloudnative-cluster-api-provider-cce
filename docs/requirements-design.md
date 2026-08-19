@@ -6,7 +6,7 @@
 
 > **事实基准声明**:同架构文档,所有需求项的依据均来自真实来源(华为云官方 SDK/文档、CAPA 与阿里云 ACK Provider 源码);无法从公开资料确认处标注 **[需验证]**,需对接真实华为云 CCE 确认(完整清单见 [research-sources.md §4](research-sources.md))。
 >
-> **验证状态(2026-08-19)**:各 FR 中引用的 [需验证] 项已逐项确认——Q1/Q2/Q3/Q5/Q7/Q8/Q13/Q14 真实冒烟实测(含 Q14 Retry-After 抓包)、Q4/Q6/Q9/Q10/Q12 官方文档确认、Q11 两次实测定论(无跨版本目标为正常状态);落地状态逐项见 [验证结论记录](cce-verification-findings.md) 与 [落地跟踪](poc-implementation-tracker.md)。**P0/P1 全部实现;仅 Q11 升级耗时量级需咨询华为云。**
+> **验证状态(2026-08-19)**:各 FR 中引用的 [需验证] 项已逐项确认——Q1/Q2/Q3/Q5/Q7/Q8/Q13/Q14 真实冒烟实测(含 Q14 Retry-After 抓包)、Q4/Q6/Q9/Q10/Q12 官方文档确认、Q11 实测(v1.33→v1.34 目标开放并跑通升级工作流;空目标=按版本线动态开放,controller 按正常状态处理);落地状态逐项见 [验证结论记录](cce-verification-findings.md) 与 [落地跟踪](poc-implementation-tracker.md)。**P0/P1 全部实现;仅 Q11 完整成功升级耗时待预检查通过后实测。**
 
 ---
 
@@ -56,7 +56,7 @@
 | FR-1.4 | 集群更新:支持可变更字段(描述、标签、日志、插件等)对齐;网段等不可变字段变更由 webhook 拒绝 | P0 | 官方:隧道模式网段创建后不可改,vpc-router/eni 可增不可改 |
 | FR-1.5 | 集群删除:先删依赖(节点池→插件→集群),容忍 404,轮询至消失后移除 finalizer | P0 | 参照 CAPA reconcileDelete 的依赖计数 + 错误聚合模式([CAPA 架构分析报告](CAPA架构分析报告.md) §3.1) |
 | FR-1.6 | `Unavailable` 等异常状态集群的状态上报与失败条件 | P0 | 官方 phase:Unavailable 需手动删除 |
-| FR-1.7 | 集群升级(改 version 触发 CCE 升级工作流) | P1(已实现) | CCE API `CreateUpgradeWorkFlow/CreatePreCheck/CreatePostCheck`(SDK 事实);升级行为细节 **[需验证] 11 → 已定论:平台当前无跨版本目标,空目标为正常状态** |
+| FR-1.7 | 集群升级(改 version 触发 CCE 升级工作流) | P1(已实现) | CCE API `CreateUpgradeWorkFlow/CreatePreCheck/CreatePostCheck`(SDK 事实);升级行为细节 **[需验证] 11 → 已实测:v1.33→v1.34 目标开放并跑通工作流;空目标=按版本线动态开放(正常状态);3 个真实 API 约束已修复** |
 | FR-1.8 | 集群休眠/唤醒(AwakeCluster) | P2 | SDK 有 `AwakeCluster`;运维策略,优先级低 |
 | FR-1.9 | 集群标签(AdditionalTags)同步 `BatchCreateClusterTags` | P1 | SDK 事实;用于资源归属识别 |
 
@@ -284,7 +284,7 @@
 | 8 | DeleteCluster 删除时长/依赖与残留(EIP/EVS/ELB;Unavailable 可删性) | ✅ 实测确认(Q8):异步删除;delete_evs/eni/net 传参防残留;复核无残留 |
 | 9 | AddNode/AddNodesToNodePool 对已有 ECS 的引导要求(决定单节点路径) | ✅ 文档确认(Q9):重装 ECS 不可免干预,首版只走节点池 |
 | 10 | Autopilot 在 CAPI 模型中的表达(远期) | ✅ 文档确认(Q10):远期评估 |
-| 11 | CreateUpgradeWorkFlow 参数与升级状态 | ✅ 实测定论(Q11):API 全可用;**平台当前无跨版本目标(空列表),耗时需华为云** |
+| 11 | CreateUpgradeWorkFlow 参数与升级状态 | ✅ 实测定论(Q11):API 全可用;**v1.33→v1.34 目标开放并跑通工作流(3 个真实约束已修复:clusterID 必填/版本完整格式/userDefinedStep 必填);升级执行在预检查失败(upgrade-limit-check/addon-limit-check),完整成功耗时待实测** |
 | 12 | 计费模式(按需/包周期;空集群成本;休眠唤醒) | ✅ 文档确认(Q12) |
 | 13 | 管理集群访问 CCE API Server 的网络路径(公网/对等/专线) | ✅ 实测确认(Q13):EIP 绑定后 https://EIP:5443 可达 |
 | 14 | CCE/ECS/VPC API 限流阈值与错误码全集 | ✅ 实测确认(Q14):错误码表落地;**读 ~70 req/s、写 10 次/分钟触发限流;Retry-After 待抓包** |

@@ -47,7 +47,7 @@
 | `autoscaling` | Q3 + B3(FR-2.6) | **节点池带 autoscaling {enable=true,min=1,max=4} 创建是否被接受;ListNodePools 回读是否一致;autoscaling 开启时手动 ScaleNodePool 是否并存不冲突** |
 | `upgrade` | Q11 + E3(FR-1.7) | **GetUpgradeInfo 返回的平台目标版本列表(空 = 平台无路径,Q11);有目标 → StartUpgrade→ShowUpgradeTask 轮询到 Success/Failed 并计时;无目标 → 记录 StartUpgrade 被平台拒绝的错误(controller 走 UpgradeNotOffered)** |
 
-> 说明:`autoscaling`、`upgrade` 用例需在 `CCE_SMOKE_CASES` 中显式开启(如 `CCE_SMOKE_CASES=autoscaling,upgrade`);`upgrade` 还会创建 v1.34 集群(`CCE_SMOKE_UPGRADE_FROM`),无节点池。
+> 说明:`autoscaling`、`upgrade` 用例需在 `CCE_SMOKE_CASES` 中显式开启(如 `CCE_SMOKE_CASES=autoscaling,upgrade`)。`upgrade` 用例参数:`CCE_SMOKE_UPGRADE_FROM`(起始版本,默认 v1.34;实测 v1.33 目标已开放、v1.34 未开放);`CCE_SMOKE_UPGRADE_MODE`(vpc-router=Standard 默认 / eni=Turbo,eni 需 `CCE_SMOKE_ENI_SUBNET` 传 neutron 子网 ID);`CCE_SMOKE_UPGRADE_WITH_POOL=1`(创建 1 节点节点池后再升级,官方流程需升用户节点;空集群与带节点池实测均在升级前检查失败)。升级成功时测试会自动输出耗时。
 
 ## 四、安全与成本提醒
 

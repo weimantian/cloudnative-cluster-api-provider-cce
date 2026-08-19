@@ -179,7 +179,7 @@
 | 项 | 结论 |
 |---|---|
 | **Q2 授权项差异(闭环)** | ✅ 两处来源差异已解决:CCE 权限策略表将 clustercert 接口授权项列为 `cce:cluster:get`,API 参考页(接口约束)列为 **`cce:cluster:generateClientCredential`(依赖 `cce:cluster:get`)**——两者**不矛盾而是依赖关系**,Provider 最小 IAM 策略须同时包含 `cce:cluster:get` + `cce:cluster:generateClientCredential`(依赖项须显式授予) |
-| **Q11 升级目标(三次实测+官方路径确认)** | ✅ **官方路径表(cce_10_0197)确认 v1.34→v1.35 为支持路径**(原地升级;前提:补丁最新/升级前检查/备份/SnatIPRanges);但 **2026-08-19 三种形态实测(Standard 空集群、Turbo 空集群、Standard+节点池)均返回 suggestPatch= 空 + targets=[]**——官方路径=产品支持约束,API 实测=当前动态开放状态,两者不矛盾;**升级耗时待平台开放目标后实测(测试已就绪:TestSmokeUpgradeWorkflow 带节点池模式)** |
+| **Q11 升级目标(v1.34 三种形态+官方路径确认)** | ✅ **官方路径表(cce_10_0197)确认 v1.34→v1.35 为支持路径**(原地升级;前提:补丁最新/升级前检查/备份/SnatIPRanges);v1.34 三种形态(Standard 空集群、Turbo 空集群、Standard+节点池)均 suggestPatch= 空 + targets=[]——**但 v1.33 集群 targets=[v1.34.8-r2] 已开放**(见第六轮)→ 官方路径=产品支持约束,API 目标=按版本线动态开放 |
 | **Q14 Retry-After(抓包确认)** | ✅✅ **429 响应携带 `Retry-After` 头(~57s,浮点秒,如 `56.818`)**:注入自定义 RoundTripper 抓包,2000 次并发 ListClusters(130 req/s)→ 1700×429 + 301×200,429 中仅 **8 个**带 Retry-After——该头**并非稳定出现**,重试实现不能只依赖 Retry-After,固定退避(实测窗口 ~1 分钟)更可靠;工具:`hack/check-retry-after` |
 
 ## 第二轮真实 CCE 冒烟确认记录(TestSmokeExtras / TestSmokeUpgrade)
@@ -199,7 +199,7 @@
 |---|---|
 | **Q13 公网可达性** | ✅✅ **实测打通**:创建 EIP 后通过 `UpdateClusterEip(BIND)` 绑定 API Server,从本机探测 **`https://120.46.211.3:5443` reachable=true**——公网访问完整路径确认:创建时 `publicAccess` 不自动分配公网 endpoint,需显式绑定 EIP;绑定后 5443 公网可达(与官方"绑定 EIP 会短暂重启集群 API Server"一致) |
 | **Q14 限流阈值** | ✅✅ **实测触发**:10 并发 × 100 次 = **1000 次 ShowCluster 调用,速率 ~71 req/s 持续约 14 秒 → 限流 703 次,其他错误 0 次**。真实阈值远低于文档推测的 200 req/s(APIGW 默认值),CCE 管理面实际流控在 ~70 req/s 持续突发时即大量 429——**轮询/重试实现必须以指数退避 + 抖动为默认,不能按 200 req/s 规划** |
-| **Q11 升级路径(定论)** | ✅ 在 v1.34 集群上 `ShowClusterUpgradeInfo` 返回 release=`v1.34.8`、patch=`r2`,**offered 升级目标=空列表 `[]`**——平台 API 层面对该版本**当前不提供任何升级目标**,与之前 CreateUpgradeWorkFlow 的 "only support to current" 完全一致。**Q11 定论:升级编排 API 全可用,但"哪些版本可升、何时开放"由平台策略决定,代码侧必须把"无可用目标"作为正常状态处理(文档化 + 日志提示),耗时量级在无路径时不可实测,需咨询华为云升级策略** |
+| **Q11 升级路径(v1.34 视角)** | ✅ v1.34.8-r2 集群 `ShowClusterUpgradeInfo` 返回 release=`v1.34.8`、patch=`r2`、**targets=`[]`**——**该结论仅针对 v1.34(当前最新支持线,其目标 v1.35 未开放)**;升级编排 API 全可用;代码侧把"无可用目标"作为正常状态处理(文档化 + 日志提示) |
 
 ## 第四轮真实 CCE 冒烟确认记录(TestSmokeAutoscaling / TestSmokeUpgradeWorkflow)
 
@@ -207,7 +207,7 @@
 |---|---|
 | **B3 autoscaling 云侧接受** | ✅✅ **实测通过**:Standard(vpc-router)集群上 `CreateNodePool(autoscaling={enable=true,min=1,max=4})` 成功;`ListNodePools` 回读 `spec.autoscaling` **enable=true/min=1/max=4 完全一致**——CCE 持久化 autoscaling 配置 |
 | **B3 autoscaling 与手动伸缩并存** | ✅✅ **实测通过**:autoscaling 开启的节点池上 `ScaleNodePool(2)` 成功扩到 2 节点,且回读 autoscaling **仍为 enable=true**(手动 ScaleNodePool 与 autoscaling 不互相覆盖;与 Q3 绝对值语义一致) |
-| **E3 升级工作流(服务层)** | ✅ 实测:v1.34 集群 `GetUpgradeInfo` 返回 current=`v1.34.8`、targets=`[]`(**Q11 复证:平台当前无跨版本目标**);`StartUpgrade` 调用被平台拒绝——controller 因 targets 为空走 `UpgradeNotOffered` 分支(envtest 已覆盖该路径),不会调用 StartUpgrade,因此**端到端升级在平台开放路径前无法实测** |
+| **E3 升级工作流(服务层)** | ✅ 实测:v1.34 集群 targets=`[]`(目标 v1.35 未开放);**后续用 v1.33 集群确认目标开放(targets=[v1.34.8-r2])并跑通完整工作流**(见第六轮);controller 在空目标时走 `UpgradeNotOffered` 分支(envtest 已覆盖) |
 
 > 环境同上(VPC `capi-smoke-vpc` + 双子网 + `capi-smoke-key` + c6.large.2 Standard 模式);两个测试集群均已删除并复核无残留。
 
@@ -244,7 +244,7 @@
 | Q8 | 删除 | ✅ 异步 1~3 分钟;delete_evs 默认残留、delete_eni/net 默认删;ondemand_node_policy 默认删按需节点保留纳管节点;休眠中不可删 | 存在节点池时直接删集群;删除不存在集群的错误码 |
 | Q9 | 单节点 | ✅ AddNode=重装 ECS(清数据)+严格前置(≥2C4G/单网卡/数据盘);CCE 自动安装;DefaultPool 无弹性 | CAPI Machine 路径取舍 |
 | Q10 | Autopilot | ✅ Serverless 无节点 API;50 集群/区域;按 CPU/内存计费 | CAPI 对接方式(远期) |
-| Q11 | 升级 | ✅ **完整确认(官方 cce_10_0197,2026-07-28 版)**:完整路径表(v1.34→v1.35 等)、维护周期 24 个月、批次 4 的幂(1/4/16…默认 20 最高 120)、备份/回滚时间表、证书更新(5 年)+OIDC 注意;三次实测当前 targets=[]——路径=产品支持,目标=动态开放 | 升级耗时量级(待平台开放目标后实测,测试已就绪) |
+| Q11 | 升级 | ✅ **完整确认(官方 cce_10_0197,2026-07-28 版)**:路径表/维护周期 24 个月/批次 4 的幂/备份回滚/证书+OIDC;**实测 v1.33→v1.34 目标开放并跑通升级工作流**(3 真实约束已修复);v1.34 目标 v1.35 未开放——目标按版本线动态开放 | 完整成功升级耗时(预检查通过后实测,测试已就绪) |
 | Q12 | 计费/休眠 | ✅ billingMode 默认按需;休眠停控制节点费用、节点/EIP 照常;唤醒 3~5 分钟 | 包周期是否禁休眠;唤醒失败错误码 |
 | Q13 | 网络路径 | ✅ 公网 https://EIP:5443;**实测:EIP 绑定后公网可达(reachable=true)**;私网 VPC 内 IP/VIP;跨 VPC=对等/专线/VPN | 跨 Region 方案 |
 | Q14 | 限流/错误码 | ✅ 错误码表公开(404=01404001、429=01429002/003、配额 01400007 系);**实测:读 ~70 req/s、写 10 次/分钟触发限流;429 携带 Retry-After(~57s)但非稳定出现(8/1700)→ 固定退避更可靠** | 无(全部实测关闭) |
