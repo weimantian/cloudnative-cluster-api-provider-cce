@@ -132,6 +132,26 @@ kubectl --kubeconfig my-cluster.kubeconfig get nodes
 
 预期结果:`kubectl get nodes` 显示的节点数等于 `MachinePool.spec.replicas`,且全部 `Ready`。
 
+### 集群升级(FR-1.7)
+
+将 `CCEManagedControlPlane.spec.version` 改为更高的 Kubernetes 版本,Provider 将驱动 CCE 升级工作流(升级前检查 → 原地滚动升级 → 升级后检查),并通过 `UpgradeReady` 条件报告进度。注意:平台决定可升级的目标版本——当无可升级目标时,条件报告 `UpgradeNotOffered`(属正常状态而非错误;详见 `docs/cce-verification-findings.md` Q11)。
+
+### 节点池自动伸缩(Alpha,功能开关)
+
+`CCEManagedMachinePool.spec.autoscaling`(enable/min/max)仅在开启 `NodePoolAutoscaling` 功能开关时生效:
+
+```bash
+manager --feature-gates=NodePoolAutoscaling=true
+```
+
+### 规格白名单(webhook)
+
+`CCEManagedMachinePool.spec.flavor` 会按 ECS 规格命名规则做格式校验;可按部署(分 region)注入可选白名单:
+
+```bash
+manager --valid-flavors=c6.large.2,c7.large.2
+```
+
 ## 清理资源
 
 ```bash

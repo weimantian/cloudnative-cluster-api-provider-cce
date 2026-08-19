@@ -23,6 +23,7 @@ import (
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 )
@@ -144,9 +145,11 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			return ctrl.Result{}, err
 		}
 		pool.Status.NodePoolID = id
-		// The create call already bound the security groups, so record them as
-		// applied to avoid a redundant UpdateNodePool on the next reconcile.
+		// The create call already bound the security groups (and autoscaling
+		// when the gate is on), so record them as applied to avoid a redundant
+		// UpdateNodePool on the next reconcile.
 		pool.Status.LastAppliedSecurityGroups = append([]string(nil), pool.Spec.SecurityGroups...)
+		pool.Status.LastAppliedAutoscaling = pool.Spec.Autoscaling
 	}
 
 	// Reconcile scale: align the pool's expected count with the MachinePool
@@ -164,23 +167,33 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		conditions.MarkTrue(pool, conditions.NodePoolScalingCondition, "ScalingCompleted", "node pool scaled")
 	}
 
-	// Reconcile mutable attributes (currently: security groups, Q5) without
-	// touching the expected node count. UpdateNodePool omitting
-	// initialNodeCount defaults it to 0 and SHRINKS the pool (official
-	// cce_02_0356, questionnaire Q3), so IgnoreInitialNodeCount must be set.
-	if !slices.Equal(pool.Status.LastAppliedSecurityGroups, pool.Spec.SecurityGroups) {
-		if err := svc.UpdateNodePool(ctx, cceService.UpdateNodePoolInput{
+	// Reconcile mutable attributes (currently: security groups, Q5; and
+	// autoscaling when the NodePoolAutoscaling gate is on) without touching
+	// the expected node count. UpdateNodePool omitting initialNodeCount
+	// defaults it to 0 and SHRINKS the pool (official cce_02_0356,
+	// questionnaire Q3), so IgnoreInitialNodeCount must be set.
+	attrsChanged := !slices.Equal(pool.Status.LastAppliedSecurityGroups, pool.Spec.SecurityGroups)
+	if features.Enabled(features.NodePoolAutoscaling) && pool.Spec.Autoscaling != pool.Status.LastAppliedAutoscaling {
+		attrsChanged = true
+	}
+	if attrsChanged {
+		update := cceService.UpdateNodePoolInput{
 			ClusterID:              clusterID,
 			NodePoolID:             pool.Status.NodePoolID,
 			IgnoreInitialNodeCount: true,
 			CustomSecurityGroups:   append([]string(nil), pool.Spec.SecurityGroups...),
-		}); err != nil {
+		}
+		if features.Enabled(features.NodePoolAutoscaling) {
+			update.Autoscaling = toProviderAutoscaling(pool.Spec.Autoscaling)
+		}
+		if err := svc.UpdateNodePool(ctx, update); err != nil {
 			conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
 			return ctrl.Result{}, err
 		}
 		pool.Status.LastAppliedSecurityGroups = append([]string(nil), pool.Spec.SecurityGroups...)
-		log.Info("Node pool attributes updated (security groups)", "nodePoolID", pool.Status.NodePoolID)
+		pool.Status.LastAppliedAutoscaling = pool.Spec.Autoscaling
+		log.Info("Node pool attributes updated (security groups / autoscaling)", "nodePoolID", pool.Status.NodePoolID)
 	}
 
 	// Refresh observed state from the cloud (Active node count is a
@@ -283,6 +296,9 @@ func toCreateNodePoolInput(clusterID string, pool *infrav1beta1.CCEManagedMachin
 		Labels:           pool.Spec.Labels,
 		SecurityGroups:   pool.Spec.SecurityGroups,
 	}
+	if features.Enabled(features.NodePoolAutoscaling) {
+		in.Autoscaling = toProviderAutoscaling(pool.Spec.Autoscaling)
+	}
 	if pool.Spec.RootVolume != nil {
 		in.RootVolumeSize = pool.Spec.RootVolume.Size
 		in.RootVolumeType = pool.Spec.RootVolume.Type
@@ -292,4 +308,14 @@ func toCreateNodePoolInput(clusterID string, pool *infrav1beta1.CCEManagedMachin
 		in.DataVolumeType = pool.Spec.DataVolumes[0].Type
 	}
 	return in
+}
+
+// toProviderAutoscaling maps the spec autoscaling to the service input.
+// Called only when the NodePoolAutoscaling gate is enabled.
+func toProviderAutoscaling(s infrav1beta1.AutoscalingSpec) *cceService.NodePoolAutoscaling {
+	return &cceService.NodePoolAutoscaling{
+		Enable:       s.Enable,
+		MinNodeCount: s.MinNodeCount,
+		MaxNodeCount: s.MaxNodeCount,
+	}
 }

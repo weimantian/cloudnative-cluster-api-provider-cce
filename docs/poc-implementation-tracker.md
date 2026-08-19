@@ -22,8 +22,8 @@
 | B1 | `internal/services/cce/cce.go`(ScaleNodePool 语义,已改) | **Q3** | ✅ **实测确认=绝对值**(冒烟:2 节点池 ScaleNodePool(2)→"No scale task needed"无操作;ScaleNodePool(4)→扩到 4 节点);`scaleGroups` 必填默认 `default` | ✅ 已按绝对目标实现(`desiredNodeCount = replicas`) | 冒烟已通过(PASS) | ✅已确认+已实现+冒烟通过 |
 | B1b | `internal/services/cce` UpdateNodePool 对齐数量(新增) | Q3 | ✅ 已确认(官方 cce_02_0356):更新节点池**不填 initialNodeCount 时期望数默认变 0→会缩容**;`ignoreInitialNodeCount: true` 可保持原样 | ✅ 已实现:controller 属性同步路径(安全组漂移→UpdateNodePool 且 `IgnoreInitialNodeCount=true` 防误缩容;replicas 对齐时不再额外打 API,status 记录 LastAppliedSecurityGroups) | 单测(SG drift 用例,已 PASS)+ 冒烟 | ✅已实现+单测通过 |
 | B2 | `controllers/ccemanagedmachinepool_controller.go:136,151` 扩缩容与状态同步 | Q3 | 扩缩容期间状态;availableReplicas 口径(节点 Active 数来源) | 实现 replicas 对齐算法(含并发/伸缩中重试);`availableReplicas` 用 ListNodes 节点 Active 计数回填 | e2e(3→5→3)+ 状态一致性断言 | ✅已确认(Q3 绝对值),按绝对目标实现 |
-| B3 | `internal/features/features.go:21` NodePoolAutoscaling gate | Q3 | 节点池 autoscaling 与外部 ScaleNodePool 的冲突/优先级 | 实现 FR-2.6:gate 开启时映射 autoscaling.enable/min/max;与 CAPI replicas 协调策略按确认定 | 单测 + 冒烟 | ✅已确认(手动伸缩不受 autoscaling 范围限制,可并存) |
-| B4 | `config/samples/cluster-template.yaml:90` flavor `c7.large.2` | Q6/Q7 | 规格可用性(region 差异) | 样例按确认的规格表更新;webhook 增加 flavor 白名单校验(按 region) | webhook 单测 | ⏳待实测(flavor 按 region) |
+| B3 | `internal/features/features.go:21` NodePoolAutoscaling gate | Q3 | 节点池 autoscaling 与外部 ScaleNodePool 的冲突/优先级 | ✅ 已实现(FR-2.6):`NodePoolAutoscaling` Alpha gate(默认关),开启后映射 `autoscaling.enable/min/max` 到创建与更新;关闭时忽略 spec.autoscaling;`--feature-gates=NodePoolAutoscaling=true` 启用 | 单测(gate on/off 映射矩阵,已 PASS) | ✅已确认+已实现+单测通过 |
+| B4 | `config/samples/cluster-template.yaml:90` flavor `c7.large.2` | Q6/Q7 | 规格可用性(region 差异) | ✅ 已实现:webhook flavor 格式校验(ECS 命名模式)+ 可配置白名单 `--valid-flavors`(按 region 由部署者注入;region 可用性仍由 CCE 创建时校验,CCE.01400025 系) | webhook 单测(格式矩阵+白名单,已 PASS) | ✅已确认+已实现+单测通过 |
 
 ### C 组:凭证、kubeconfig 与安全组
 
@@ -48,7 +48,7 @@
 |---|---|---|---|---|---|---|
 | E1 | (无代码)单节点路径 | **Q9** | AddNode/AddNodesToNodePool 引导要求 | 若可行:新增 `CCEMachine`(P2,FR-2.8);若不可行:从 roadmap 移除并文档说明 | — | ✅已确认(Q9,建议只走节点池) |
 | E2 | (无代码)Autopilot | Q10 | Autopilot 与 CAPI 对接方式 | P2 评估(Cluster + 无 MachinePool) | — | ✅已确认(Q10) |
-| E3 | (无代码)集群升级 | Q11 | CreateUpgradeWorkFlow 参数与升级状态 | P1 实现 FR-1.7(改 version 触发升级工作流 + conditions) | e2e(升级) | ✅已确认(Q11);**实测定论:ShowClusterUpgradeInfo 返回 offered 升级目标=空(平台当前不提供跨版本路径)→ 升级工作流实现时必须把"无可用目标"作为正常状态(文档化+日志),耗时量级在无路径时不可实测,需咨询华为云** |
+| E3 | (无代码)集群升级 | Q11 | CreateUpgradeWorkFlow 参数与升级状态 | ✅ 已实现(FR-1.7):spec.version 与运行版本差异时驱动升级工作流(CreateUpgradeWorkFlow→CreatePreCheck→UpgradeCluster→ShowUpgradeClusterTask 轮询);status.UpgradeTaskID + UpgradeReady condition;**无可用目标=正常状态(UpgradeNotOffered)**;目标不在平台列表=UpgradeTargetUnavailable;升级成功→版本回填+Ready | 单测(启动/未提供/完成三路径,已 PASS)+ e2e(升级,待平台开放路径后实测) | ✅已确认+已实现+单测通过;实测定论:当前平台无跨版本路径,升级耗时需咨询华为云 |
 
 ## 二、执行批次与顺序建议
 

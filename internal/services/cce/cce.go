@@ -296,6 +296,9 @@ func (s *Client) CreateNodePool(_ context.Context, in CreateNodePoolInput) (stri
 		}
 		spec.CustomSecurityGroups = &groups
 	}
+	if in.Autoscaling != nil {
+		spec.Autoscaling = toNodePoolAutoscaling(in.Autoscaling)
+	}
 	pool := &model.NodePool{
 		Kind:       "NodePool",
 		ApiVersion: "v3",
@@ -356,6 +359,9 @@ func (s *Client) UpdateNodePool(_ context.Context, in UpdateNodePoolInput) error
 	if len(in.CustomSecurityGroups) > 0 {
 		spec.CustomSecurityGroups = &in.CustomSecurityGroups
 	}
+	if in.Autoscaling != nil {
+		spec.Autoscaling = toNodePoolAutoscaling(in.Autoscaling)
+	}
 	if _, err := s.cce.UpdateNodePool(&model.UpdateNodePoolRequest{
 		ClusterId:  in.ClusterID,
 		NodepoolId: in.NodePoolID,
@@ -364,6 +370,17 @@ func (s *Client) UpdateNodePool(_ context.Context, in UpdateNodePoolInput) error
 		return errors.Wrapf(err, "UpdateNodePool %s failed", in.NodePoolID)
 	}
 	return nil
+}
+
+// toNodePoolAutoscaling maps the provider-side autoscaling spec to the SDK
+// model. A nil input is mapped to disabled (enable=false) so an explicit
+// "disable autoscaling" update works.
+func toNodePoolAutoscaling(in *NodePoolAutoscaling) *model.NodePoolNodeAutoscaling {
+	return &model.NodePoolNodeAutoscaling{
+		Enable:       boolPtr(in.Enable),
+		MinNodeCount: int32Ptr(in.MinNodeCount),
+		MaxNodeCount: int32Ptr(in.MaxNodeCount),
+	}
 }
 
 // DeleteNodePool implements Service.
@@ -403,6 +420,110 @@ func (s *Client) ListNodePools(_ context.Context, clusterID string) ([]NodePoolI
 		}
 	}
 	return out, nil
+}
+
+// GetUpgradeInfo implements Service. Queries ShowClusterUpgradeInfo and maps
+// the current release and the platform-offered target versions. An empty
+// target list is a legitimate platform state (no upgrade path currently
+// offered — questionnaire Q11, verified live).
+func (s *Client) GetUpgradeInfo(_ context.Context, clusterID string) (*UpgradeInfo, error) {
+	resp, err := s.cce.ShowClusterUpgradeInfo(&model.ShowClusterUpgradeInfoRequest{ClusterId: clusterID})
+	if err != nil {
+		return nil, errors.Wrap(err, "ShowClusterUpgradeInfo failed")
+	}
+	info := &UpgradeInfo{}
+	if resp.Spec != nil && resp.Spec.VersionInfo != nil {
+		if resp.Spec.VersionInfo.Release != nil {
+			info.CurrentVersion = *resp.Spec.VersionInfo.Release
+		}
+		if resp.Spec.VersionInfo.TargetVersions != nil {
+			info.TargetVersions = *resp.Spec.VersionInfo.TargetVersions
+		}
+	}
+	return info, nil
+}
+
+// StartUpgrade implements Service. Drives the official upgrade orchestration:
+// CreateUpgradeWorkFlow -> CreatePreCheck -> UpgradeCluster. Returns the
+// upgrade task ID (UpgradeCluster response uid) used by ShowUpgradeTask.
+func (s *Client) StartUpgrade(_ context.Context, clusterID, targetVersion string) (string, error) {
+	// 1. Create the upgrade workflow (targetVersion is required).
+	workflowBody := &model.CreateUpgradeWorkFlowRequestBody{
+		Kind:       "WorkFlowTask",
+		ApiVersion: "v3",
+		Spec: &model.WorkFlowSpec{
+			TargetVersion: targetVersion,
+		},
+	}
+	if _, err := s.cce.CreateUpgradeWorkFlow(&model.CreateUpgradeWorkFlowRequest{
+		ClusterId: clusterID,
+		Body:      workflowBody,
+	}); err != nil {
+		return "", errors.Wrap(err, "CreateUpgradeWorkFlow failed")
+	}
+	// 2. Run the pre-check (current version + target version).
+	precheckBody := &model.PrecheckClusterRequestBody{
+		ApiVersion: "v3",
+		Kind:       "PreCheckTask",
+		Spec: &model.PrecheckSpec{
+			ClusterVersion: stringPtr(currentVersionFrom(clusterID, s)),
+			TargetVersion:  stringPtr(targetVersion),
+		},
+	}
+	if _, err := s.cce.CreatePreCheck(&model.CreatePreCheckRequest{
+		ClusterId: clusterID,
+		Body:      precheckBody,
+	}); err != nil {
+		return "", errors.Wrap(err, "CreatePreCheck failed")
+	}
+	// 3. Execute the upgrade (strategy: in-place rolling update only —
+	// official UpgradeStrategy constraint).
+	upgradeResp, err := s.cce.UpgradeCluster(&model.UpgradeClusterRequest{
+		ClusterId: clusterID,
+		Body: &model.UpgradeClusterRequestBody{
+			Metadata: &model.UpgradeClusterRequestMetadata{ApiVersion: "v3", Kind: "UpgradeTask"},
+			Spec: &model.UpgradeSpec{
+				ClusterUpgradeAction: &model.ClusterUpgradeAction{
+					TargetVersion: targetVersion,
+					Strategy:      &model.UpgradeStrategy{Type: "inPlaceRollingUpdate"},
+				},
+			},
+		},
+	})
+	if err != nil {
+		return "", errors.Wrap(err, "UpgradeCluster failed")
+	}
+	if upgradeResp.Metadata == nil || upgradeResp.Metadata.Uid == nil {
+		return "", errors.New("UpgradeCluster returned no task ID")
+	}
+	return *upgradeResp.Metadata.Uid, nil
+}
+
+// ShowUpgradeTask implements Service. Returns the upgrade task phase
+// (Init/Queuing/Running/Pause/Success/Failed).
+func (s *Client) ShowUpgradeTask(_ context.Context, clusterID, taskID string) (string, error) {
+	resp, err := s.cce.ShowUpgradeClusterTask(&model.ShowUpgradeClusterTaskRequest{
+		ClusterId: clusterID,
+		TaskId:    taskID,
+	})
+	if err != nil {
+		return "", errors.Wrap(err, "ShowUpgradeClusterTask failed")
+	}
+	if resp.Status == nil || resp.Status.Phase == nil {
+		return "", errors.New("ShowUpgradeClusterTask returned no status phase")
+	}
+	return *resp.Status.Phase, nil
+}
+
+// currentVersionFrom returns the running cluster version for the pre-check
+// (best-effort: a failure falls back to the cluster name-less empty string,
+// since the pre-check accepts an empty/unknown current version).
+func currentVersionFrom(clusterID string, s *Client) string {
+	resp, err := s.cce.ShowCluster(&model.ShowClusterRequest{ClusterId: clusterID})
+	if err != nil || resp == nil || resp.Spec == nil || resp.Spec.Version == nil {
+		return ""
+	}
+	return *resp.Spec.Version
 }
 
 // ---- helpers ----

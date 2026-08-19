@@ -32,6 +32,9 @@ const (
 	CCEClusterReadyCondition = "CCEClusterReady"
 	// KubeconfigReadyCondition reports whether the kubeconfig Secret exists.
 	KubeconfigReadyCondition = "KubeconfigReady"
+	// UpgradeReadyCondition reports the cluster upgrade state (FR-1.7,
+	// questionnaire Q11). True when spec.version matches the running version.
+	UpgradeReadyCondition = "UpgradeReady"
 )
 
 // CCEManagedMachinePool (InfraMachinePool) conditions.
@@ -49,6 +52,15 @@ const (
 	WaitingForClusterInfrastructureReason = "WaitingForClusterInfrastructure"
 	WaitingForControlPlaneReason          = "WaitingForControlPlane"
 	WaitingForKubeconfigReason            = "WaitingForKubeconfig"
+	// UpgradeNotOfferedReason reports that the platform currently offers no
+	// upgrade target from the running version (questionnaire Q11, verified
+	// live: ShowClusterUpgradeInfo returns an empty target list).
+	UpgradeNotOfferedReason = "UpgradeNotOffered"
+	// UpgradeInProgressReason reports an in-flight upgrade task.
+	UpgradeInProgressReason = "UpgradeInProgress"
+	// UpgradeTargetUnavailableReason reports that the requested target version
+	// is not among the platform-offered upgrade targets.
+	UpgradeTargetUnavailableReason = "UpgradeTargetUnavailable"
 )
 
 // MarkTrue sets a condition to True.

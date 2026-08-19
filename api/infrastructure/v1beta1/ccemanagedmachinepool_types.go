@@ -75,9 +75,32 @@ type CCEManagedMachinePoolSpec struct {
 	// +optional
 	SecurityGroups []string `json:"securityGroups,omitempty"`
 
+	// Autoscaling maps to the CCE node pool autoscaling
+	// (NodePoolNodeAutoscaling). Only honored when the NodePoolAutoscaling
+	// feature gate is enabled (Alpha, off by default); otherwise scaling is
+	// driven solely by CAPI MachinePool replicas (questionnaire Q3, FR-2.6).
+	// +optional
+	Autoscaling AutoscalingSpec `json:"autoscaling,omitempty"`
+
 	// AdditionalTags attached to the node pool for ownership identification.
 	// +optional
 	AdditionalTags common.Tags `json:"additionalTags,omitempty"`
+}
+
+// AutoscalingSpec maps the CCE node pool autoscaling configuration
+// (NodePoolNodeAutoscaling: enable / minNodeCount / maxNodeCount).
+type AutoscalingSpec struct {
+	// Enable turns autoscaling on for the node pool.
+	// +optional
+	Enable bool `json:"enable,omitempty"`
+
+	// MinNodeCount is the minimum node count when autoscaling is enabled.
+	// +optional
+	MinNodeCount int32 `json:"minNodeCount,omitempty"`
+
+	// MaxNodeCount is the maximum node count when autoscaling is enabled.
+	// +optional
+	MaxNodeCount int32 `json:"maxNodeCount,omitempty"`
 }
 
 // CCEManagedMachinePoolStatus defines the observed state of CCEManagedMachinePool.
@@ -104,6 +127,12 @@ type CCEManagedMachinePoolStatus struct {
 	// because an attribute changed — questionnaire Q3/Q5).
 	// +optional
 	LastAppliedSecurityGroups []string `json:"lastAppliedSecurityGroups,omitempty"`
+
+	// LastAppliedAutoscaling records the autoscaling config last synced to the
+	// cloud node pool (only meaningful when the NodePoolAutoscaling gate is
+	// on). Mirrors spec.autoscaling for drift detection.
+	// +optional
+	LastAppliedAutoscaling AutoscalingSpec `json:"lastAppliedAutoscaling,omitempty"`
 
 	// FailureReason is a short reason for failure.
 	// +optional

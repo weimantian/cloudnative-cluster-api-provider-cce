@@ -8,6 +8,8 @@ package v1beta1
 
 import (
 	"context"
+	"regexp"
+	"slices"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -15,6 +17,18 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
+
+// ValidFlavors is an optional allowlist of ECS flavors accepted by the
+// CCEManagedMachinePool webhook. It is populated by the manager from the
+// --valid-flavors flag (empty = format check only). Flavors are region- and
+// generation-specific and cannot be hard-coded here; region availability is
+// still enforced by CCE at create time (error codes such as CCE.01400025 —
+// questionnaire Q6/Q7).
+var ValidFlavors []string
+
+// flavorPattern matches Huawei Cloud ECS flavor names such as c6.large.2,
+// c7.xlarge.4, c6sne.large.2 (family[.variant].size.vcpus).
+var flavorPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z0-9]+)?\.[0-9]+(\.[0-9]+)?$`)
 
 // SetupWebhookWithManager registers the CCEManagedMachinePool webhook.
 func (m *CCEManagedMachinePool) SetupWebhookWithManager(mgr ctrl.Manager) error {
@@ -62,6 +76,11 @@ func (m *CCEManagedMachinePool) validate() error {
 	}
 	if m.Spec.Flavor == "" {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "flavor"), "flavor is required"))
+	} else if !flavorPattern.MatchString(m.Spec.Flavor) {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "flavor"), m.Spec.Flavor,
+			"flavor must match the ECS flavor naming pattern, e.g. c6.large.2"))
+	} else if len(ValidFlavors) > 0 && !slices.Contains(ValidFlavors, m.Spec.Flavor) {
+		allErrs = append(allErrs, field.NotSupported(field.NewPath("spec", "flavor"), m.Spec.Flavor, ValidFlavors))
 	}
 	// Official constraint: max 20 taints.
 	if len(m.Spec.Taints) > 20 {

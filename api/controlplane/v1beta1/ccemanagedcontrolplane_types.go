@@ -132,6 +132,12 @@ type CCEManagedControlPlaneStatus struct {
 	// +optional
 	Version string `json:"version,omitempty"`
 
+	// UpgradeTaskID of the in-flight cluster upgrade (empty = no upgrade
+	// running). Set when spec.version differs from the running version and an
+	// upgrade workflow was started (FR-1.7, questionnaire Q11).
+	// +optional
+	UpgradeTaskID string `json:"upgradeTaskID,omitempty"`
+
 	// FailureReason is a short reason for failure.
 	// +optional
 	FailureReason string `json:"failureReason,omitempty"`

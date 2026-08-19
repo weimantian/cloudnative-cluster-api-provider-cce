@@ -31,6 +31,9 @@ type FakeCCEService struct {
 	UpdateNodePoolFn       func(ctx context.Context, in cceService.UpdateNodePoolInput) error
 	DeleteNodePoolFn       func(ctx context.Context, clusterID, nodePoolID string) error
 	ListNodePoolsFn        func(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error)
+	GetUpgradeInfoFn       func(ctx context.Context, clusterID string) (*cceService.UpgradeInfo, error)
+	StartUpgradeFn         func(ctx context.Context, clusterID, targetVersion string) (string, error)
+	ShowUpgradeTaskFn      func(ctx context.Context, clusterID, taskID string) (string, error)
 
 	// Records for assertions.
 	CreatedClusters     []cceService.CreateClusterInput
@@ -39,6 +42,7 @@ type FakeCCEService struct {
 	ScaleCalls          []int32
 	UpdateNodePoolCalls []cceService.UpdateNodePoolInput
 	KubeconfigCalls     int
+	StartUpgradeCalls   []string // target versions
 }
 
 // NewFakeCCEService returns a fake with healthy defaults.
@@ -82,6 +86,16 @@ func NewFakeCCEService() *FakeCCEService {
 	f.DeleteNodePoolFn = func(_ context.Context, _, _ string) error { return nil }
 	f.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
 		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", DesiredNodeCount: 3}}, nil
+	}
+	f.GetUpgradeInfoFn = func(_ context.Context, _ string) (*cceService.UpgradeInfo, error) {
+		return &cceService.UpgradeInfo{CurrentVersion: "v1.30.0", TargetVersions: []string{"v1.31.0"}}, nil
+	}
+	f.StartUpgradeFn = func(_ context.Context, _, targetVersion string) (string, error) {
+		f.StartUpgradeCalls = append(f.StartUpgradeCalls, targetVersion)
+		return "upgrade-task-1", nil
+	}
+	f.ShowUpgradeTaskFn = func(_ context.Context, _, _ string) (string, error) {
+		return cceService.UpgradeTaskPhaseSuccess, nil
 	}
 	return f
 }
@@ -151,6 +165,21 @@ func (f *FakeCCEService) DeleteNodePool(ctx context.Context, clusterID, nodePool
 // ListNodePools implements cceService.Service.
 func (f *FakeCCEService) ListNodePools(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error) {
 	return f.ListNodePoolsFn(ctx, clusterID)
+}
+
+// GetUpgradeInfo implements cceService.Service.
+func (f *FakeCCEService) GetUpgradeInfo(ctx context.Context, clusterID string) (*cceService.UpgradeInfo, error) {
+	return f.GetUpgradeInfoFn(ctx, clusterID)
+}
+
+// StartUpgrade implements cceService.Service.
+func (f *FakeCCEService) StartUpgrade(ctx context.Context, clusterID, targetVersion string) (string, error) {
+	return f.StartUpgradeFn(ctx, clusterID, targetVersion)
+}
+
+// ShowUpgradeTask implements cceService.Service.
+func (f *FakeCCEService) ShowUpgradeTask(ctx context.Context, clusterID, taskID string) (string, error) {
+	return f.ShowUpgradeTaskFn(ctx, clusterID, taskID)
 }
 
 // validKubeconfig is a minimal parseable kubeconfig for the Secret.

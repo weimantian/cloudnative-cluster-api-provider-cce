@@ -68,6 +68,27 @@ spec:
                 description: AdditionalTags attached to the node pool for ownership
                   identification.
                 type: object
+              autoscaling:
+                description: |-
+                  Autoscaling maps to the CCE node pool autoscaling
+                  (NodePoolNodeAutoscaling). Only honored when the NodePoolAutoscaling
+                  feature gate is enabled (Alpha, off by default); otherwise scaling is
+                  driven solely by CAPI MachinePool replicas (questionnaire Q3, FR-2.6).
+                properties:
+                  enable:
+                    description: Enable turns autoscaling on for the node pool.
+                    type: boolean
+                  maxNodeCount:
+                    description: MaxNodeCount is the maximum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                  minNodeCount:
+                    description: MinNodeCount is the minimum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                type: object
               availabilityZone:
                 description: AvailabilityZone of the nodes.
                 type: string
@@ -230,6 +251,26 @@ spec:
               failureReason:
                 description: FailureReason is a short reason for failure.
                 type: string
+              lastAppliedAutoscaling:
+                description: |-
+                  LastAppliedAutoscaling records the autoscaling config last synced to the
+                  cloud node pool (only meaningful when the NodePoolAutoscaling gate is
+                  on). Mirrors spec.autoscaling for drift detection.
+                properties:
+                  enable:
+                    description: Enable turns autoscaling on for the node pool.
+                    type: boolean
+                  maxNodeCount:
+                    description: MaxNodeCount is the maximum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                  minNodeCount:
+                    description: MinNodeCount is the minimum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                type: object
               lastAppliedSecurityGroups:
                 description: |-
                   LastAppliedSecurityGroups records the security groups last synced to the

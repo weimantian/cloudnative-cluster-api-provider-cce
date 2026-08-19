@@ -8,6 +8,8 @@ package controllers
 
 import (
 	"context"
+	"slices"
+	"strings"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -182,6 +184,24 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	cp.Status.Version = info.Version
 	conditions.MarkTrue(cp, conditions.CCEClusterReadyCondition, "ClusterAvailable", "CCE cluster is available")
 
+	// Upgrade orchestration (FR-1.7, questionnaire Q11): first poll any
+	// in-flight upgrade task; then, when spec.version differs from the running
+	// version, drive the CCE upgrade workflow. A missing upgrade path is a
+	// normal platform state, not an error (verified live: the platform offers
+	// no cross-minor targets from some versions).
+	if cp.Status.UpgradeTaskID != "" {
+		if res, done := r.pollUpgradeTask(ctx, svc, clusterID, cp); done {
+			return res, nil
+		}
+	}
+	if cp.Spec.Version != "" && info.Version != "" && cp.Spec.Version != info.Version {
+		if res, done := r.startUpgrade(ctx, svc, clusterID, cp); done {
+			return res, nil
+		}
+	} else {
+		conditions.MarkTrue(cp, conditions.UpgradeReadyCondition, "VersionCurrent", "cluster version matches spec")
+	}
+
 	// kubeconfig Secret (mirrors the ACK provider kubeconfig contract, so
 	// `clusterctl get kubeconfig` works). Refreshed before certificate expiry
 	// (questionnaire Q2: duration -1/[1,1827], default 365 days).
@@ -232,6 +252,87 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+// pollUpgradeTask polls an in-flight upgrade task. Returns (result, true) when
+// the caller should return immediately; on Success it clears the task and
+// continues the normal reconcile (done=false).
+func (r *CCEManagedControlPlaneReconciler) pollUpgradeTask(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) (ctrl.Result, bool) {
+	log := ctrl.LoggerFrom(ctx)
+	phase, err := svc.ShowUpgradeTask(ctx, clusterID, cp.Status.UpgradeTaskID)
+	if err != nil {
+		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
+			conditions.ReconciliationFailedReason, err.Error())
+		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, true
+	}
+	switch phase {
+	case cceService.UpgradeTaskPhaseSuccess:
+		cp.Status.UpgradeTaskID = ""
+		cp.Status.Version = cp.Spec.Version
+		conditions.MarkTrue(cp, conditions.UpgradeReadyCondition, "UpgradeCompleted", "cluster upgraded to "+cp.Spec.Version)
+		log.Info("Cluster upgrade completed", "clusterID", clusterID, "version", cp.Spec.Version)
+		// Continue the normal reconcile (kubeconfig + Ready) below.
+		return ctrl.Result{}, false
+	case cceService.UpgradeTaskPhaseFailed:
+		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
+			conditions.ReconciliationFailedReason, "upgrade task failed")
+		// Keep the task ID so the failure is visible; a spec change clears it.
+		return r.persistUpgradeStatus(ctx, cp)
+	default: // Init/Queuing/Running/Pause
+		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
+			conditions.UpgradeInProgressReason, "upgrade task phase: "+phase)
+		return r.persistUpgradeStatus(ctx, cp)
+	}
+}
+
+// startUpgrade decides whether the platform offers the requested target and,
+// when it does, starts the upgrade workflow. Returns (result, true) when the
+// caller should return immediately.
+func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) (ctrl.Result, bool) {
+	log := ctrl.LoggerFrom(ctx)
+	info, err := svc.GetUpgradeInfo(ctx, clusterID)
+	if err != nil {
+		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
+			conditions.ReconciliationFailedReason, err.Error())
+		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, true
+	}
+	if len(info.TargetVersions) == 0 {
+		// Platform currently offers no upgrade path — normal state, not an
+		// error (questionnaire Q11, verified live).
+		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
+			conditions.UpgradeNotOfferedReason,
+			"no upgrade targets offered from "+info.CurrentVersion+"; check Huawei Cloud upgrade policy")
+		return r.persistUpgradeStatus(ctx, cp)
+	}
+	if !slices.Contains(info.TargetVersions, cp.Spec.Version) {
+		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
+			conditions.UpgradeTargetUnavailableReason,
+			"target version "+cp.Spec.Version+" not offered; available: "+strings.Join(info.TargetVersions, ", "))
+		return r.persistUpgradeStatus(ctx, cp)
+	}
+
+	taskID, err := svc.StartUpgrade(ctx, clusterID, cp.Spec.Version)
+	if err != nil {
+		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
+			conditions.ReconciliationFailedReason, err.Error())
+		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, true
+	}
+	cp.Status.UpgradeTaskID = taskID
+	conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
+		conditions.UpgradeInProgressReason, "upgrading to "+cp.Spec.Version)
+	log.Info("Cluster upgrade started", "clusterID", clusterID, "target", cp.Spec.Version, "taskID", taskID)
+	return r.persistUpgradeStatus(ctx, cp)
+}
+
+// persistUpgradeStatus stores the control plane status after an upgrade step
+// and requests a requeue so the in-flight task keeps being polled. A status
+// update failure is logged and requeued (the reconcile loop will retry).
+func (r *CCEManagedControlPlaneReconciler) persistUpgradeStatus(ctx context.Context, cp *controlplanev1beta1.CCEManagedControlPlane) (ctrl.Result, bool) {
+	if err := r.Status().Update(ctx, cp); err != nil {
+		ctrl.LoggerFrom(ctx).Error(err, "failed to persist upgrade status")
+		return ctrl.Result{RequeueAfter: defaultRequeue}, true
+	}
+	return ctrl.Result{RequeueAfter: defaultRequeue}, true
 }
 
 func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta1.CCEManagedControlPlane) (ctrl.Result, error) {

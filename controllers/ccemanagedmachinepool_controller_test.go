@@ -18,9 +18,157 @@ import (
 
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
+
+// TestMachinePoolReconcileAutoscalingGate verifies B3: autoscaling is only
+// mapped to the CCE API when the NodePoolAutoscaling feature gate is on.
+func TestMachinePoolReconcileAutoscalingGate(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-autoscale"
+	createNamespace(t, ns)
+
+	setupPoolReconciler := func() (*fakes.FakeCCEService, *CCEManagedMachinePoolReconciler, *infrav1beta1.CCEManagedMachinePool) {
+		cluster, _, cp := newTestCluster(t, ns)
+		createCredentialsSecret(t, ns, "test-cluster")
+		markInfrastructureProvisioned(t, cluster)
+		cp.Status.ClusterID = "cluster-1"
+		cp.Status.Ready = true
+		if err := k8sClient.Status().Update(ctx, cp); err != nil {
+			t.Fatalf("failed to set control plane status: %v", err)
+		}
+		mp := &clusterv1.MachinePool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
+			Spec: clusterv1.MachinePoolSpec{
+				ClusterName: "test-cluster",
+				Replicas:    int32Ptr(3),
+				Template: clusterv1.MachineTemplateSpec{
+					Spec: clusterv1.MachineSpec{
+						ClusterName: "test-cluster",
+						Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+						InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+							APIGroup: infrav1beta1.GroupVersion.Group,
+							Kind:     "CCEManagedMachinePool",
+							Name:     "test-cluster-pool-0",
+						},
+					},
+				},
+			},
+		}
+		if err := k8sClient.Create(ctx, mp); err != nil {
+			t.Fatalf("failed to create MachinePool: %v", err)
+		}
+		pool := &infrav1beta1.CCEManagedMachinePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cluster-pool-0",
+				Namespace: ns,
+				Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+			},
+			Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+				ClusterName:  "test-cluster",
+				NodePoolName: "pool-0",
+				Flavor:       "c7.large.2",
+				Replicas:     3,
+				Autoscaling:  infrav1beta1.AutoscalingSpec{Enable: true, MinNodeCount: 1, MaxNodeCount: 5},
+			},
+		}
+		if err := k8sClient.Create(ctx, pool); err != nil {
+			t.Fatalf("failed to create CCEManagedMachinePool: %v", err)
+		}
+		fakeSvc := fakes.NewFakeCCEService()
+		r := &CCEManagedMachinePoolReconciler{
+			Client: k8sClient,
+			ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+				return fakeSvc, nil
+			},
+		}
+		return fakeSvc, r, pool
+	}
+
+	// Gate OFF: autoscaling must NOT be sent to the cloud.
+	if err := features.SetFromMap(map[string]bool{string(features.NodePoolAutoscaling): false}); err != nil {
+		t.Fatalf("disable gate: %v", err)
+	}
+	fakeSvc, r, pool := setupPoolReconciler()
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pool)}); err != nil {
+		t.Fatalf("Reconcile (gate off) returned error: %v", err)
+	}
+	if got := fakeSvc.CreatedNodePools[0].Autoscaling; got != nil {
+		t.Errorf("expected autoscaling nil when gate off, got %+v", got)
+	}
+
+	// Gate ON: autoscaling must be mapped (enable/min/max).
+	if err := features.SetFromMap(map[string]bool{string(features.NodePoolAutoscaling): true}); err != nil {
+		t.Fatalf("enable gate: %v", err)
+	}
+	defer func() {
+		_ = features.SetFromMap(map[string]bool{string(features.NodePoolAutoscaling): false})
+	}()
+	ns2 := ns + "-on"
+	createNamespace(t, ns2)
+	cluster2, _, cp2 := newTestCluster(t, ns2)
+	createCredentialsSecret(t, ns2, "test-cluster")
+	markInfrastructureProvisioned(t, cluster2)
+	cp2.Status.ClusterID = "cluster-1"
+	cp2.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp2); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+	mp2 := &clusterv1.MachinePool{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns2},
+		Spec: clusterv1.MachinePoolSpec{
+			ClusterName: "test-cluster",
+			Replicas:    int32Ptr(3),
+			Template: clusterv1.MachineTemplateSpec{
+				Spec: clusterv1.MachineSpec{
+					ClusterName: "test-cluster",
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+						APIGroup: infrav1beta1.GroupVersion.Group,
+						Kind:     "CCEManagedMachinePool",
+						Name:     "test-cluster-pool-0",
+					},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, mp2); err != nil {
+		t.Fatalf("failed to create MachinePool (gate on): %v", err)
+	}
+	pool2 := &infrav1beta1.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns2,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+			ClusterName:  "test-cluster",
+			NodePoolName: "pool-0",
+			Flavor:       "c7.large.2",
+			Replicas:     3,
+			Autoscaling:  infrav1beta1.AutoscalingSpec{Enable: true, MinNodeCount: 1, MaxNodeCount: 5},
+		},
+	}
+	if err := k8sClient.Create(ctx, pool2); err != nil {
+		t.Fatalf("failed to create CCEManagedMachinePool (gate on): %v", err)
+	}
+	fakeSvc2 := fakes.NewFakeCCEService()
+	r2 := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc2, nil
+		},
+	}
+	if _, err := r2.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pool2)}); err != nil {
+		t.Fatalf("Reconcile (gate on) returned error: %v", err)
+	}
+	a := fakeSvc2.CreatedNodePools[0].Autoscaling
+	if a == nil || !a.Enable || a.MinNodeCount != 1 || a.MaxNodeCount != 5 {
+		t.Errorf("expected autoscaling {true,1,5} when gate on, got %+v", a)
+	}
+}
 
 func TestMachinePoolReconcileSuccess(t *testing.T) {
 	ctx := context.Background()

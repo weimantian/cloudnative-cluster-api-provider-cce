@@ -28,6 +28,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
 
@@ -76,6 +77,13 @@ func TestMain(m *testing.M) {
 	k8sClient, err = client.New(restCfg, client.Options{Scheme: scheme})
 	if err != nil {
 		panic(err)
+	}
+
+	// Register provider feature gates so tests can toggle them (e.g. B3
+	// NodePoolAutoscaling).
+	if err := features.RegisterFeatureGates(); err != nil {
+		fmt.Fprintf(os.Stderr, "failed to register feature gates: %v\n", err)
+		os.Exit(1)
 	}
 
 	code := m.Run()

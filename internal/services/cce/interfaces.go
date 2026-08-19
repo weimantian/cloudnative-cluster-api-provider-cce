@@ -76,7 +76,17 @@ type CreateNodePoolInput struct {
 	SecurityGroups   []string
 	// CustomSecurityGroups to bind to newly scaled nodes (Q5).
 	CustomSecurityGroups []string
-	Tags             map[string]string
+	// Autoscaling maps to NodePoolNodeAutoscaling (feature gate
+	// NodePoolAutoscaling; nil = autoscaling disabled).
+	Autoscaling *NodePoolAutoscaling
+	Tags        map[string]string
+}
+
+// NodePoolAutoscaling mirrors NodePoolNodeAutoscaling (enable/min/max).
+type NodePoolAutoscaling struct {
+	Enable       bool
+	MinNodeCount int32
+	MaxNodeCount int32
 }
 
 // NodePoolInfo is the provider-side representation of a CCE node pool.
@@ -123,6 +133,9 @@ type UpdateNodePoolInput struct {
 	IgnoreInitialNodeCount bool
 	// CustomSecurityGroups to apply to newly scaled nodes (Q5).
 	CustomSecurityGroups []string
+	// Autoscaling maps to NodePoolNodeAutoscaling (feature gate
+	// NodePoolAutoscaling; nil = leave autoscaling untouched).
+	Autoscaling *NodePoolAutoscaling
 }
 
 // QuotaInfo is the cluster quota for the project.
@@ -132,6 +145,24 @@ type QuotaInfo struct {
 	// ClusterQuotaUsed is the number of clusters in use.
 	ClusterQuotaUsed int32
 }
+
+// UpgradeInfo is the platform's upgrade information for a cluster
+// (ShowClusterUpgradeInfo). TargetVersions empty means the platform currently
+// offers no upgrade path from the running version (questionnaire Q11: verified
+// live — v1.34.8-r2 returns an empty list).
+type UpgradeInfo struct {
+	// CurrentVersion is the running release, e.g. "v1.34.8".
+	CurrentVersion string
+	// TargetVersions are the versions the platform offers as upgrade targets.
+	TargetVersions []string
+}
+
+// UpgradeTaskPhase values reported by ShowUpgradeClusterTask
+// (UpgradeTaskStatus.Phase): Init/Queuing/Running/Pause/Success/Failed.
+const (
+	UpgradeTaskPhaseSuccess = "Success"
+	UpgradeTaskPhaseFailed  = "Failed"
+)
 
 // Service is the CCE API surface consumed by the provider controllers.
 type Service interface { // ShowCluster returns the current state of a CCE cluster.
@@ -158,4 +189,13 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	DeleteNodePool(ctx context.Context, clusterID, nodePoolID string) error
 	// ListNodePools lists the node pools of a cluster.
 	ListNodePools(ctx context.Context, clusterID string) ([]NodePoolInfo, error)
+	// GetUpgradeInfo returns the platform's upgrade targets for a cluster.
+	GetUpgradeInfo(ctx context.Context, clusterID string) (*UpgradeInfo, error)
+	// StartUpgrade drives the upgrade workflow (CreateUpgradeWorkFlow ->
+	// CreatePreCheck -> UpgradeCluster) and returns the upgrade task ID used
+	// by ShowUpgradeTask.
+	StartUpgrade(ctx context.Context, clusterID, targetVersion string) (string, error)
+	// ShowUpgradeTask returns the upgrade task phase (Init/Queuing/Running/
+	// Pause/Success/Failed).
+	ShowUpgradeTask(ctx context.Context, clusterID, taskID string) (string, error)
 }

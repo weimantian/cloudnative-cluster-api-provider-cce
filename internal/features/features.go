@@ -37,4 +37,16 @@ func RegisterFeatureGates() error {
 	return featureGatesMutable.Add(featureGates)
 }
 
+// Enabled reports whether the given feature gate is enabled. Unknown gates
+// report false.
+func Enabled(f featuregate.Feature) bool {
+	return featureGatesMutable.Enabled(f)
+}
+
+// SetFromMap enables/disables feature gates by name (used by the manager flag
+// parser and by tests).
+func SetFromMap(m map[string]bool) error {
+	return featureGatesMutable.SetFromMap(m)
+}
+
 var _ = runtime.Must // reserved for future gate wiring

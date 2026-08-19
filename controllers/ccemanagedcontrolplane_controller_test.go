@@ -13,6 +13,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capiconditions "sigs.k8s.io/cluster-api/util/conditions"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -22,6 +23,9 @@ import (
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
+
+// ctxBG is a shared background context for controller tests.
+var ctxBG = context.Background()
 
 func TestControlPlaneReconcileWaitingForInfra(t *testing.T) {
 	ctx := context.Background()
@@ -160,4 +164,128 @@ func TestControlPlaneReconcileDeletePassesOptions(t *testing.T) {
 	// controller keeps requeueing until the cluster disappears; here the fake
 	// returns success immediately, so the finalizer is removed on the next
 	// reconcile — the first delete reconcile already requested deletion).
+}
+
+// upgradeCP builds the shared CP upgrade scenario: spec.version v1.31.0 while
+// the cloud reports v1.30.0.
+func upgradeCP(t *testing.T, ns string) (*clusterv1.Cluster, *controlplanev1beta1.CCEManagedControlPlane, *fakes.FakeCCEService, *CCEManagedControlPlaneReconciler) {
+	t.Helper()
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+	cp.Spec.Version = "v1.31.0"
+	if err := k8sClient.Update(ctxBG, cp); err != nil {
+		t.Fatalf("failed to set spec.version: %v", err)
+	}
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	return cluster, cp, fakeSvc, r
+}
+
+func TestControlPlaneReconcileUpgradeStart(t *testing.T) {
+	ns := "cp-test-upg-start"
+	createNamespace(t, ns)
+	_, cp, fakeSvc, r := upgradeCP(t, ns)
+
+	res, err := r.Reconcile(ctxBG, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)})
+	if err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if res.RequeueAfter != defaultRequeue {
+		t.Errorf("expected requeue %v during upgrade, got %v", defaultRequeue, res.RequeueAfter)
+	}
+	if len(fakeSvc.StartUpgradeCalls) != 1 || fakeSvc.StartUpgradeCalls[0] != "v1.31.0" {
+		t.Fatalf("expected StartUpgrade(v1.31.0), got %v", fakeSvc.StartUpgradeCalls)
+	}
+	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctxBG, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	if got.Status.UpgradeTaskID != "upgrade-task-1" {
+		t.Errorf("expected UpgradeTaskID upgrade-task-1, got %q", got.Status.UpgradeTaskID)
+	}
+	if c := capiconditions.Get(got, conditions.UpgradeReadyCondition); c == nil || c.Status != metav1.ConditionFalse {
+		t.Errorf("expected UpgradeReady=False while upgrading, got %v", c)
+	}
+	// The control plane must not report Ready while the upgrade is in flight.
+	if got.Status.Ready {
+		t.Error("expected Ready=false during upgrade")
+	}
+}
+
+func TestControlPlaneReconcileUpgradeNotOffered(t *testing.T) {
+	ns := "cp-test-upg-notoffered"
+	createNamespace(t, ns)
+	_, cp, fakeSvc, r := upgradeCP(t, ns)
+	fakeSvc.GetUpgradeInfoFn = func(_ context.Context, _ string) (*cceService.UpgradeInfo, error) {
+		// Platform offers no targets (questionnaire Q11, verified live).
+		return &cceService.UpgradeInfo{CurrentVersion: "v1.30.0", TargetVersions: []string{}}, nil
+	}
+
+	_, err := r.Reconcile(ctxBG, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)})
+	if err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.StartUpgradeCalls) != 0 {
+		t.Errorf("expected no upgrade start when no targets offered, got %v", fakeSvc.StartUpgradeCalls)
+	}
+	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctxBG, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	c := capiconditions.Get(got, conditions.UpgradeReadyCondition)
+	if c == nil || c.Status != metav1.ConditionFalse || c.Reason != conditions.UpgradeNotOfferedReason {
+		t.Errorf("expected UpgradeReady=False/UpgradeNotOffered, got %v", c)
+	}
+	if got.Status.Ready {
+		t.Error("expected Ready=false when upgrade cannot proceed")
+	}
+}
+
+func TestControlPlaneReconcileUpgradeCompletes(t *testing.T) {
+	ns := "cp-test-upg-complete"
+	createNamespace(t, ns)
+	_, cp, fakeSvc, r := upgradeCP(t, ns)
+
+	// First reconcile starts the upgrade task.
+	if _, err := r.Reconcile(ctxBG, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("first Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.StartUpgradeCalls) != 1 {
+		t.Fatalf("expected upgrade start, got %v", fakeSvc.StartUpgradeCalls)
+	}
+
+	// Cloud now reports the new version (upgrade done); the fake task
+	// already returns Success by default.
+	fakeSvc.ShowClusterFn = func(_ context.Context, clusterID string) (*cceService.ClusterInfo, error) {
+		return &cceService.ClusterInfo{ClusterID: clusterID, Phase: "Available", Version: "v1.31.0"}, nil
+	}
+
+	if _, err := r.Reconcile(ctxBG, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("second Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.StartUpgradeCalls) != 1 {
+		t.Errorf("expected no new upgrade after completion, got %v", fakeSvc.StartUpgradeCalls)
+	}
+	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctxBG, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	if got.Status.UpgradeTaskID != "" {
+		t.Errorf("expected UpgradeTaskID cleared after success, got %q", got.Status.UpgradeTaskID)
+	}
+	if got.Status.Version != "v1.31.0" {
+		t.Errorf("expected status.version v1.31.0, got %q", got.Status.Version)
+	}
+	if c := capiconditions.Get(got, conditions.UpgradeReadyCondition); c == nil || c.Status != metav1.ConditionTrue {
+		t.Errorf("expected UpgradeReady=True after success, got %v", c)
+	}
+	if !got.Status.Ready || !got.Status.Initialized {
+		t.Error("expected control plane Ready after upgrade completed")
+	}
 }

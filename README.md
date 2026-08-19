@@ -140,6 +140,33 @@ kubectl --kubeconfig my-cluster.kubeconfig get nodes
 
 Expected result: `kubectl get nodes` shows the number of nodes equal to `MachinePool.spec.replicas`, all `Ready`.
 
+### Cluster upgrades (FR-1.7)
+
+Set `CCEManagedControlPlane.spec.version` to a higher Kubernetes version; the
+provider drives the CCE upgrade workflow (pre-check → in-place rolling
+upgrade → post-check) and reports progress via the `UpgradeReady` condition.
+Note: the platform decides which upgrade targets it offers — when none are
+available the condition reports `UpgradeNotOffered` (a normal state, not an
+error; see `docs/cce-verification-findings.md` Q11).
+
+### Node pool autoscaling (Alpha, feature gate)
+
+`spec.autoscaling` (enable/min/max) on `CCEManagedMachinePool` is only honored
+when the `NodePoolAutoscaling` feature gate is on:
+
+```bash
+manager --feature-gates=NodePoolAutoscaling=true
+```
+
+### Flavor allowlist (webhook)
+
+`CCEManagedMachinePool.spec.flavor` is validated against the ECS flavor naming
+pattern; an optional allowlist can be enforced per deployment (region-specific):
+
+```bash
+manager --valid-flavors=c6.large.2,c7.large.2
+```
+
 ## Clean Up Resources
 
 ```bash

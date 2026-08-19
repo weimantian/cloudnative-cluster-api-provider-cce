@@ -10,7 +10,9 @@ package main
 import (
 	"flag"
 	"os"
+	"strings"
 
+	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
 	utilruntime "k8s.io/apimachinery/pkg/util/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
@@ -46,6 +48,8 @@ func main() {
 		enableLeaderElection bool
 		probeAddr            string
 		leaderElectionID     string
+		featureGates         string
+		validFlavors         string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -54,6 +58,11 @@ func main() {
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
 	flag.StringVar(&leaderElectionID, "leader-election-id", "cce-provider-leader-election", "Leader election ID.")
+	flag.StringVar(&featureGates, "feature-gates", "",
+		"Comma-separated list of feature gate overrides, e.g. 'NodePoolAutoscaling=true'.")
+	flag.StringVar(&validFlavors, "valid-flavors", "",
+		"Comma-separated allowlist of ECS flavors accepted by the CCEManagedMachinePool webhook "+
+			"(empty = format check only; region availability is still enforced by CCE at create time).")
 	opts := zap.Options{Development: true}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -63,6 +72,20 @@ func main() {
 	if err := features.RegisterFeatureGates(); err != nil {
 		setupLog.Error(err, "unable to register feature gates")
 		os.Exit(1)
+	}
+	if featureGates != "" {
+		overrides, err := parseFeatureGates(featureGates)
+		if err != nil {
+			setupLog.Error(err, "unable to parse --feature-gates")
+			os.Exit(1)
+		}
+		if err := features.SetFromMap(overrides); err != nil {
+			setupLog.Error(err, "unable to apply --feature-gates")
+			os.Exit(1)
+		}
+	}
+	if validFlavors != "" {
+		infrav1beta1.ValidFlavors = splitCSV(validFlavors)
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), manager.Options{
@@ -113,4 +136,37 @@ func main() {
 		setupLog.Error(err, "problem running manager")
 		os.Exit(1)
 	}
+}
+
+// parseFeatureGates parses "Name=true,Name=false" into a map.
+func parseFeatureGates(s string) (map[string]bool, error) {
+	out := map[string]bool{}
+	for _, item := range splitCSV(s) {
+		kv := strings.SplitN(item, "=", 2)
+		if len(kv) != 2 {
+			return nil, errors.Errorf("invalid feature gate %q, want Name=true|false", item)
+		}
+		var v bool
+		switch strings.ToLower(kv[1]) {
+		case "true":
+			v = true
+		case "false":
+			v = false
+		default:
+			return nil, errors.Errorf("invalid feature gate value %q, want true|false", kv[1])
+		}
+		out[kv[0]] = v
+	}
+	return out, nil
+}
+
+// splitCSV splits a comma-separated list, trimming spaces and dropping empties.
+func splitCSV(s string) []string {
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if p = strings.TrimSpace(p); p != "" {
+			out = append(out, p)
+		}
+	}
+	return out
 }

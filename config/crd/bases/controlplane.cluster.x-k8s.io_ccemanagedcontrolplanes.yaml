@@ -257,6 +257,12 @@ spec:
               ready:
                 description: Ready indicates the CCE control plane is available.
                 type: boolean
+              upgradeTaskID:
+                description: |-
+                  UpgradeTaskID of the in-flight cluster upgrade (empty = no upgrade
+                  running). Set when spec.version differs from the running version and an
+                  upgrade workflow was started (FR-1.7, questionnaire Q11).
+                type: string
               version:
                 description: Version of the cluster as reported by CCE.
                 type: string
