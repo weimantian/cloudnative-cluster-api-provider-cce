@@ -176,7 +176,7 @@
 | # | 主题 | 官方检索结论 | 剩余需实测/咨询 | 依据 |
 |---|---|---|---|---|
 | Q1 | 空集群创建/计费/配额 | ✅ 官方原文"创建空集群(只有 Master 无 Node)";空集群照常计费;flavor 超限 CCE.01400014 | 空集群最终 phase;Available 前调节点池错误码 | cce_02_0236 + price-cce |
-| Q2 | kubeconfig 有效期与 external/internal | ✅ 有效期 -1/[1,1827];external/internal 按 publicIp;**重新签发即时生效(实测)** | 不传 duration 行为;授权项两处不一致 | cce_02_0248 + SDK + 冒烟 |
+| Q2 | kubeconfig 有效期与 external/internal | ✅ 有效期 -1/[1,1827];external/internal 按 publicIp;**重新签发即时生效(实测)**;**授权项两处来源差异已解决:接口约束= `cce:cluster:generateClientCredential`(依赖 `cce:cluster:get`),最小集合须同时含两者** | 不传 duration 行为 | cce_02_0248 + SDK + 冒烟 |
 | Q3 | ScaleNodePool 语义与扩缩容冲突 | ✅ **绝对值(期望总数)**;scaleGroups 必填 default;UpdateNodePool 不填 initialNodeCount 会缩到 0 | 绝对值/增量实测关闭;伸缩中再伸缩错误码 | ScaleNodePool.html + cce_02_0356 |
 | Q4 | Turbo(eni)网络硬性要求 | ✅ eni 容器子网可取 VPC 子网(可与节点子网重叠);硬约束=服务网段不重叠;eni 可增不可改 | "覆盖 2 AZ"类说法无官方依据 | cce_10_0284 + bestpractice |
 | Q5 | 安全组创建/绑定/修改 | ✅ 自动建 node/control/eni SG;podSG 仅 Turbo 每池≤5;改 SG 只对新建节点生效;5443 白名单=改 control SG;**Standard 接受 customSecurityGroups(实测)** | — | cce_faq_00265 + cce_10_0784 + 冒烟 |
@@ -188,7 +188,7 @@
 | Q11 | 集群升级工作流 | ✅ 仅原地升级;TargetVersion 必填;升级 API 可用(实测);**实测定论:ShowClusterUpgradeInfo 返回 offered 升级目标=空(平台当前不提供跨版本路径,"无可用目标"需作为正常状态处理)** | 升级耗时(无路径不可实测);升级策略需咨询华为云 | 升级 API + 冒烟 |
 | Q12 | 计费与休眠/唤醒 | ✅ billingMode 默认按需;休眠停控制节点费用、节点/EIP 照常;唤醒 3~5 分钟 | 包周期是否禁休眠;唤醒失败错误码 | cce_02_0374/0375 + price |
 | Q13 | 管理集群→API Server 网络路径 | ✅ 公网 https://EIP:5443;**实测:EIP 绑定后公网可达(reachable=true)**;私网 VPC 内 IP/VIP;跨 VPC=对等/专线/VPN | 跨 Region 方案 | cce_10_0864 + bestpractice + 冒烟 |
-| Q14 | API 限流与错误码全集 | ✅ 错误码表公开;限流 APIGW.0308;**实测:持续 ~71 req/s 即大量限流(703/1000),阈值远低于 APIGW 默认 200 req/s → 轮询/重试必须退避+抖动** | Retry-After | ErrorCode.html + 冒烟 |
+| Q14 | API 限流与错误码全集 | ✅ 错误码表公开;限流 APIGW.0308;**实测:读 ~70 req/s、写 10 次/分钟触发;429 带 Retry-After(~57s)但非稳定(8/1700),固定退避+抖动更可靠** | 无(全部实测/抓包关闭) | ErrorCode.html + 冒烟 + 抓包 |
 
 ## 五、参考来源(问题依据)
 

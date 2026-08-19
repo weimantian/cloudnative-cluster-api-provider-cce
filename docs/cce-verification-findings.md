@@ -147,6 +147,14 @@
 - 已按此更新 PoC `internal/services/errors/errors.go`(修正原先占位的 not-found 码,新增 Quota/Throttle 分类)。
 
 ---
+## 第五轮确认记录(Q2 授权差异闭环 / Q11 二次复证 / Q14 Retry-After 抓包)
+
+| 项 | 结论 |
+|---|---|
+| **Q2 授权项差异(闭环)** | ✅ 两处来源差异已解决:CCE 权限策略表将 clustercert 接口授权项列为 `cce:cluster:get`,API 参考页(接口约束)列为 **`cce:cluster:generateClientCredential`(依赖 `cce:cluster:get`)**——两者**不矛盾而是依赖关系**,Provider 最小 IAM 策略须同时包含 `cce:cluster:get` + `cce:cluster:generateClientCredential`(依赖项须显式授予) |
+| **Q11 升级目标(二次复证)** | ✅ 2026-08-19 再次实测:v1.34.8 集群 `ShowClusterUpgradeInfo` 仍返回 **targets=[]**(与第四轮一致)——平台当前**确实不提供跨版本升级目标**,非测试环境问题;**升级耗时在无可用目标时客观无法实测,需咨询华为云(升级策略/何时开放/单次耗时量级)**;controller 已按"空目标=正常状态(UpgradeNotOffered)"处理 |
+| **Q14 Retry-After(抓包确认)** | ✅✅ **429 响应携带 `Retry-After` 头(~57s,浮点秒,如 `56.818`)**:注入自定义 RoundTripper 抓包,2000 次并发 ListClusters(130 req/s)→ 1700×429 + 301×200,429 中仅 **8 个**带 Retry-After——该头**并非稳定出现**,重试实现不能只依赖 Retry-After,固定退避(实测窗口 ~1 分钟)更可靠;工具:`hack/check-retry-after` |
+
 ## 第二轮真实 CCE 冒烟确认记录(TestSmokeExtras / TestSmokeUpgrade)
 
 | 项 | 实测结果 |
@@ -200,7 +208,7 @@
 | # | 主题 | 官方结论 | 剩余需实测/咨询 |
 |---|---|---|---|
 | Q1 | 空集群创建 | ✅ 官方原文"创建空集群(只有 Master 无 Node)";空集群照常计费;flavor 上限 CCE.01400014 | 空集群最终 phase;Available 前调节点池的错误码 |
-| Q2 | kubeconfig | ✅ 有效期 -1/[1,1827];external/internal 按 publicIp;吊销立即失效 | 不传 duration 的行为;重新签发是否即时生效;证书授权项两处来源不一致 |
+| Q2 | kubeconfig | ✅ 有效期 -1/[1,1827];external/internal 按 publicIp;吊销立即失效;重新签发即时生效;**证书授权项两处来源差异已解决:接口约束= `cce:cluster:generateClientCredential`(依赖 `cce:cluster:get`),最小集合须同时含两者** | 不传 duration 的行为 |
 | Q3 | 扩缩容 | ✅ **desiredNodeCount=绝对值(期望总数)**;scaleGroups 必填 default;UpdateNodePool 不填 initialNodeCount 会缩到 0 | 绝对值/增量实测关闭;伸缩中再伸缩的错误码 |
 | Q4 | eni 网络 | ✅ eni 容器子网可取 VPC 子网(可与节点子网重叠);硬约束=服务网段不重叠;eni 可增不可改 | "ENI 子网覆盖 2 AZ"类说法无官方依据 |
 | Q5 | 安全组 | ✅ 自动建 node/control/eni SG;podSG 仅 Turbo 每池≤5;改 SG 只对新建节点生效;5443 白名单=改 control SG | Standard 对 customSecurityGroups 支持 |
@@ -209,8 +217,8 @@
 | Q8 | 删除 | ✅ 异步 1~3 分钟;delete_evs 默认残留、delete_eni/net 默认删;ondemand_node_policy 默认删按需节点保留纳管节点;休眠中不可删 | 存在节点池时直接删集群;删除不存在集群的错误码 |
 | Q9 | 单节点 | ✅ AddNode=重装 ECS(清数据)+严格前置(≥2C4G/单网卡/数据盘);CCE 自动安装;DefaultPool 无弹性 | CAPI Machine 路径取舍 |
 | Q10 | Autopilot | ✅ Serverless 无节点 API;50 集群/区域;按 CPU/内存计费 | CAPI 对接方式(远期) |
-| Q11 | 升级 | ✅ 仅原地升级(inPlaceRollingUpdate);TargetVersion 必填;升级中暂停节点池伸缩;补丁可直升;**实测:ShowClusterUpgradeInfo 返回 offered 目标=空(平台策略,需按正常状态处理)** | 升级耗时量级(当前无可用升级路径,无法实测);仅升 platformVersion 行为 |
+| Q11 | 升级 | ✅ 仅原地升级(inPlaceRollingUpdate);TargetVersion 必填;升级中暂停节点池伸缩;补丁可直升;**两次实测(8/19 复证):ShowClusterUpgradeInfo 返回 offered 目标=空,平台当前无跨版本路径,controller 按正常状态处理** | 升级耗时量级(无可用目标,客观不可测,需咨询华为云);仅升 platformVersion 行为 |
 | Q12 | 计费/休眠 | ✅ billingMode 默认按需;休眠停控制节点费用、节点/EIP 照常;唤醒 3~5 分钟 | 包周期是否禁休眠;唤醒失败错误码 |
 | Q13 | 网络路径 | ✅ 公网 https://EIP:5443;**实测:EIP 绑定后公网可达(reachable=true)**;私网 VPC 内 IP/VIP;跨 VPC=对等/专线/VPN | 跨 Region 方案 |
-| Q14 | 限流/错误码 | ✅ 错误码表公开(404=01404001、429=01429002/003、配额 01400007 系);**实测:持续 ~71 req/s 即大量限流(703/1000),阈值远低于 APIGW 默认 200 req/s → 必须退避重试** | Retry-After 头 |
+| Q14 | 限流/错误码 | ✅ 错误码表公开(404=01404001、429=01429002/003、配额 01400007 系);**实测:读 ~70 req/s、写 10 次/分钟触发限流;429 携带 Retry-After(~57s)但非稳定出现(8/1700)→ 固定退避更可靠** | 无(全部实测关闭) |
 

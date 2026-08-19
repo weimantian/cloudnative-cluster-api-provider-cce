@@ -6,7 +6,7 @@
 
 > **事实基准声明**:同架构文档,所有需求项的依据均来自真实来源(华为云官方 SDK/文档、CAPA 与阿里云 ACK Provider 源码);无法从公开资料确认处标注 **[需验证]**,需对接真实华为云 CCE 确认(完整清单见 [research-sources.md §4](research-sources.md))。
 >
-> **验证状态(2026-08-19)**:各 FR 中引用的 [需验证] 项已逐项确认——Q1/Q2/Q3/Q5/Q7/Q8/Q13/Q14 真实冒烟实测、Q4/Q6/Q9/Q10/Q12 官方文档确认、Q11 实测定论(无跨版本目标为正常状态);落地状态逐项见 [验证结论记录](cce-verification-findings.md) 与 [落地跟踪](poc-implementation-tracker.md)。**P0/P1 全部实现;仅 Q11 升级耗时、Q14 Retry-After 需华为云/工单补充。**
+> **验证状态(2026-08-19)**:各 FR 中引用的 [需验证] 项已逐项确认——Q1/Q2/Q3/Q5/Q7/Q8/Q13/Q14 真实冒烟实测(含 Q14 Retry-After 抓包)、Q4/Q6/Q9/Q10/Q12 官方文档确认、Q11 两次实测定论(无跨版本目标为正常状态);落地状态逐项见 [验证结论记录](cce-verification-findings.md) 与 [落地跟踪](poc-implementation-tracker.md)。**P0/P1 全部实现;仅 Q11 升级耗时量级需咨询华为云。**
 
 ---
 
