@@ -108,6 +108,9 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		log.Info("Control plane is not ready yet, waiting")
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.WaitingForControlPlaneReason, "")
+		if err := r.Status().Update(ctx, pool); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
@@ -121,18 +124,27 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
+		if uerr := r.Status().Update(ctx, pool); uerr != nil {
+			return ctrl.Result{}, uerr
+		}
 		return ctrl.Result{}, err
 	}
 	creds, err := scope.ResolveCredentials(ctx, r.Client, pool.Namespace, pool.Spec.ClusterName+"-credentials")
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
+		if uerr := r.Status().Update(ctx, pool); uerr != nil {
+			return ctrl.Result{}, uerr
+		}
 		return ctrl.Result{}, err
 	}
 	svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
+		if uerr := r.Status().Update(ctx, pool); uerr != nil {
+			return ctrl.Result{}, uerr
+		}
 		return ctrl.Result{}, err
 	}
 
@@ -143,6 +155,9 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		if err != nil {
 			conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
+			if uerr := r.Status().Update(ctx, pool); uerr != nil {
+				return ctrl.Result{}, uerr
+			}
 			return ctrl.Result{}, err
 		}
 		pool.Status.NodePoolID = id
@@ -163,6 +178,9 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		if err := svc.ScaleNodePool(ctx, clusterID, pool.Status.NodePoolID, pool.Spec.Replicas); err != nil {
 			conditions.MarkFalse(pool, conditions.NodePoolScalingCondition,
 				conditions.ReconciliationFailedReason, err.Error())
+			if uerr := r.Status().Update(ctx, pool); uerr != nil {
+				return ctrl.Result{}, uerr
+			}
 			return ctrl.Result{}, err
 		}
 		conditions.MarkTrue(pool, conditions.NodePoolScalingCondition, "ScalingCompleted", "node pool scaled")
@@ -200,6 +218,9 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		if err := svc.UpdateNodePool(ctx, update); err != nil {
 			conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
+			if uerr := r.Status().Update(ctx, pool); uerr != nil {
+				return ctrl.Result{}, uerr
+			}
 			return ctrl.Result{}, err
 		}
 		pool.Status.LastAppliedSecurityGroups = append([]string(nil), pool.Spec.SecurityGroups...)
@@ -213,6 +234,9 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
+		if uerr := r.Status().Update(ctx, pool); uerr != nil {
+			return ctrl.Result{}, uerr
+		}
 		return ctrl.Result{}, err
 	}
 	// Replicas should reflect the ACTUAL node count, not the desired target

@@ -106,6 +106,9 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 			conditions.ReconciliationFailedReason,
 			"spec.region is required")
+		if err := r.Status().Update(ctx, cceCluster); err != nil {
+			return ctrl.Result{}, err
+		}
 		return ctrl.Result{}, errors.New("spec.region is required")
 	}
 
