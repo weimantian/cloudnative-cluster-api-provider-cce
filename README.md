@@ -246,6 +246,7 @@ clusterctl delete --infrastructure cce
 - [Research sources & verification checklist (Chinese)](docs/research-sources.md)
 - [Huawei Cloud CCE alignment questionnaire](docs/cce-verification-questionnaire.md) · [verification findings](docs/cce-verification-findings.md)
 - [clusterctl deployment validation (kind + real CCE)](docs/clusterctl-deployment-validation.md)
+- [Official API reference review findings](docs/api-review-findings.md)
 - [CAPA code analysis](docs/CAPA架构分析报告.md) · [Alibaba ACK provider code analysis](docs/ACKProvider架构分析报告.md) · [CAPHW code analysis](docs/CAPHW架构分析报告.md)
 
 ## Dependencies & Acknowledgements
