@@ -28,6 +28,7 @@ type FakeCCEService struct {
 	ShowQuotasFn            func(ctx context.Context) (*cceService.QuotaInfo, error)
 	CreateNodePoolFn        func(ctx context.Context, in cceService.CreateNodePoolInput) (string, error)
 	ScaleNodePoolFn         func(ctx context.Context, clusterID, nodePoolID string, desiredCount int32) error
+	UpdateNodePoolFn        func(ctx context.Context, in cceService.UpdateNodePoolInput) error
 	DeleteNodePoolFn        func(ctx context.Context, clusterID, nodePoolID string) error
 	ListNodePoolsFn         func(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error)
 
@@ -73,6 +74,7 @@ func NewFakeCCEService() *FakeCCEService {
 		f.ScaleCalls = append(f.ScaleCalls, desiredCount)
 		return nil
 	}
+	f.UpdateNodePoolFn = func(_ context.Context, _ cceService.UpdateNodePoolInput) error { return nil }
 	f.DeleteNodePoolFn = func(_ context.Context, _, _ string) error { return nil }
 	f.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
 		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", DesiredNodeCount: 3}}, nil
@@ -130,6 +132,11 @@ func (f *FakeCCEService) CreateNodePool(ctx context.Context, in cceService.Creat
 // ScaleNodePool implements cceService.Service.
 func (f *FakeCCEService) ScaleNodePool(ctx context.Context, clusterID, nodePoolID string, desiredCount int32) error {
 	return f.ScaleNodePoolFn(ctx, clusterID, nodePoolID, desiredCount)
+}
+
+// UpdateNodePool implements cceService.Service.
+func (f *FakeCCEService) UpdateNodePool(ctx context.Context, in cceService.UpdateNodePoolInput) error {
+	return f.UpdateNodePoolFn(ctx, in)
 }
 
 // DeleteNodePool implements cceService.Service.

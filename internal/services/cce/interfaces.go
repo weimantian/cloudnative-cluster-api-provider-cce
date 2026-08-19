@@ -105,6 +105,19 @@ type DeleteClusterInput struct {
 	PeriodicNodePolicy string
 }
 
+// UpdateNodePoolInput carries the fields updated on a node pool.
+type UpdateNodePoolInput struct {
+	ClusterID  string
+	NodePoolID string
+	// InitialNodeCount is the new expected node count (official: required,
+	// defaults to 0 which shrinks the pool — Q3).
+	InitialNodeCount int32
+	// IgnoreInitialNodeCount leaves the expected count untouched.
+	IgnoreInitialNodeCount bool
+	// CustomSecurityGroups to apply to newly scaled nodes (Q5).
+	CustomSecurityGroups []string
+}
+
 // QuotaInfo is the cluster quota for the project.
 type QuotaInfo struct {
 	// ClusterQuotaLimit is the max number of clusters (official: per region).
@@ -114,7 +127,7 @@ type QuotaInfo struct {
 }
 
 // Service is the CCE API surface consumed by the provider controllers.
-type Service interface {	// ShowCluster returns the current state of a CCE cluster.
+type Service interface { // ShowCluster returns the current state of a CCE cluster.
 	ShowCluster(ctx context.Context, clusterID string) (*ClusterInfo, error)
 	// CreateCluster creates a CCE cluster and returns its ID.
 	CreateCluster(ctx context.Context, in CreateClusterInput) (string, error)
@@ -130,6 +143,10 @@ type Service interface {	// ShowCluster returns the current state of a CCE clust
 	// node count (desiredNodeCount semantics per official docs — see
 	// questionnaire Q3 for the pending live-test confirmation).
 	ScaleNodePool(ctx context.Context, clusterID, nodePoolID string, desiredCount int32) error
+	// UpdateNodePool updates a node pool. When ignoreInitialNodeCount is true
+	// the pool's expected count is left untouched (official: omitting
+	// initialNodeCount defaults it to 0 and shrinks the pool to 0 — Q3).
+	UpdateNodePool(ctx context.Context, in UpdateNodePoolInput) error
 	// DeleteNodePool deletes a node pool.
 	DeleteNodePool(ctx context.Context, clusterID, nodePoolID string) error
 	// ListNodePools lists the node pools of a cluster.

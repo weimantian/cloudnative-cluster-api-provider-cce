@@ -331,6 +331,29 @@ func (s *Client) ScaleNodePool(_ context.Context, clusterID, nodePoolID string, 
 	return nil
 }
 
+// UpdateNodePool implements Service. Official (cce_02_0356): initialNodeCount
+// is required and defaults to 0 — omitting it shrinks the pool to 0, so the
+// caller must set IgnoreInitialNodeCount=true to leave the count untouched.
+func (s *Client) UpdateNodePool(_ context.Context, in UpdateNodePoolInput) error {
+	spec := &model.NodePoolSpecUpdate{
+		InitialNodeCount: in.InitialNodeCount,
+	}
+	if in.IgnoreInitialNodeCount {
+		spec.IgnoreInitialNodeCount = boolPtr(true)
+	}
+	if len(in.CustomSecurityGroups) > 0 {
+		spec.CustomSecurityGroups = &in.CustomSecurityGroups
+	}
+	if _, err := s.cce.UpdateNodePool(&model.UpdateNodePoolRequest{
+		ClusterId:  in.ClusterID,
+		NodepoolId: in.NodePoolID,
+		Body:       &model.NodePoolUpdate{Spec: spec},
+	}); err != nil {
+		return errors.Wrapf(err, "UpdateNodePool %s failed", in.NodePoolID)
+	}
+	return nil
+}
+
 // DeleteNodePool implements Service.
 func (s *Client) DeleteNodePool(_ context.Context, clusterID, nodePoolID string) error {
 	if _, err := s.cce.DeleteNodePool(&model.DeleteNodePoolRequest{
@@ -445,6 +468,8 @@ func derefString(p *string) string {
 }
 
 func stringPtr(s string) *string { return &s }
+
+func boolPtr(b bool) *bool { return &b }
 
 func int32Ptr(i int32) *int32 { return &i }
 
