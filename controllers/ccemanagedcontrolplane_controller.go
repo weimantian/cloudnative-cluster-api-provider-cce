@@ -258,6 +258,12 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 			},
 			Data: map[string][]byte{"value": []byte(kubeconfig)},
 		}
+		// Own the Secret so lifecycle is tied to the control plane (and the
+		// delete path can find it). A non-owned pre-existing Secret must not be
+		// overwritten silently.
+		if err := controllerutil.SetControllerReference(cp, secret, r.Client.Scheme()); err != nil {
+			return ctrl.Result{}, err
+		}
 		if err := r.Client.Create(ctx, secret); err != nil {
 			if !apierrors.IsAlreadyExists(err) {
 				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
@@ -267,18 +273,35 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 				}
 				return ctrl.Result{}, err
 			}
-			// Update the existing Secret in place (rotation).
+			// Update the existing Secret in place (rotation) — but only if it
+			// is the provider's own Secret (owned by this control plane or
+			// carrying the cluster label); otherwise refuse to overwrite.
 			existing := &corev1.Secret{}
-			if err := r.Get(ctx, types.NamespacedName{Namespace: cp.Namespace, Name: secretName}, existing); err == nil {
-				existing.Data = secret.Data
-				if err := r.Update(ctx, existing); err != nil {
-					conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
-						conditions.ReconciliationFailedReason, err.Error())
-					if uerr := r.Status().Update(ctx, cp); uerr != nil {
-						return ctrl.Result{}, uerr
-					}
-					return ctrl.Result{}, err
+			if err := r.Get(ctx, types.NamespacedName{Namespace: cp.Namespace, Name: secretName}, existing); err != nil {
+				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
+					conditions.ReconciliationFailedReason, err.Error())
+				if uerr := r.Status().Update(ctx, cp); uerr != nil {
+					return ctrl.Result{}, uerr
 				}
+				return ctrl.Result{}, err
+			}
+			if !metav1.IsControlledBy(existing, cp) && existing.Labels[clusterv1.ClusterNameLabel] != cluster.Name {
+				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
+					conditions.ReconciliationFailedReason,
+					"Secret "+secretName+" exists and is not owned by this provider; refusing to overwrite")
+				if uerr := r.Status().Update(ctx, cp); uerr != nil {
+					return ctrl.Result{}, uerr
+				}
+				return ctrl.Result{}, errors.New("refusing to overwrite non-owned kubeconfig Secret " + secretName)
+			}
+			existing.Data = secret.Data
+			if err := r.Update(ctx, existing); err != nil {
+				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
+					conditions.ReconciliationFailedReason, err.Error())
+				if uerr := r.Status().Update(ctx, cp); uerr != nil {
+					return ctrl.Result{}, uerr
+				}
+				return ctrl.Result{}, err
 			}
 		}
 		cp.Status.KubeconfigSecretName = secretName

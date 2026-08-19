@@ -87,7 +87,7 @@ func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	if !cceCluster.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, cceCluster)
+		return r.reconcileDelete(ctx, cluster, cceCluster)
 	}
 
 	return r.reconcileNormal(ctx, cluster, cceCluster)
@@ -221,10 +221,24 @@ func subnetIDs(cceCluster *infrav1beta1.CCECluster) []string {
 	return ids
 }
 
-func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cceCluster *infrav1beta1.CCECluster) (ctrl.Result, error) {
+func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, cceCluster *infrav1beta1.CCECluster) (ctrl.Result, error) {
 	// Cloud resources (CCE cluster / node pools) are owned and deleted by the
 	// control plane and machine pool controllers; here we only release the
-	// shell object once they are gone.
+	// shell object once they are gone. The control plane and machine pool
+	// delete paths read this object for region/VPC, so we must wait for the
+	// control plane to disappear before removing our finalizer — otherwise
+	// their deletion would loop on NotFound and orphan cloud resources.
+	if cluster.Spec.ControlPlaneRef.Name != "" {
+		cp := &controlplanev1beta1.CCEManagedControlPlane{}
+		err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp)
+		if err == nil {
+			// Control plane still exists — wait for it to be deleted first.
+			return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+		}
+		if !apierrors.IsNotFound(err) {
+			return ctrl.Result{}, err
+		}
+	}
 	controllerutil.RemoveFinalizer(cceCluster, CCEClusterFinalizer)
 	if err := r.Update(ctx, cceCluster); err != nil {
 		return ctrl.Result{}, err

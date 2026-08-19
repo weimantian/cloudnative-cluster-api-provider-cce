@@ -557,3 +557,87 @@ func TestControlPlaneReconcileCredentialsFailure(t *testing.T) {
 		t.Error("no cluster must be created when credentials are missing")
 	}
 }
+
+// TestMachinePoolReconcileSyncsReplicasFromOwner verifies that
+// spec.replicas is copied from the owning CAPI MachinePool, so
+// `kubectl scale machinepool` drives the CCE node pool size.
+func TestMachinePoolReconcileSyncsReplicasFromOwner(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-syncreplicas"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+	cp.Status.ClusterID = "cluster-1"
+	cp.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+
+	mp := &clusterv1.MachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: clusterv1.MachinePoolSpec{
+			ClusterName: "test-cluster",
+			Replicas:    int32Ptr(5),
+			Template: clusterv1.MachineTemplateSpec{
+				Spec: clusterv1.MachineSpec{
+					ClusterName: "test-cluster",
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+						APIGroup: infrav1beta1.GroupVersion.Group,
+						Kind:     "CCEManagedMachinePool",
+						Name:     "test-cluster-pool-0",
+					},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, mp); err != nil {
+		t.Fatalf("failed to create MachinePool: %v", err)
+	}
+	pool := &infrav1beta1.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+			ClusterName:  "test-cluster",
+			NodePoolName: "pool-0",
+			Flavor:       "c7.large.2",
+			Replicas:     3, // stale — must be synced to 5 from the MachinePool
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create CCEManagedMachinePool: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pool)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+
+	got := &infrav1beta1.CCEManagedMachinePool{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
+		t.Fatalf("failed to get machine pool: %v", err)
+	}
+	if got.Spec.Replicas != 5 {
+		t.Errorf("expected spec.replicas synced to 5, got %d", got.Spec.Replicas)
+	}
+	// The create already used InitialNodeCount from the (stale) spec, but the
+	// reconcile should have scaled to the owner's 5.
+	if len(fakeSvc.ScaleCalls) == 0 || fakeSvc.ScaleCalls[len(fakeSvc.ScaleCalls)-1] != 5 {
+		t.Errorf("expected a ScaleNodePool(5) call, got %v", fakeSvc.ScaleCalls)
+	}
+}

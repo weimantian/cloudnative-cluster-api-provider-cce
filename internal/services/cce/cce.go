@@ -170,7 +170,13 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		// the original error is returned.
 		if clouderrors.IsConflict(err) {
 			if id, ferr := s.findClusterIDByName(ctx, in.Name); ferr == nil && id != "" {
-				return id, nil
+				// Ownership guard: only adopt a cluster that is actually
+				// provisioned (not Deleting/Unavailable) — adopting a dying or
+				// foreign same-name cluster would lead to wrong operations.
+				if info, serr := s.ShowCluster(ctx, id); serr == nil && (info.Phase == "Available" || info.Phase == "Creating") {
+					return id, nil
+				}
+				return "", errors.Wrapf(err, "CreateCluster conflicted but existing cluster %q is not adoptable", in.Name)
 			}
 		}
 		return "", errors.Wrap(err, "CreateCluster failed")

@@ -168,6 +168,12 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		pool.Status.LastAppliedAutoscaling = pool.Spec.Autoscaling
 	}
 
+	// Replicas are driven by the owning CAPI MachinePool (kubectl scale
+	// machinepool). Sync spec.replicas from the owner before reconciling scale.
+	if err := r.syncReplicasFromOwner(ctx, pool); err != nil {
+		return ctrl.Result{}, err
+	}
+
 	// Reconcile scale: align the pool's expected count with the MachinePool
 	// replicas. desiredNodeCount is the ABSOLUTE expected total (official docs;
 	// final live-test confirmation is questionnaire Q3), so pass replicas
@@ -392,4 +398,26 @@ func toProviderAutoscaling(s infrav1beta1.AutoscalingSpec) *cceService.NodePoolA
 		MinNodeCount: s.MinNodeCount,
 		MaxNodeCount: s.MaxNodeCount,
 	}
+}
+
+// syncReplicasFromOwner copies spec.replicas from the owning CAPI MachinePool
+// (found via its template.spec.infrastructureRef.name) onto this infra pool,
+// so `kubectl scale machinepool` drives the CCE node pool size.
+func (r *CCEManagedMachinePoolReconciler) syncReplicasFromOwner(ctx context.Context, pool *infrav1beta1.CCEManagedMachinePool) error {
+	mps := &clusterv1.MachinePoolList{}
+	if err := r.List(ctx, mps, client.InNamespace(pool.Namespace),
+		client.MatchingLabels{clusterv1.ClusterNameLabel: pool.Spec.ClusterName}); err != nil {
+		return errors.Wrap(err, "failed to list MachinePools")
+	}
+	for i := range mps.Items {
+		mp := &mps.Items[i]
+		if mp.Spec.Template.Spec.InfrastructureRef.Name == pool.Name {
+			if mp.Spec.Replicas != nil && *mp.Spec.Replicas != pool.Spec.Replicas {
+				pool.Spec.Replicas = *mp.Spec.Replicas
+				return r.Update(ctx, pool)
+			}
+			return nil
+		}
+	}
+	return nil
 }
