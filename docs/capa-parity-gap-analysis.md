@@ -107,6 +107,18 @@
 
 ---
 
+## 六b、细节对齐点(逐项核实)
+
+| 对标点 | CAPA | CCE 现状 | 结论 |
+|---|---|---|---|
+| 控制面 initialized 合约 | `Status.Initialized`(kubeconfig 写回后置位;CAPI 1.14 contract 读 `status.initialized`) | ✅ `status.initialized` 已实现且被 CAPI 识别 | ✅ 对齐 |
+| ExternalManagedControlPlane | CAPA 内部字段(CAPI 1.13 时代),CAPI 1.14 改用 `status.initialized` | 无(无需,CAPI 1.14 不读) | ⚪ 无需 |
+| kubeconfig 双 Secret | `<cluster>-kubeconfig`(CAPI 消费)+ `<cluster>-user-kubeconfig`(用户) | 仅 `<cluster>-kubeconfig` | 🟡 缺 user-kubeconfig |
+| 节点组三通道升级 | K8s 版本 / AMI 版本 / 启动模板版本 差量 | 仅集群级 K8s 升级;节点池 OS 升级(Q11b)独立 | 🟡 缺 AMI/LT 通道(CCE 以 OS 镜像升级替代) |
+| 自动升级告警 | UpgradePolicy=standard 被 AWS 自动升级 → Ready=false+FailureMessage | 无;CCE 维护周期 24 个月,过期需升级 | 🟡 可加"版本 EOS 告警" |
+| 外部 autoscaler 反向同步 | `replicas-managed-by` 注解 → 反向同步 ASG DesiredCapacity | autoscaling Alpha gate(仅正向映射) | 🟡 缺反向同步 |
+| ProviderIDList 回填 | `Status.Replicas` + `Spec.ProviderIDList` | `Status.Replicas(currentNode)` + `AvailableReplicas(activeNode)`,无 providerID | 🟡 可回填 CCE nodeID |
+
 ## 七、结论
 
 **已对齐核心**:托管集群生命周期(创建/删除/版本升级/kubeconfig/节点池 CRUD/扩缩容/属性同步)、CAPI v1beta2 契约、服务接口工厂、幂等与错误分类、真实云冒烟——这已覆盖 CAPA EKS managed 的**主骨架**。
