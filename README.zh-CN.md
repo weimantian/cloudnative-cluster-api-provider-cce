@@ -11,7 +11,7 @@
 
 本项目面向平台工程师与 SRE 团队,帮助他们用 Kubernetes 原生、适合 GitOps 的工具链(`kubectl` / `clusterctl` / ArgoCD / Flux)管理华为云 CCE 集群,就像今天管理 AWS EKS 集群一样。
 
-> **状态:incubating(PoC 骨架)。** 架构设计与需求设计文档已完成;可编译的 PoC 项目骨架(CRD、控制器、服务层、webhook、部署清单)已就位。云侧行为已接口化,并标记为需与华为云 CCE 验证后定稿。参见 [docs/](docs/) 与[需求文档](docs/requirements-design.md)中的路线图。
+> **状态:incubating(PoC 已验证)。** 架构设计与需求设计文档已完成;可编译的 PoC(CRD、控制器、服务层、webhook、部署清单)已就位。云侧行为已在真实华为云 CCE 账号上验证通过(空集群创建→Available、节点池绝对值扩缩容、kubeconfig 轮换、带清理的删除、公网 EIP 绑定、限流行为——详见 [docs/cce-verification-findings.md](docs/cce-verification-findings.md))。单元测试与 envtest 控制器测试全部通过。参见 [docs/](docs/) 与[需求文档](docs/requirements-design.md)中的路线图。
 
 ## 目录
 

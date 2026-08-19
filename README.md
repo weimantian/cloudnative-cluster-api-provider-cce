@@ -11,11 +11,15 @@ A Cluster API (CAPI) Infrastructure Provider that manages **Huawei Cloud CCE (Cl
 
 This provider is for platform engineers and SRE teams who want to manage Huawei Cloud CCE clusters with Kubernetes-native, GitOps-friendly tooling (`kubectl`/`clusterctl`/ArgoCD/Flux), the same way they manage AWS EKS clusters today.
 
-> **Status: incubating (PoC skeleton).** Architecture and requirements design
-> documents are complete; a compilable PoC skeleton (CRDs, controllers,
-> services, webhooks, manifests) is in place. Cloud-facing behavior is behind
-> interfaces and flagged for verification against Huawei Cloud CCE. See
-> [docs/](docs/) and [docs/requirements-design.md](docs/requirements-design.md).
+> **Status: incubating (PoC verified).** Architecture and requirements design
+> documents are complete; a compilable PoC (CRDs, controllers, services,
+> webhooks, manifests) is in place. Cloud-facing behavior has been verified
+> against a real Huawei Cloud CCE account (create empty cluster → Available,
+> absolute-scale node pools, kubeconfig rotation, delete with cleanup, public
+> EIP binding, throttling behavior — see
+> [docs/cce-verification-findings.md](docs/cce-verification-findings.md)).
+> Unit + envtest controller tests pass. See [docs/](docs/) and
+> [docs/requirements-design.md](docs/requirements-design.md).
 
 ## Table of Contents
 

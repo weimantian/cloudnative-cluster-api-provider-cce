@@ -230,6 +230,15 @@ spec:
               failureReason:
                 description: FailureReason is a short reason for failure.
                 type: string
+              lastAppliedSecurityGroups:
+                description: |-
+                  LastAppliedSecurityGroups records the security groups last synced to the
+                  cloud node pool. Used to detect attribute drift so the controller only
+                  issues an UpdateNodePool when needed (and never rescales the pool just
+                  because an attribute changed — questionnaire Q3/Q5).
+                items:
+                  type: string
+                type: array
               nodePoolID:
                 description: NodePoolID is the CCE node pool UUID.
                 type: string

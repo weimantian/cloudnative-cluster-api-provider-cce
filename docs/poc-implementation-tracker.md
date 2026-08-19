@@ -20,7 +20,7 @@
 | # | 代码位置 | 问卷项 | 依赖的确认结论 | 确认后的实现动作 | 验收方式 | 落地状态 |
 |---|---|---|---|---|---|---|
 | B1 | `internal/services/cce/cce.go`(ScaleNodePool 语义,已改) | **Q3** | ✅ **实测确认=绝对值**(冒烟:2 节点池 ScaleNodePool(2)→"No scale task needed"无操作;ScaleNodePool(4)→扩到 4 节点);`scaleGroups` 必填默认 `default` | ✅ 已按绝对目标实现(`desiredNodeCount = replicas`) | 冒烟已通过(PASS) | ✅已确认+已实现+冒烟通过 |
-| B1b | `internal/services/cce` UpdateNodePool 对齐数量(新增) | Q3 | ✅ 已确认(官方 cce_02_0356):更新节点池**不填 initialNodeCount 时期望数默认变 0→会缩容**;`ignoreInitialNodeCount: true` 可保持原样 | 实现更新路径:不想动节点数→传 `ignoreInitialNodeCount=true`;想对齐→传 `initialNodeCount=目标值` | 单测 + 冒烟 | 已确认,待实现 |
+| B1b | `internal/services/cce` UpdateNodePool 对齐数量(新增) | Q3 | ✅ 已确认(官方 cce_02_0356):更新节点池**不填 initialNodeCount 时期望数默认变 0→会缩容**;`ignoreInitialNodeCount: true` 可保持原样 | ✅ 已实现:controller 属性同步路径(安全组漂移→UpdateNodePool 且 `IgnoreInitialNodeCount=true` 防误缩容;replicas 对齐时不再额外打 API,status 记录 LastAppliedSecurityGroups) | 单测(SG drift 用例,已 PASS)+ 冒烟 | ✅已实现+单测通过 |
 | B2 | `controllers/ccemanagedmachinepool_controller.go:136,151` 扩缩容与状态同步 | Q3 | 扩缩容期间状态;availableReplicas 口径(节点 Active 数来源) | 实现 replicas 对齐算法(含并发/伸缩中重试);`availableReplicas` 用 ListNodes 节点 Active 计数回填 | e2e(3→5→3)+ 状态一致性断言 | ✅已确认(Q3 绝对值),按绝对目标实现 |
 | B3 | `internal/features/features.go:21` NodePoolAutoscaling gate | Q3 | 节点池 autoscaling 与外部 ScaleNodePool 的冲突/优先级 | 实现 FR-2.6:gate 开启时映射 autoscaling.enable/min/max;与 CAPI replicas 协调策略按确认定 | 单测 + 冒烟 | ✅已确认(手动伸缩不受 autoscaling 范围限制,可并存) |
 | B4 | `config/samples/cluster-template.yaml:90` flavor `c7.large.2` | Q6/Q7 | 规格可用性(region 差异) | 样例按确认的规格表更新;webhook 增加 flavor 白名单校验(按 region) | webhook 单测 | ⏳待实测(flavor 按 region) |

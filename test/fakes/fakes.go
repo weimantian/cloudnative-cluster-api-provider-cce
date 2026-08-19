@@ -21,23 +21,24 @@ import (
 // ShowCluster -> Available, kubeconfig -> valid content, node pool ->
 // "nodepool-1", desired count as requested).
 type FakeCCEService struct {
-	ShowClusterFn           func(ctx context.Context, clusterID string) (*cceService.ClusterInfo, error)
-	CreateClusterFn         func(ctx context.Context, in cceService.CreateClusterInput) (string, error)
-	DeleteClusterFn         func(ctx context.Context, in cceService.DeleteClusterInput) error
-	GetClusterKubeconfigFn  func(ctx context.Context, clusterID string, durationDays int32) (string, error)
-	ShowQuotasFn            func(ctx context.Context) (*cceService.QuotaInfo, error)
-	CreateNodePoolFn        func(ctx context.Context, in cceService.CreateNodePoolInput) (string, error)
-	ScaleNodePoolFn         func(ctx context.Context, clusterID, nodePoolID string, desiredCount int32) error
-	UpdateNodePoolFn        func(ctx context.Context, in cceService.UpdateNodePoolInput) error
-	DeleteNodePoolFn        func(ctx context.Context, clusterID, nodePoolID string) error
-	ListNodePoolsFn         func(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error)
+	ShowClusterFn          func(ctx context.Context, clusterID string) (*cceService.ClusterInfo, error)
+	CreateClusterFn        func(ctx context.Context, in cceService.CreateClusterInput) (string, error)
+	DeleteClusterFn        func(ctx context.Context, in cceService.DeleteClusterInput) error
+	GetClusterKubeconfigFn func(ctx context.Context, clusterID string, durationDays int32) (string, error)
+	ShowQuotasFn           func(ctx context.Context) (*cceService.QuotaInfo, error)
+	CreateNodePoolFn       func(ctx context.Context, in cceService.CreateNodePoolInput) (string, error)
+	ScaleNodePoolFn        func(ctx context.Context, clusterID, nodePoolID string, desiredCount int32) error
+	UpdateNodePoolFn       func(ctx context.Context, in cceService.UpdateNodePoolInput) error
+	DeleteNodePoolFn       func(ctx context.Context, clusterID, nodePoolID string) error
+	ListNodePoolsFn        func(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error)
 
 	// Records for assertions.
-	CreatedClusters  []cceService.CreateClusterInput
-	DeletedClusters  []cceService.DeleteClusterInput
-	CreatedNodePools []cceService.CreateNodePoolInput
-	ScaleCalls       []int32
-	KubeconfigCalls  int
+	CreatedClusters     []cceService.CreateClusterInput
+	DeletedClusters     []cceService.DeleteClusterInput
+	CreatedNodePools    []cceService.CreateNodePoolInput
+	ScaleCalls          []int32
+	UpdateNodePoolCalls []cceService.UpdateNodePoolInput
+	KubeconfigCalls     int
 }
 
 // NewFakeCCEService returns a fake with healthy defaults.
@@ -74,7 +75,10 @@ func NewFakeCCEService() *FakeCCEService {
 		f.ScaleCalls = append(f.ScaleCalls, desiredCount)
 		return nil
 	}
-	f.UpdateNodePoolFn = func(_ context.Context, _ cceService.UpdateNodePoolInput) error { return nil }
+	f.UpdateNodePoolFn = func(_ context.Context, in cceService.UpdateNodePoolInput) error {
+		f.UpdateNodePoolCalls = append(f.UpdateNodePoolCalls, in)
+		return nil
+	}
 	f.DeleteNodePoolFn = func(_ context.Context, _, _ string) error { return nil }
 	f.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
 		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", DesiredNodeCount: 3}}, nil

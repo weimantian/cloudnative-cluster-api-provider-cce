@@ -8,6 +8,7 @@ package controllers
 
 import (
 	"context"
+	"slices"
 
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -143,6 +144,9 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			return ctrl.Result{}, err
 		}
 		pool.Status.NodePoolID = id
+		// The create call already bound the security groups, so record them as
+		// applied to avoid a redundant UpdateNodePool on the next reconcile.
+		pool.Status.LastAppliedSecurityGroups = append([]string(nil), pool.Spec.SecurityGroups...)
 	}
 
 	// Reconcile scale: align the pool's expected count with the MachinePool
@@ -158,6 +162,25 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			return ctrl.Result{}, err
 		}
 		conditions.MarkTrue(pool, conditions.NodePoolScalingCondition, "ScalingCompleted", "node pool scaled")
+	}
+
+	// Reconcile mutable attributes (currently: security groups, Q5) without
+	// touching the expected node count. UpdateNodePool omitting
+	// initialNodeCount defaults it to 0 and SHRINKS the pool (official
+	// cce_02_0356, questionnaire Q3), so IgnoreInitialNodeCount must be set.
+	if !slices.Equal(pool.Status.LastAppliedSecurityGroups, pool.Spec.SecurityGroups) {
+		if err := svc.UpdateNodePool(ctx, cceService.UpdateNodePoolInput{
+			ClusterID:              clusterID,
+			NodePoolID:             pool.Status.NodePoolID,
+			IgnoreInitialNodeCount: true,
+			CustomSecurityGroups:   append([]string(nil), pool.Spec.SecurityGroups...),
+		}); err != nil {
+			conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
+				conditions.ReconciliationFailedReason, err.Error())
+			return ctrl.Result{}, err
+		}
+		pool.Status.LastAppliedSecurityGroups = append([]string(nil), pool.Spec.SecurityGroups...)
+		log.Info("Node pool attributes updated (security groups)", "nodePoolID", pool.Status.NodePoolID)
 	}
 
 	// Refresh observed state from the cloud (Active node count is a

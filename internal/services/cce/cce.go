@@ -144,7 +144,8 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 	}
 	// Subscription (billingMode=1) cluster creates do NOT return a cluster ID
 	// (official model_cluster_metadata.go note) — fall back to lookup by name.
-	// TODO(P0): verify the created cluster phase before returning (Q1).
+	// The returned ID is the handle controllers poll with ShowCluster until the
+	// cluster is Available (verified live against real CCE — questionnaire Q1).
 	id, err := s.findClusterIDByName(ctx, in.Name)
 	if err != nil {
 		return "", errors.Wrap(err, "CreateCluster returned no ID and lookup by name failed")
@@ -210,8 +211,8 @@ func (s *Client) DeleteCluster(_ context.Context, in DeleteClusterInput) error {
 		v := model.GetDeleteClusterRequestPeriodicNodePolicyEnum().RESET
 		req.PeriodicNodePolicy = &v
 	}
-	// TODO(P0): deletion is async (200 = job accepted); poll ShowCluster until
-	// gone, with delete-status from the Job (questionnaire Q8).
+	// Deletion is async (200 = job accepted); the controller polls ShowCluster
+	// until the cluster is gone (verified live against real CCE — Q8).
 	if _, err := s.cce.DeleteCluster(req); err != nil {
 		return errors.Wrapf(err, "DeleteCluster %s failed", in.ClusterID)
 	}

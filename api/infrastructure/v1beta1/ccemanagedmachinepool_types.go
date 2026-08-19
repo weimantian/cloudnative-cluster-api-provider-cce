@@ -98,6 +98,13 @@ type CCEManagedMachinePoolStatus struct {
 	// +optional
 	NodePoolID string `json:"nodePoolID,omitempty"`
 
+	// LastAppliedSecurityGroups records the security groups last synced to the
+	// cloud node pool. Used to detect attribute drift so the controller only
+	// issues an UpdateNodePool when needed (and never rescales the pool just
+	// because an attribute changed — questionnaire Q3/Q5).
+	// +optional
+	LastAppliedSecurityGroups []string `json:"lastAppliedSecurityGroups,omitempty"`
+
 	// FailureReason is a short reason for failure.
 	// +optional
 	FailureReason string `json:"failureReason,omitempty"`

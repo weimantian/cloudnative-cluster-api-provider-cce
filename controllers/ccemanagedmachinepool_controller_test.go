@@ -121,6 +121,120 @@ func TestMachinePoolReconcileSuccess(t *testing.T) {
 	}
 }
 
+// TestMachinePoolReconcileSecurityGroupDrift verifies B1b: when the pool's
+// replicas are already aligned but a mutable attribute (security groups)
+// drifts, the controller issues UpdateNodePool with IgnoreInitialNodeCount=true
+// so the attribute sync never rescales the pool (questionnaire Q3/Q5).
+func TestMachinePoolReconcileSecurityGroupDrift(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-sgdrift"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+	cp.Status.ClusterID = "cluster-1"
+	cp.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+
+	mp := &clusterv1.MachinePool{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
+		Spec: clusterv1.MachinePoolSpec{
+			ClusterName: "test-cluster",
+			Replicas:    int32Ptr(3),
+			Template: clusterv1.MachineTemplateSpec{
+				Spec: clusterv1.MachineSpec{
+					ClusterName: "test-cluster",
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+						APIGroup: infrav1beta1.GroupVersion.Group,
+						Kind:     "CCEManagedMachinePool",
+						Name:     "test-cluster-pool-0",
+					},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, mp); err != nil {
+		t.Fatalf("failed to create MachinePool: %v", err)
+	}
+	pool := &infrav1beta1.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+			ClusterName:    "test-cluster",
+			NodePoolName:   "pool-0",
+			Flavor:         "c7.large.2",
+			Replicas:       3,
+			SecurityGroups: []string{"sg-1"},
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create CCEManagedMachinePool: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	// First reconcile: create pool, scale to replicas. The create already
+	// bound sg-1, so no UpdateNodePool should fire.
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pool)}); err != nil {
+		t.Fatalf("first Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.UpdateNodePoolCalls) != 0 {
+		t.Fatalf("expected no UpdateNodePool after create, got %d calls", len(fakeSvc.UpdateNodePoolCalls))
+	}
+
+	// Drift the security groups, then reconcile again.
+	got := &infrav1beta1.CCEManagedMachinePool{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
+		t.Fatalf("failed to get machine pool: %v", err)
+	}
+	got.Spec.SecurityGroups = []string{"sg-2"}
+	if err := k8sClient.Update(ctx, got); err != nil {
+		t.Fatalf("failed to update machine pool: %v", err)
+	}
+
+	scaleCallsBefore := len(fakeSvc.ScaleCalls)
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(got)}); err != nil {
+		t.Fatalf("second Reconcile returned error: %v", err)
+	}
+
+	// No rescale: replicas were already aligned (3 == 3).
+	if len(fakeSvc.ScaleCalls) != scaleCallsBefore {
+		t.Errorf("expected no ScaleNodePool on attribute drift, got calls %v", fakeSvc.ScaleCalls)
+	}
+	// One attribute update, with IgnoreInitialNodeCount=true (never shrink).
+	if len(fakeSvc.UpdateNodePoolCalls) != 1 {
+		t.Fatalf("expected 1 UpdateNodePool call, got %d", len(fakeSvc.UpdateNodePoolCalls))
+	}
+	u := fakeSvc.UpdateNodePoolCalls[0]
+	if !u.IgnoreInitialNodeCount {
+		t.Error("expected IgnoreInitialNodeCount=true to prevent accidental shrink (Q3)")
+	}
+	if len(u.CustomSecurityGroups) != 1 || u.CustomSecurityGroups[0] != "sg-2" {
+		t.Errorf("expected CustomSecurityGroups [sg-2], got %v", u.CustomSecurityGroups)
+	}
+
+	// A third reconcile with no changes must not call UpdateNodePool again.
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(got)}); err != nil {
+		t.Fatalf("third Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.UpdateNodePoolCalls) != 1 {
+		t.Errorf("expected no extra UpdateNodePool when nothing drifted, got %d calls", len(fakeSvc.UpdateNodePoolCalls))
+	}
+}
+
 func TestMachinePoolReconcileWaitsForControlPlane(t *testing.T) {
 	ctx := context.Background()
 	ns := "mp-test-waiting"
@@ -129,7 +243,6 @@ func TestMachinePoolReconcileWaitsForControlPlane(t *testing.T) {
 	cluster, _, _ := newTestCluster(t, ns)
 	markInfrastructureProvisioned(t, cluster)
 	// Control plane NOT ready.
-
 	pool := &infrav1beta1.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster-pool-0",
