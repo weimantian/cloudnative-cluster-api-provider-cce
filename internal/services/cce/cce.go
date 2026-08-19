@@ -142,6 +142,8 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		spec.PublicAccess = &model.PublicAccess{}
 	}
 	spec.HostNetwork = &model.HostNetwork{Vpc: in.HostNetworkVpcID, Subnet: in.HostNetworkSubnetID}
+	// Ownership + user tags -> CCE clusterTags (official ResourceTag array).
+	spec.ClusterTags = toClusterTags(in.Name, in.Tags)
 	if in.BillingMode == 1 {
 		// Subscription clusters require periodType/periodNum (official
 		// ClusterExtendParam: "billingMode为1(包周期)时生效,且为必选").
@@ -377,6 +379,7 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 	if len(in.Labels) > 0 {
 		template.K8sTags = in.Labels
 	}
+	template.UserTags = toUserTags(in.ClusterName, in.Tags)
 	spec := &model.NodePoolSpec{
 		NodeTemplate:     template,
 		InitialNodeCount: int32Ptr(in.InitialNodeCount),
@@ -799,6 +802,14 @@ func (s *Client) DeleteAddonInstance(_ context.Context, _, addonID string) error
 	return nil
 }
 
+// OwnedTagPrefix is the provider ownership tag key prefix, mirroring CAPA's
+// owned-tag model (sigs.k8s.io/cluster-api-provider-aws/cluster/<name>=owned).
+// Used for idempotent addressing and future external-resource GC.
+const OwnedTagPrefix = "sigs.k8s.io/cluster-api-provider-cce/cluster"
+
+// ownedTagKey returns the ownership tag key for a cluster.
+func ownedTagKey(clusterName string) string { return OwnedTagPrefix + "/" + clusterName }
+
 // ---- helpers ----
 
 func assembleKubeconfig(resp *model.CreateKubernetesClusterCertResponse) (string, error) {
@@ -1030,4 +1041,29 @@ func (s *Client) DeletePodIdentityAssociation(_ context.Context, clusterID, asso
 		return errors.Wrapf(err, "DeletePodIdentityAssociation %s failed", associationID)
 	}
 	return nil
+}
+
+// toClusterTags builds the CCE clusterTags array: the owned tag plus any
+// user-supplied additional tags (user tags never override the owned tag).
+func toClusterTags(clusterName string, userTags map[string]string) *[]model.ResourceTag {
+	tags := []model.ResourceTag{{Key: stringPtr(ownedTagKey(clusterName)), Value: stringPtr("owned")}}
+	for k, v := range userTags {
+		if k == ownedTagKey(clusterName) {
+			continue
+		}
+		tags = append(tags, model.ResourceTag{Key: stringPtr(k), Value: stringPtr(v)})
+	}
+	return &tags
+}
+
+// toUserTags builds the CCE node pool userTags array (owned tag + user tags).
+func toUserTags(clusterName string, userTags map[string]string) *[]model.UserTag {
+	tags := []model.UserTag{{Key: stringPtr(ownedTagKey(clusterName)), Value: stringPtr("owned")}}
+	for k, v := range userTags {
+		if k == ownedTagKey(clusterName) {
+			continue
+		}
+		tags = append(tags, model.UserTag{Key: stringPtr(k), Value: stringPtr(v)})
+	}
+	return &tags
 }

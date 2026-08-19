@@ -63,6 +63,10 @@ type CreateClusterInput struct {
 	PeriodNum   int32
 	IsAutoRenew string // "true" | "false"
 	IsAutoPay   string // "true" | "false"
+	// Tags are additional cluster tags (mapped to CCE clusterTags); the owned
+	// tag (sigs.k8s.io/cluster-api-provider-cce/cluster=<name>=owned) is always
+	// added by the service.
+	Tags map[string]string
 }
 
 // CreateNodePoolInput maps the CCEManagedMachinePool spec to the CCE
@@ -88,6 +92,11 @@ type CreateNodePoolInput struct {
 	// Autoscaling maps to NodePoolNodeAutoscaling (feature gate
 	// NodePoolAutoscaling; nil = autoscaling disabled).
 	Autoscaling *NodePoolAutoscaling
+	// ClusterName is the owning cluster name (for the owned tag).
+	ClusterName string
+	// Tags are additional node pool tags (mapped to CCE userTags); the owned
+	// tag is always added by the service.
+	Tags map[string]string
 }
 
 // NodePoolAutoscaling mirrors NodePoolNodeAutoscaling (enable/min/max).

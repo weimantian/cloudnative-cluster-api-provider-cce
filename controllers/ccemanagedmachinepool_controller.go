@@ -365,6 +365,7 @@ func (r *CCEManagedMachinePoolReconciler) clusterRegion(ctx context.Context, clu
 func toCreateNodePoolInput(clusterID string, pool *infrav1beta1.CCEManagedMachinePool) cceService.CreateNodePoolInput {
 	in := cceService.CreateNodePoolInput{
 		ClusterID:        clusterID,
+		ClusterName:      pool.Spec.ClusterName,
 		Name:             pool.Spec.NodePoolName,
 		Flavor:           pool.Spec.Flavor,
 		OS:               pool.Spec.OS,

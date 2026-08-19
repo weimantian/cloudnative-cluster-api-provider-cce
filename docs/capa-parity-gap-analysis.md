@@ -77,7 +77,7 @@
 | 错误聚合删除(kerrors.NewAggregate) | 🟡 单资源顺序删除 | 🟡 |
 | 依赖计数删除 | 🟡 finalizer 顺序耦合已修(等 CP 先删) | ✅ 近似 |
 | 外部资源 GC(tag 扫描) | ❌ | 🔴 待补(防残留 EIP/EVS) |
-| tag 所有权模型(owned/shared + 云标签) | ❌ | 🔴 待补(幂等寻址 + GC 基础) |
+| tag 所有权模型(owned/shared + 云标签) | 🟡 已补 owned tag(创建集群/节点池自动打 `sigs.k8s.io/cluster-api-provider-cce/cluster=<name>=owned`,映射 CCE clusterTags/userTags) | ✅ 打标已实现;GC 按 tag 扫描清理遗留 EIP 待补(需 TMS 标签服务) |
 | 限流中间件(token bucket) | 🟡 退避 requeue(无主动限流) | 🟡 |
 | 多版本 v1beta1/v1beta2 + 转换 webhook | ❌ 单 v1beta1 | 🟡 CAPI 合约要求 v1beta1;转换可后补 |
 | e2e(Ginkgo + clusterctl flavors) | 🟡 smoke(build tag)+ envtest,e2e 占位 | 🔴 e2e 待补 |
