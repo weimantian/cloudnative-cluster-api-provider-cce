@@ -66,6 +66,12 @@ const (
 	ErrCodeResourceLocked = "CCE.01429002"
 	// ErrCodeConcurrencyLimit: 429 the concurrency limit of tasks has been reached.
 	ErrCodeConcurrencyLimit = "CCE.01429003"
+	// ErrCodeOperationConflictCreatingNode: 400 operation conflict — cluster
+	// is scaling, cannot create a node (ErrorCodes.txt).
+	ErrCodeOperationConflictCreatingNode = "CCE.01400023"
+	// ErrCodeOperationConflictDeletingCluster: 400 operation conflict — cannot
+	// delete the cluster while a node is being created.
+	ErrCodeOperationConflictDeletingCluster = "CCE.01400024"
 	// ErrCodeContainerCIDRConflictCM: 400 container network CIDR conflict
 	// (CCE_CM.0410, observed live; the CCE_CM.* family is not listed in the
 	// official error-code table but is returned by the platform).
@@ -91,6 +97,8 @@ func IsConflict(err error) bool {
 		return sdkErr.StatusCode == 409 ||
 			sdkErr.ErrorCode == ErrCodeResourceAlreadyExists ||
 			sdkErr.ErrorCode == ErrCodeResourceVersionExpired ||
+			sdkErr.ErrorCode == ErrCodeOperationConflictCreatingNode ||
+			sdkErr.ErrorCode == ErrCodeOperationConflictDeletingCluster ||
 			sdkErr.ErrorCode == ErrCodeContainerNetworkCIDRConflict ||
 			sdkErr.ErrorCode == ErrCodeContainerCIDRConflictCM
 	}
