@@ -302,3 +302,60 @@ func TestControlPlaneReconcileUpgradeCompletes(t *testing.T) {
 		t.Error("expected control plane Ready after upgrade completed")
 	}
 }
+
+// TestControlPlaneReconcileAddons verifies declarative addon management:
+// create missing, upgrade version drift, delete those no longer listed.
+func TestControlPlaneReconcileAddons(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-addons"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	// Declare two addons; one already on the cloud at a stale version.
+	cp.Spec.Addons = []controlplanev1beta1.AddonSpec{
+		{Name: "coredns", Version: "1.2.0"},
+		{Name: "metrics-server", Version: ""}, // latest
+	}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to update control plane spec: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	// Cloud has coredns at 1.1.0 (drift -> upgrade) + an addon to remove.
+	fakeSvc.Addons = []cceService.AddonInfo{
+		{ID: "addon-id-coredns", Name: "coredns", Version: "1.1.0", Status: "running"},
+		{ID: "addon-id-old", Name: "old-addon", Version: "1.0.0", Status: "running"},
+	}
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+
+	// metrics-server must be created, coredns upgraded (drift), old-addon deleted.
+	if len(fakeSvc.AddonCreateCalls) != 1 || fakeSvc.AddonCreateCalls[0].Name != "metrics-server" {
+		t.Errorf("expected create metrics-server, got %+v", fakeSvc.AddonCreateCalls)
+	}
+	if len(fakeSvc.AddonUpdateCalls) != 1 || fakeSvc.AddonUpdateCalls[0].Name != "coredns" || fakeSvc.AddonUpdateCalls[0].Version != "1.2.0" {
+		t.Errorf("expected upgrade coredns to 1.2.0, got %+v", fakeSvc.AddonUpdateCalls)
+	}
+	if len(fakeSvc.AddonDeleteCalls) != 1 || fakeSvc.AddonDeleteCalls[0] != "addon-id-old" {
+		t.Errorf("expected delete old-addon, got %v", fakeSvc.AddonDeleteCalls)
+	}
+
+	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	if c := capiconditions.Get(got, conditions.AddonsConfiguredCondition); c == nil || c.Status != metav1.ConditionTrue {
+		t.Errorf("expected AddonsConfigured=True, got %v", c)
+	}
+}

@@ -216,6 +216,18 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	cp.Status.Version = info.Version
 	conditions.MarkTrue(cp, conditions.CCEClusterReadyCondition, "ClusterAvailable", "CCE cluster is available")
 
+	// Addons reconciliation (declarative set, mirrors CAPA EKS addons): install
+	// missing, upgrade version drift, remove those no longer listed.
+	if err := r.reconcileAddons(ctx, svc, clusterID, cp); err != nil {
+		conditions.MarkFalse(cp, conditions.AddonsConfiguredCondition,
+			conditions.ReconciliationFailedReason, err.Error())
+		if uerr := r.Status().Update(ctx, cp); uerr != nil {
+			return ctrl.Result{}, uerr
+		}
+		return ctrl.Result{}, err
+	}
+	conditions.MarkTrue(cp, conditions.AddonsConfiguredCondition, "AddonsConfigured", "CCE addons reconciled")
+
 	// Upgrade orchestration (FR-1.7, questionnaire Q11): first poll any
 	// in-flight upgrade task; then, when spec.version differs from the running
 	// version, drive the CCE upgrade workflow. A missing upgrade path is a
@@ -564,4 +576,52 @@ func splitEndpointURL(raw string) (string, int32) {
 		port = int32(p)
 	}
 	return host, port
+}
+
+// reconcileAddons reconciles the declared addon set against the cloud: create
+// missing, upgrade version drift, delete those no longer listed.
+func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) error {
+	if len(cp.Spec.Addons) == 0 {
+		return nil
+	}
+	current, err := svc.ListAddonInstances(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	cloudByName := map[string]cceService.AddonInfo{}
+	for _, a := range current {
+		cloudByName[a.Name] = a
+	}
+	specByName := map[string]controlplanev1beta1.AddonSpec{}
+	for _, a := range cp.Spec.Addons {
+		specByName[a.Name] = a
+	}
+
+	// Create missing / upgrade drift.
+	for _, want := range cp.Spec.Addons {
+		got, exists := cloudByName[want.Name]
+		switch {
+		case !exists:
+			if _, err := svc.CreateAddonInstance(ctx, cceService.AddonInput{
+				ClusterID: clusterID, Name: want.Name, Version: want.Version,
+			}); err != nil {
+				return err
+			}
+		case want.Version != "" && want.Version != got.Version:
+			if err := svc.UpdateAddonInstance(ctx, cceService.AddonInput{
+				ClusterID: clusterID, AddonID: got.ID, Name: want.Name, Version: want.Version,
+			}); err != nil {
+				return err
+			}
+		}
+	}
+	// Remove addons no longer listed.
+	for _, got := range current {
+		if _, keep := specByName[got.Name]; !keep {
+			if err := svc.DeleteAddonInstance(ctx, clusterID, got.ID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
 }

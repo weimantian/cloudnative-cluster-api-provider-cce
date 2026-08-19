@@ -58,6 +58,23 @@ type CCEManagedControlPlaneSpec struct {
 	// +optional
 	Billing BillingSpec `json:"billing,omitempty"`
 
+	// Addons are the CCE addon instances to manage (declarative set; the
+	// controller installs missing ones, upgrades version drift, and removes
+	// those no longer listed — mirrors CAPA EKS addons).
+	// +optional
+	Addons []AddonSpec `json:"addons,omitempty"`
+}
+
+// AddonSpec declares a CCE addon to install.
+type AddonSpec struct {
+	// Name is the addon template name (e.g. "coredns", "metrics-server").
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Version is the addon template version (e.g. "1.0.0"); empty means the
+	// latest supported by the cluster.
+	// +optional
+	Version string `json:"version,omitempty"`
 }
 
 // ContainerNetworkSpec mirrors the CCE ContainerNetwork model.

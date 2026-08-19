@@ -707,6 +707,98 @@ func (s *Client) ShowUpgradeTask(_ context.Context, clusterID, taskID string) (s
 	return *resp.Status.Phase, nil
 }
 
+// CreateAddonInstance implements Service. Installs a CCE addon instance and
+// returns its ID. Version is optional (empty = latest supported by the
+// cluster).
+func (s *Client) CreateAddonInstance(_ context.Context, in AddonInput) (string, error) {
+	body := &model.InstanceRequest{
+		Kind:       "Addon",
+		ApiVersion: "v3",
+		Metadata:   &model.AddonMetadata{Name: &in.Name},
+		Spec: &model.InstanceRequestSpec{
+			ClusterID:         in.ClusterID,
+			AddonTemplateName: in.Name,
+			Values:            in.Values,
+		},
+	}
+	if in.Version != "" {
+		body.Spec.Version = &in.Version
+	}
+	resp, err := s.cce.CreateAddonInstance(&model.CreateAddonInstanceRequest{Body: body})
+	if err != nil {
+		return "", errors.Wrapf(err, "CreateAddonInstance %s failed", in.Name)
+	}
+	if resp.Metadata == nil || resp.Metadata.Uid == nil {
+		return "", errors.New("CreateAddonInstance returned no addon ID")
+	}
+	return *resp.Metadata.Uid, nil
+}
+
+// UpdateAddonInstance implements Service. Upgrades an addon instance to the
+// given version (full install parameters should be supplied; omitted ones fall
+// back to template defaults).
+func (s *Client) UpdateAddonInstance(_ context.Context, in AddonInput) error {
+	body := &model.InstanceRequest{
+		Kind:       "Addon",
+		ApiVersion: "v3",
+		Metadata:   &model.AddonMetadata{Name: &in.Name},
+		Spec: &model.InstanceRequestSpec{
+			ClusterID:         in.ClusterID,
+			AddonTemplateName: in.Name,
+			Version:           &in.Version,
+			Values:            in.Values,
+		},
+	}
+	if _, err := s.cce.UpdateAddonInstance(&model.UpdateAddonInstanceRequest{
+		Id:   in.AddonID,
+		Body: body,
+	}); err != nil {
+		return errors.Wrapf(err, "UpdateAddonInstance %s failed", in.Name)
+	}
+	return nil
+}
+
+// ListAddonInstances implements Service.
+func (s *Client) ListAddonInstances(_ context.Context, clusterID string) ([]AddonInfo, error) {
+	resp, err := s.cce.ListAddonInstances(&model.ListAddonInstancesRequest{ClusterId: clusterID})
+	if err != nil {
+		return nil, errors.Wrap(err, "ListAddonInstances failed")
+	}
+	var out []AddonInfo
+	if resp.Items != nil {
+		for _, a := range *resp.Items {
+			info := AddonInfo{}
+			if a.Metadata != nil {
+				if a.Metadata.Uid != nil {
+					info.ID = *a.Metadata.Uid
+				}
+				if a.Metadata.Name != nil {
+					info.Name = *a.Metadata.Name
+				}
+			}
+			if a.Spec != nil {
+				info.Version = a.Spec.Version
+			}
+			if a.Status != nil {
+				info.Status = a.Status.Status.Value()
+			}
+			out = append(out, info)
+		}
+	}
+	return out, nil
+}
+
+// DeleteAddonInstance implements Service.
+func (s *Client) DeleteAddonInstance(_ context.Context, _, addonID string) error {
+	if _, err := s.cce.DeleteAddonInstance(&model.DeleteAddonInstanceRequest{Id: addonID}); err != nil {
+		if clouderrors.IsNotFound(err) {
+			return nil
+		}
+		return errors.Wrapf(err, "DeleteAddonInstance %s failed", addonID)
+	}
+	return nil
+}
+
 // ---- helpers ----
 
 func assembleKubeconfig(resp *model.CreateKubernetesClusterCertResponse) (string, error) {

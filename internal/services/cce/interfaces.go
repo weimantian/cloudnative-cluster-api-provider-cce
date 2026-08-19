@@ -197,6 +197,34 @@ const (
 	UpgradeTaskPhaseFailed  = "Failed"
 )
 
+// AddonInput declares a CCE addon instance to install/update (maps to
+// CreateAddonInstance / UpdateAddonInstance).
+type AddonInput struct {
+	ClusterID string
+	// AddonID is the addon INSTANCE id (returned by Create/List), used for
+	// Update/Delete. Empty for Create.
+	AddonID string
+	// Name is the addon template name (e.g. "coredns", "metrics-server").
+	Name string
+	// Version is the addon template version (e.g. "1.0.0"); empty means the
+	// latest supported by the cluster.
+	Version string
+	// Values are the per-addon install parameters (optional).
+	Values map[string]interface{}
+}
+
+// AddonInfo is a CCE addon instance as reported by ListAddonInstances.
+type AddonInfo struct {
+	// ID is the addon instance ID.
+	ID string
+	// Name is the addon template name.
+	Name string
+	// Version is the installed addon version.
+	Version string
+	// Status is the addon instance status (running/installing/upgrading/...).
+	Status string
+}
+
 // Service is the CCE API surface consumed by the provider controllers.
 type Service interface { // ShowCluster returns the current state of a CCE cluster.
 	ShowCluster(ctx context.Context, clusterID string) (*ClusterInfo, error)
@@ -231,4 +259,12 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	// ShowUpgradeTask returns the upgrade task phase (Init/Queuing/Running/
 	// Pause/Success/Failed).
 	ShowUpgradeTask(ctx context.Context, clusterID, taskID string) (string, error)
+	// CreateAddonInstance installs a CCE addon and returns its instance ID.
+	CreateAddonInstance(ctx context.Context, in AddonInput) (string, error)
+	// UpdateAddonInstance upgrades an existing addon to the given version.
+	UpdateAddonInstance(ctx context.Context, in AddonInput) error
+	// ListAddonInstances lists the addon instances of a cluster.
+	ListAddonInstances(ctx context.Context, clusterID string) ([]AddonInfo, error)
+	// DeleteAddonInstance removes an addon instance.
+	DeleteAddonInstance(ctx context.Context, clusterID, addonID string) error
 }

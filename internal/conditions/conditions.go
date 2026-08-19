@@ -32,6 +32,9 @@ const (
 	CCEClusterReadyCondition = "CCEClusterReady"
 	// KubeconfigReadyCondition reports whether the kubeconfig Secret exists.
 	KubeconfigReadyCondition = "KubeconfigReady"
+	// AddonsConfiguredCondition reports whether the declared CCE addons are
+	// installed/upgraded/removed as specified.
+	AddonsConfiguredCondition = "AddonsConfigured"
 	// UpgradeReadyCondition reports the cluster upgrade state (FR-1.7,
 	// questionnaire Q11). True when spec.version matches the running version.
 	UpgradeReadyCondition = "UpgradeReady"

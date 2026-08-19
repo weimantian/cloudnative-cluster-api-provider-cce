@@ -63,6 +63,27 @@ spec:
               category / flavor / version / containerNetwork / serviceNetwork /
               customSan / publicAccess / agencyName / billingMode.
             properties:
+              addons:
+                description: |-
+                  Addons are the CCE addon instances to manage (declarative set; the
+                  controller installs missing ones, upgrades version drift, and removes
+                  those no longer listed — mirrors CAPA EKS addons).
+                items:
+                  description: AddonSpec declares a CCE addon to install.
+                  properties:
+                    name:
+                      description: Name is the addon template name (e.g. "coredns",
+                        "metrics-server").
+                      type: string
+                    version:
+                      description: |-
+                        Version is the addon template version (e.g. "1.0.0"); empty means the
+                        latest supported by the cluster.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
               agencyName:
                 description: AgencyName used by the cluster (1.27+; empty uses the
                   system agency).

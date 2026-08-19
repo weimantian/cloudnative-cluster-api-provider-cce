@@ -34,6 +34,10 @@ type FakeCCEService struct {
 	GetUpgradeInfoFn       func(ctx context.Context, clusterID string) (*cceService.UpgradeInfo, error)
 	StartUpgradeFn         func(ctx context.Context, clusterID, targetVersion string) (string, error)
 	ShowUpgradeTaskFn      func(ctx context.Context, clusterID, taskID string) (string, error)
+	CreateAddonInstanceFn  func(ctx context.Context, in cceService.AddonInput) (string, error)
+	UpdateAddonInstanceFn  func(ctx context.Context, in cceService.AddonInput) error
+	ListAddonInstancesFn   func(ctx context.Context, clusterID string) ([]cceService.AddonInfo, error)
+	DeleteAddonInstanceFn  func(ctx context.Context, clusterID, addonID string) error
 
 	// Records for assertions.
 	CreatedClusters     []cceService.CreateClusterInput
@@ -43,6 +47,10 @@ type FakeCCEService struct {
 	UpdateNodePoolCalls []cceService.UpdateNodePoolInput
 	KubeconfigCalls     int
 	StartUpgradeCalls   []string // target versions
+	AddonCreateCalls    []cceService.AddonInput
+	AddonUpdateCalls    []cceService.AddonInput
+	AddonDeleteCalls    []string               // addon IDs
+	Addons              []cceService.AddonInfo // returned by ListAddonInstances
 }
 
 // NewFakeCCEService returns a fake with healthy defaults.
@@ -96,6 +104,21 @@ func NewFakeCCEService() *FakeCCEService {
 	}
 	f.ShowUpgradeTaskFn = func(_ context.Context, _, _ string) (string, error) {
 		return cceService.UpgradeTaskPhaseSuccess, nil
+	}
+	f.CreateAddonInstanceFn = func(_ context.Context, in cceService.AddonInput) (string, error) {
+		f.AddonCreateCalls = append(f.AddonCreateCalls, in)
+		return "addon-id-" + in.Name, nil
+	}
+	f.UpdateAddonInstanceFn = func(_ context.Context, in cceService.AddonInput) error {
+		f.AddonUpdateCalls = append(f.AddonUpdateCalls, in)
+		return nil
+	}
+	f.ListAddonInstancesFn = func(_ context.Context, _ string) ([]cceService.AddonInfo, error) {
+		return f.Addons, nil
+	}
+	f.DeleteAddonInstanceFn = func(_ context.Context, _, addonID string) error {
+		f.AddonDeleteCalls = append(f.AddonDeleteCalls, addonID)
+		return nil
 	}
 	return f
 }
@@ -199,3 +222,23 @@ contexts:
     user: internal
 current-context: internal
 `
+
+// CreateAddonInstance implements cceService.Service.
+func (f *FakeCCEService) CreateAddonInstance(ctx context.Context, in cceService.AddonInput) (string, error) {
+	return f.CreateAddonInstanceFn(ctx, in)
+}
+
+// UpdateAddonInstance implements cceService.Service.
+func (f *FakeCCEService) UpdateAddonInstance(ctx context.Context, in cceService.AddonInput) error {
+	return f.UpdateAddonInstanceFn(ctx, in)
+}
+
+// ListAddonInstances implements cceService.Service.
+func (f *FakeCCEService) ListAddonInstances(ctx context.Context, clusterID string) ([]cceService.AddonInfo, error) {
+	return f.ListAddonInstancesFn(ctx, clusterID)
+}
+
+// DeleteAddonInstance implements cceService.Service.
+func (f *FakeCCEService) DeleteAddonInstance(ctx context.Context, clusterID, addonID string) error {
+	return f.DeleteAddonInstanceFn(ctx, clusterID, addonID)
+}
