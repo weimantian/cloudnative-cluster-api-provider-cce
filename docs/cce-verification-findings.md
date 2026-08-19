@@ -117,7 +117,16 @@
 - **升级前提条件(官方)**:① 补丁版本需升到最新;② 升级前检查;③ 建议备份;**④ SnatIPRanges 检查(仅 Turbo)**:升级前检查该配置是否变化,如有变化升级后需重启 Pod 触发路由表更新。
 - **v1.35 主要变更(官方)**:cgroup v1 标记弃用(v1.35 支持 cgroupv2 并兼容 v1);kube-proxy ipvs 模式弃用,默认 nftables 转发;containerd 1.x 为最后支持版本,v1.35 起默认 containerd 2.x;**StorageVersionMigration v1alpha1 API 移除,升级前必须删除所有 v1alpha1 资源**。
 - **platformVersion 是输出非输入**(官方:不支持用户指定,创建时自动选最新平台版本)→ 无"仅升级 platform 不动 K8s 版本"的独立参数。
-- **⚠️ 实测(2026-08-19,三次,三种形态)**:Standard 空集群、Turbo(eni)空集群、Standard+节点池(1 节点 Active)的 `ShowClusterUpgradeInfo` **均返回 `suggestPatch=` 空 + `targets=[]`**——尽管官方路径表支持 v1.34→v1.35,**当前平台实例/区域未开放升级目标**。→ **官方路径表 = 产品支持的升级路径(设计约束);API 实测 = 当前可执行的升级目标(动态开放状态),两者不矛盾**。
+- **实测(2026-08-19,多次,多形态)**:
+  1. **v1.34.8-r2(Standard/Turbo 空集群、带节点池)均 `suggestPatch=` 空 + `targets=[]`**——v1.34 是当前最新支持线,其目标 v1.35 尚未对账号/区域开放;
+  2. **v1.33.12 集群 `targets=[v1.34.8-r2]`——平台开放升级目标(首次确认"开放"状态)**,并实测跑通完整升级工作流(见下);
+  → **官方路径表 = 产品支持的升级路径(设计约束);API 实测 = 当前可执行的升级目标(按版本线动态开放)**。
+- **升级工作流实测(v1.33.12→v1.34.8-r2)**:`CreateUpgradeWorkFlow → CreatePreCheck → UpgradeCluster → ShowUpgradeClusterTask 轮询` 全链路跑通;任务 **24 秒后 phase=Failed**,失败在**升级前检查**(items:`upgrade-limit-check` Failed、`addon-limit-check` Failed,其余阶段 Init)——平台检查项未通过(插件/配额类),非 API 调用问题;带节点池形态在同一预检查失败。
+- **实测发现的 3 个真实 API 约束(SDK 注释误导,已修复 `StartUpgrade`)**:
+  1. `CreateUpgradeWorkFlow` 的 `clusterID` **必填**(SDK 注释称"服务端生成,填写无效",实测为空报 `CCE_CM.0004 Invalid field cluster ID`);
+  2. PreCheck 的 `clusterVersion` 必须用**完整 release-patch 格式**(如 `v1.33.12-r2`)且与 workflow 一致(传 `v1.33` 报 `CCE_CM.0101`);
+  3. `inPlaceRollingUpdate` 策略**必须带 `userDefinedStep`**(报 `CCE_CM.0004 Field user defined step must defined by inPlaceRollingUpdate strategy`;SDK 取值范围 [1,40],官方文档默认 20、最高 120)。
+- **升级耗时量级**:升级流程为**分钟级启动**(workflow/precheck/upgrade 提交即返回),控制面升级阶段 24 秒内被预检查拦截;**完整成功升级的耗时待预检查通过后实测**(`TestSmokeUpgradeWorkflow` 已就绪,带节点池模式)。
 - **未确认(需华为云/待平台开放后实测)**:升级总体耗时量级(当前无可用目标,客观不可测;`TestSmokeUpgradeWorkflow` 已支持带节点池模式,平台开放后即可实测);StorageVersionMigration v1alpha1 清理对 CAPI 集群的影响(升级前需确保无 v1alpha1 资源);SDK `userDefinedStep` 上限(1-60)与官方文档(最高 120)的出入。
 
 ### Q11b 节点池升级(操作系统镜像,官方 cce_10_0198,2026-06-18 更新)
