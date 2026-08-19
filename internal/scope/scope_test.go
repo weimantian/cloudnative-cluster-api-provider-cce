@@ -16,6 +16,8 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
+
+	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 )
 
 func TestResolveCredentialsFromSecret(t *testing.T) {
@@ -77,5 +79,79 @@ func TestResolveCredentialsEnvFallbackOnlyWhenUnreferenced(t *testing.T) {
 	}
 	if creds.AccessKey != "envAK" || creds.SecretKey != "envSK" {
 		t.Errorf("unexpected env creds: %+v", creds)
+	}
+}
+
+func TestResolveIdentityStatic(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = infrav1beta1.AddToScheme(scheme)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		&infrav1beta1.CCEClusterStaticIdentity{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-id"},
+			Spec:       infrav1beta1.CCEClusterStaticIdentitySpec{SecretRef: "my-secret"},
+		},
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "cce-provider-system"},
+			Data:       map[string][]byte{"accessKey": []byte("AK"), "secretKey": []byte("SK")},
+		},
+	).Build()
+
+	creds, agency, err := ResolveIdentity(context.Background(), c, "default",
+		&corev1.ObjectReference{Kind: "CCEClusterStaticIdentity", Name: "my-id"})
+	if err != nil {
+		t.Fatalf("ResolveIdentity failed: %v", err)
+	}
+	if creds.AccessKey != "AK" || creds.SecretKey != "SK" || agency != "" {
+		t.Errorf("unexpected creds/agency: %+v %q", creds, agency)
+	}
+}
+
+func TestResolveIdentityAllowedNamespace(t *testing.T) {
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = infrav1beta1.AddToScheme(scheme)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		&infrav1beta1.CCEClusterStaticIdentity{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-id"},
+			Spec: infrav1beta1.CCEClusterStaticIdentitySpec{
+				SecretRef: "my-secret",
+				AllowedNamespaces: &infrav1beta1.AllowedNamespaces{
+					NamespaceList: []string{"allowed-ns"},
+				},
+			},
+		},
+		&corev1.Secret{
+			ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "cce-provider-system"},
+			Data:       map[string][]byte{"accessKey": []byte("AK"), "secretKey": []byte("SK")},
+		},
+	).Build()
+
+	// A namespace outside the allowlist must be rejected.
+	if _, _, err := ResolveIdentity(context.Background(), c, "other-ns",
+		&corev1.ObjectReference{Kind: "CCEClusterStaticIdentity", Name: "my-id"}); err == nil {
+		t.Error("expected allowedNamespaces rejection for other-ns")
+	}
+	// Allowed namespace passes.
+	if _, _, err := ResolveIdentity(context.Background(), c, "allowed-ns",
+		&corev1.ObjectReference{Kind: "CCEClusterStaticIdentity", Name: "my-id"}); err != nil {
+		t.Errorf("expected allowed namespace to pass, got %v", err)
+	}
+}
+
+func TestResolveIdentityNilRef(t *testing.T) {
+	t.Setenv("CLOUD_SDK_AK", "envAK")
+	t.Setenv("CLOUD_SDK_SK", "envSK")
+	defer os.Unsetenv("CLOUD_SDK_AK")
+	defer os.Unsetenv("CLOUD_SDK_SK")
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	c := fake.NewClientBuilder().WithScheme(scheme).Build()
+	creds, agency, err := ResolveIdentity(context.Background(), c, "ns", nil)
+	if err != nil {
+		t.Fatalf("ResolveIdentity(nil) failed: %v", err)
+	}
+	if creds.AccessKey != "envAK" || agency != "" {
+		t.Errorf("unexpected: %+v agency=%q", creds, agency)
 	}
 }

@@ -12,7 +12,7 @@
 | 控制面生命周期 | 创建/删除/版本升级/endpoint 写回 | ✅ 同 | ✅ 对齐 |
 | 控制面配置能力 | addons、日志、KMS 加密、IAM 认证模式、OIDC、身份提供者、pod identity、access entry、控制面扩容、SecondaryCIDR | 仅版本/网络/endpoint/billing/agency | 🔴 大面积缺失 |
 | 节点组 | 扩缩容、spot、AMI、启动模板、labels/taints、remoteAccess、磁盘、滚动更新、节点修复、多 AZ、生命周期钩子 | flavor/os/磁盘/SG/taints/labels/autoscaling/绝对值扩缩容 | 🟡 部分 |
-| 凭证身份 | ControllerIdentity/StaticIdentity/RoleIdentity + allowedNamespaces | Secret + env(单凭证) | 🟡 缺身份 CRD |
+| 凭证身份 | ControllerIdentity/StaticIdentity/RoleIdentity + allowedNamespaces | ✅ 三类身份 CRD(CCEClusterController/Static/RoleIdentity,Role 用委托 agency 替代 AssumeRole)+ identityRef + allowedNamespaces 校验 | ✅ 已实现 |
 | 特性开关 | 13 个 feature gate | 1 个(NodePoolAutoscaling) | 🔴 |
 | conditions 全集 | 控制面/节点池/Fargate/身份/网络/bootstrap 多组 | 7 个(Network/Credentials/Cluster/Kubeconfig/Upgrade/NodePool/Scaling) | 🟡 少但覆盖主流程 |
 | 架构 | Scope 模式 + 服务接口工厂 + 错误聚合 + GC + tag 所有权 | 服务接口工厂有;无 Scope patch helper、无 GC、无 tag 所有权 | 🟡 |

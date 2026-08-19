@@ -131,8 +131,14 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		return ctrl.Result{}, err
 	}
 
-	// Credentials: per-cluster Secret (<cluster>-credentials) with env fallback.
-	creds, err := scope.ResolveCredentials(ctx, r.Client, cp.Namespace, cp.Spec.ClusterName+"-credentials")
+	// Credentials: identityRef (CCECluster*Identity) takes precedence; when
+	// absent, fall back to the per-cluster Secret, then env.
+	var creds *scope.Credentials
+	if cp.Spec.IdentityRef != nil {
+		creds, _, err = scope.ResolveIdentity(ctx, r.Client, cp.Namespace, cp.Spec.IdentityRef)
+	} else {
+		creds, err = scope.ResolveCredentials(ctx, r.Client, cp.Namespace, cp.Spec.ClusterName+"-credentials")
+	}
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.CredentialsReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())

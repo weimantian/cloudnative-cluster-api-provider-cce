@@ -11,7 +11,8 @@ Licensed under the MIT No Attribution (MIT-0) License.
 package v1beta1
 
 import (
-	"k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/api/core/v1"
+	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
 	"sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
@@ -116,6 +117,11 @@ func (in *CCEManagedControlPlaneSpec) DeepCopyInto(out *CCEManagedControlPlaneSp
 		copy(*out, *in)
 	}
 	out.EndpointAccess = in.EndpointAccess
+	if in.IdentityRef != nil {
+		in, out := &in.IdentityRef, &out.IdentityRef
+		*out = new(v1.ObjectReference)
+		**out = **in
+	}
 	out.Billing = in.Billing
 	if in.Addons != nil {
 		in, out := &in.Addons, &out.Addons
@@ -149,7 +155,7 @@ func (in *CCEManagedControlPlaneStatus) DeepCopyInto(out *CCEManagedControlPlane
 	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
-		*out = make([]v1.Condition, len(*in))
+		*out = make([]metav1.Condition, len(*in))
 		for i := range *in {
 			(*in)[i].DeepCopyInto(&(*out)[i])
 		}

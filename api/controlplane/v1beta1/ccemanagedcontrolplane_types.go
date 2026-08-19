@@ -7,6 +7,7 @@ Licensed under the MIT No Attribution (MIT-0) License.
 package v1beta1
 
 import (
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 )
@@ -53,6 +54,11 @@ type CCEManagedControlPlaneSpec struct {
 	// AgencyName used by the cluster (1.27+; empty uses the system agency).
 	// +optional
 	AgencyName string `json:"agencyName,omitempty"`
+
+	// IdentityRef references a CCECluster*Identity (Controller/Static/Role).
+	// Empty means the controller default identity (CLOUD_SDK_AK/SK env).
+	// +optional
+	IdentityRef *corev1.ObjectReference `json:"identityRef,omitempty"`
 
 	// Billing controls billing mode: 0=on-demand, 1=subscription.
 	// +optional
