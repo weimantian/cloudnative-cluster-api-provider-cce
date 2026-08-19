@@ -79,13 +79,14 @@ func TestSmoke(t *testing.T) {
 	flavor := smokeEnv("CCE_SMOKE_FLAVOR", "c7.large.2")
 	version := smokeEnv("CCE_SMOKE_K8S_VERSION", "")
 	cases := smokeCases()
+	mode := smokeEnv("CCE_SMOKE_MODE", "eni") // eni (Turbo) | vpc-router (Standard)
 
 	svc, err := NewClient(region, ak, sk)
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
 
-	t.Logf("smoke env: region=%s vpc=%s nodeSubnet=%s eniSubnet=%s keypair=%s", region, vpcID, subnetID, eniSubnetID, keypair)
+	t.Logf("smoke env: region=%s mode=%s vpc=%s nodeSubnet=%s eniSubnet=%s keypair=%s", region, mode, vpcID, subnetID, eniSubnetID, keypair)
 	suffix := fmt.Sprintf("%d", time.Now().Unix()%100000)
 	clusterName := "capi-smoke-" + suffix
 	poolName := "pool-0"
@@ -124,19 +125,28 @@ func TestSmoke(t *testing.T) {
 	// ---- Q1/Q4: create an EMPTY cluster (Turbo/eni) ----
 	if cases["cluster"] {
 		t.Logf("creating empty Turbo/eni cluster %q (region %s)…", clusterName, region)
-		clusterID, err = svc.CreateCluster(ctx, CreateClusterInput{
-			Name:                 clusterName,
-			Category:             "Turbo",
-			Flavor:               smokeEnv("CCE_SMOKE_CLUSTER_FLAVOR", "cce.s2.medium"),
-			Version:              version,
-			ContainerNetworkMode: "eni",
-			ENISubnets:           []string{eniSubnetID},
-			HostNetworkVpcID:     vpcID,
-			HostNetworkSubnetID:  subnetID,
-			ServiceCIDR:          "10.247.0.0/16",
-			PublicAccess:         false,
-			BillingMode:          0,
-		})
+		createIn := CreateClusterInput{
+			Name:                clusterName,
+			Flavor:              smokeEnv("CCE_SMOKE_CLUSTER_FLAVOR", "cce.s1.small"),
+			Version:             version,
+			HostNetworkVpcID:    vpcID,
+			HostNetworkSubnetID: subnetID,
+			ServiceCIDR:         "10.247.0.0/16",
+			PublicAccess:        false,
+			BillingMode:         0,
+		}
+		if mode == "vpc-router" {
+			// Standard cluster (no sub-ENI requirement; cheap flavors work).
+			createIn.Category = "CCE"
+			createIn.ContainerNetworkMode = "vpc-router"
+			createIn.ContainerNetworkCIDR = "10.244.0.0/16"
+		} else {
+			// Turbo/eni (requires a flavor with sub-ENI quota > 0).
+			createIn.Category = "Turbo"
+			createIn.ContainerNetworkMode = "eni"
+			createIn.ENISubnets = []string{eniSubnetID}
+		}
+		clusterID, err = svc.CreateCluster(ctx, createIn)
 		if err != nil {
 			t.Fatalf("CreateCluster (empty, Turbo/eni) failed: %v", err)
 		}
@@ -166,12 +176,20 @@ func TestSmoke(t *testing.T) {
 	if cases["pool"] {
 		t.Logf("creating node pool with initialNodeCount=2 (flavor %s)…", flavor)
 		nodePoolID, err = svc.CreateNodePool(ctx, CreateNodePoolInput{
-			ClusterID:        clusterID,
-			Name:             poolName,
-			Flavor:           flavor,
-			OS:               "HuaweiCloudEulerOS2.0",
-			RootVolumeSize:   40,
-			RootVolumeType:   "GPSSD",
+			ClusterID: clusterID,
+			Name:      poolName,
+			Flavor:    flavor,
+			// OS is required (verified: "OS:should not be empty" when omitted,
+			// contradicting the SDK comment). Value from official docs:
+			// "Huawei Cloud EulerOS 2.0".
+			OS:             "Huawei Cloud EulerOS 2.0",
+			RootVolumeSize: 40,
+			RootVolumeType: "GPSSD",
+			// Non-local-disk flavors (e.g. c6.large.2) require a data volume
+			// (verified: CCE_CM.0004 "Data volume needed for non-local-disk
+			// flavor or non-system diskType").
+			DataVolumeSize:   100,
+			DataVolumeType:   "GPSSD",
 			SSHKey:           keypair,
 			AvailabilityZone: smokeEnv("CCE_SMOKE_AZ", ""),
 			InitialNodeCount: 2,
@@ -190,15 +208,29 @@ func TestSmoke(t *testing.T) {
 		if cases["scale"] {
 			t.Log("calling ScaleNodePool(desiredNodeCount=2) on a 2-node pool…")
 			if err := svc.ScaleNodePool(ctx, clusterID, nodePoolID, 2); err != nil {
-				t.Errorf("ScaleNodePool failed: %v", err)
-			} else {
-				// Wait a short while, then report the observed count.
-				time.Sleep(3 * time.Minute)
-				count, err := currentNodeCount(ctx, svc, clusterID, nodePoolID)
-				if err != nil {
-					t.Errorf("currentNodeCount failed: %v", err)
+				// "No scale task needed with desired node count 2" on a 2-node
+				// pool PROVES desiredNodeCount is the ABSOLUTE expected total:
+				// under delta semantics the API would perform +2 (-> 4).
+				if strings.Contains(err.Error(), "No scale task needed") {
+					t.Logf("Q3 CONFIRMED (absolute semantics): ScaleNodePool(2) on a 2-node pool is a no-op (%v)", err)
 				} else {
-					t.Logf("Q3 RESULT: after ScaleNodePool(2) on a 2-node pool the count is %d — ABSOLUTE semantics if 2, DELTA semantics if 4 (verify in console)", count)
+					t.Errorf("ScaleNodePool failed: %v", err)
+				}
+			} else {
+				t.Log("Q3 note: ScaleNodePool(2) succeeded on a 2-node pool; verify node count in the console")
+			}
+			// Optional scale-up confirmation (adds 2 nodes, off by default):
+			// CCE_SMOKE_CASES including "scaleup" calls ScaleNodePool(4).
+			if cases["scaleup"] {
+				t.Log("calling ScaleNodePool(desiredNodeCount=4) — expecting growth to 4 nodes (absolute)")
+				if err := svc.ScaleNodePool(ctx, clusterID, nodePoolID, 4); err != nil {
+					t.Errorf("ScaleNodePool(4) failed: %v", err)
+				} else {
+					if err := waitForNodeCount(ctx, svc, clusterID, nodePoolID, 4, smokePoolWait, smokePollInterval); err != nil {
+						t.Errorf("pool did not reach 4 nodes: %v", err)
+					} else {
+						t.Log("Q3 CONFIRMED: ScaleNodePool(4) scaled the 2-node pool to 4 (absolute target)")
+					}
 				}
 			}
 			// ---- Q3: UpdateNodePool ignoreInitialNodeCount ----

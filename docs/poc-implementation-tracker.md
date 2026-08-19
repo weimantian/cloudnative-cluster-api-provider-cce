@@ -13,13 +13,13 @@
 | A1 | `controllers/ccecluster_controller.go:89-90` TODO(P0) 网络校验服务 | **Q4**(eni VPC/子网硬性要求)、Q5 | eni 对 VPC/子网要求:ENI 子网、网段不重叠、AZ 覆盖;校验失败的错误码 | 实现 `internal/services/network` 校验服务:子网存在性、CIDR 与容器网段不重叠、eni 子网覆盖;接入 CCECluster reconcile(失败→`NetworkReady=False`+信息) | 单测(校验矩阵)+ 真实 CCE 冒烟(不满足条件→拒绝并给出明确错误) | ✅已实现(网络校验服务接入) |
 | A2 | `internal/services/cce/cce.go:128-129` TODO(P0) hostNetwork/authentication 映射 | Q4、Q5 | hostNetwork 子网、认证方式(认证模式/证书)的 API 参数 | `CreateClusterInput` 增加 `hostNetwork.subnetId`、`authentication` 字段并映射 SDK 模型 | 单测(映射)+ 冒烟(创建的集群参数与确认一致) | ✅已确认(Q4/Q5) |
 | A3 | `internal/services/cce/cce.go:149-150` + `controllers/ccemanagedcontrolplane_controller.go:223-224` TODO(P0) 删除语义 | **Q8** | ✅ 已确认(官方 cce_02_0241):DeleteCluster 带删除选项 `delete_evs`(默认 false→残留!)/`delete_eni`(默认 block)/`delete_net`(默认 block)/`delete_efs`/`delete_obs`/`delete_sfs`;删除为异步;实测:删除时长、Unavailable 可删性、节点池先行 | 实现删除编排:先删节点池→删集群(显式传 `delete_evs=true/block` 等选项防残留)→轮询消失;按确认处理 Unavailable | e2e(删除后核对无 EVS/ELB 残留)+ 单元(状态机) | ✅已实现(删除选项传参 delete_evs/eni/net=true),待实测 |
-| A4 | `controllers/ccemanagedcontrolplane_controller.go` 主流程(等 infra → 建集群 → 等 Available) | **Q1/Q12** | ✅ 已确认(Q1:官方原文"创建空集群",空集群照常计费;Q12:**包周期集群创建响应不返回集群 ID** → 需按名称查询) | 主流程已确认可行;实现注意:创建包周期集群后按名称查询集群 ID(不能依赖响应 Metadata.Uid) | 冒烟(空集群创建)+ 文档 | ✅已确认,含实现注意 |
+| A4 | `controllers/ccemanagedcontrolplane_controller.go` 主流程(等 infra → 建集群 → 等 Available) | **Q1/Q12** | ✅ **实测确认**:空集群(Turbo/eni 与 Standard/vpc-router 均成功)创建并到 Available;Q12:包周期创建响应不返回集群 ID → 按名称查询 | 主流程实测可行;实现注意:包周期后按名称查询集群 ID | 冒烟已通过 | ✅已确认+冒烟通过 |
 
 ### B 组:节点池与扩缩容(阻塞主链路)
 
 | # | 代码位置 | 问卷项 | 依赖的确认结论 | 确认后的实现动作 | 验收方式 | 落地状态 |
 |---|---|---|---|---|---|---|
-| B1 | `internal/services/cce/cce.go:221-224`(ScaleNodePool 语义,已改) | **Q3** | ✅ 已确认=**绝对值**(官方 API 文档"节点池期望节点数"+SDK"取值范围 0 或正整数、省略默认 0 会删除所有节点"自洽;"相加/相减"是教调用方计算目标值);`scaleGroups` 必填默认 `default`。**仍建议实测关闭歧义**(建 2 节点池传 desiredNodeCount=2) | ✅ 已改代码:service 与控制器均按**绝对目标**(`desiredNodeCount = replicas`)传递并更新注释 | 单测 + 真实扩缩容冒烟(3→5→3) | ✅已实现(绝对值语义,代码已改),待实测定稿 |
+| B1 | `internal/services/cce/cce.go`(ScaleNodePool 语义,已改) | **Q3** | ✅ **实测确认=绝对值**(冒烟:2 节点池 ScaleNodePool(2)→"No scale task needed"无操作;ScaleNodePool(4)→扩到 4 节点);`scaleGroups` 必填默认 `default` | ✅ 已按绝对目标实现(`desiredNodeCount = replicas`) | 冒烟已通过(PASS) | ✅已确认+已实现+冒烟通过 |
 | B1b | `internal/services/cce` UpdateNodePool 对齐数量(新增) | Q3 | ✅ 已确认(官方 cce_02_0356):更新节点池**不填 initialNodeCount 时期望数默认变 0→会缩容**;`ignoreInitialNodeCount: true` 可保持原样 | 实现更新路径:不想动节点数→传 `ignoreInitialNodeCount=true`;想对齐→传 `initialNodeCount=目标值` | 单测 + 冒烟 | 已确认,待实现 |
 | B2 | `controllers/ccemanagedmachinepool_controller.go:136,151` 扩缩容与状态同步 | Q3 | 扩缩容期间状态;availableReplicas 口径(节点 Active 数来源) | 实现 replicas 对齐算法(含并发/伸缩中重试);`availableReplicas` 用 ListNodes 节点 Active 计数回填 | e2e(3→5→3)+ 状态一致性断言 | ✅已确认(Q3 绝对值),按绝对目标实现 |
 | B3 | `internal/features/features.go:21` NodePoolAutoscaling gate | Q3 | 节点池 autoscaling 与外部 ScaleNodePool 的冲突/优先级 | 实现 FR-2.6:gate 开启时映射 autoscaling.enable/min/max;与 CAPI replicas 协调策略按确认定 | 单测 + 冒烟 | ✅已确认(手动伸缩不受 autoscaling 范围限制,可并存) |

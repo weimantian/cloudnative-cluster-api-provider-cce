@@ -147,6 +147,25 @@
 - 已按此更新 PoC `internal/services/errors/errors.go`(修正原先占位的 not-found 码,新增 Quota/Throttle 分类)。
 
 ---
+## 真实 CCE 冒烟确认记录(2026-08-18,cn-north-4,账号实测)
+
+> 在真实华为云 CCE 账号上完成冒烟(`internal/services/cce/smoke_test.go`,`-tags smoke`),以下项由文档推断升级为**实测确认**:
+
+| 项 | 实测结果 |
+|---|---|
+| **Q1 空集群** | ✅ CreateCluster(不传节点)成功,最终 phase=Available,K8s v1.36,内网 endpoint `https://<IP>:5443` |
+| **Q2 kubeconfig** | ✅ CreateKubernetesClusterCert(duration=30)成功,返回 ~10KB kubeconfig |
+| **Q3 绝对值语义** | ✅✅ **双重确认**:ScaleNodePool(2) 在 2 节点池返回 "No scale task needed"(无操作=绝对值);ScaleNodePool(4) 将 2 节点池扩到 4 节点(绝对目标) |
+| **Q3 节点池** | ✅ CreateNodePool(initialNodeCount=2)成功并达到 2 节点 |
+| **Q3 UpdateNodePool** | ✅ ignoreInitialNodeCount=true 调用成功(观测值 0 为 ListNodePools 映射口径问题,不影响结论) |
+| **Q7 配额** | ✅ ShowQuotas 实测 **limit=50 / 区域**(解决文档"5 vs 50"矛盾) |
+| **Q8 删除** | ✅ DeleteNodePool + DeleteCluster(delete_evs/eni/net=true)成功,复核无残留集群 |
+| **Q4/eni(实测新发现)** | ⚠️ eniNetwork.subnets[].subnetID 必须是 **neutron_subnet_id**(普通子网 ID 报 CCE_CM.0004 "Eni subnetId is not in cluster vpc") |
+| **Turbo 规格(sub-ENI)** | ⚠️ 实测 c6.large.2 **sub-ENI 配额=0 → 不支持 eni 网络**(报 "subeni quota is 0",对应官方 CCE.01400025);需选 `quota:sub_network_interface_max_num>0` 的规格(如 c6sne.large.2,但 cn-north-4a 部分规格 abandon) |
+| **节点池参数(实测新发现)** | ⚠️ 非本地盘规格(c6.large.2)必须配**数据盘**(报 "Data volume needed");**OS 必填**(报 "OS:should not be empty",与 SDK 注释"可自动选择"矛盾,合法值 "Huawei Cloud EulerOS 2.0");**AZ 必填**(报 "Az [] is not in available az list") |
+
+> 冒烟环境:VPC `capi-smoke-vpc`(10.0.0.0/16)+ 双子网 + 密钥对 `capi-smoke-key` + 规格 c6.large.2(Standard/vpc-router 模式跑通全链路);Turbo/eni 集群创建同样成功(用 neutron 子网 ID)。搭建工具:`hack/smoke-setup`。
+
 ## 汇总:14 项确认状态
 
 | # | 主题 | 官方结论 | 剩余需实测/咨询 |

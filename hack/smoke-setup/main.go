@@ -200,9 +200,19 @@ func cheapestFlavor(ctx context.Context, c *ecsv2.EcsClient) (*model.Flavor, err
 	var candidates []model.Flavor
 	for _, f := range derefFlavors(resp) {
 		vcpus, _ := strconv.Atoi(f.Vcpus)
-		if vcpus >= 2 && f.Ram >= 4096 {
-			candidates = append(candidates, f)
+		if vcpus < 2 || f.Ram < 4096 {
+			continue
 		}
+		// CCE Turbo (eni) requires a flavor with sub-ENI quota > 0
+		// (verified: c6.large.2 -> "subeni quota is 0, Eni network is not
+		// supported"; official error CCE.01400025).
+		if f.OsExtraSpecs == nil || f.OsExtraSpecs.QuotasubNetworkInterfaceMaxNum == nil {
+			continue
+		}
+		if subeni, _ := strconv.Atoi(*f.OsExtraSpecs.QuotasubNetworkInterfaceMaxNum); subeni <= 0 {
+			continue
+		}
+		candidates = append(candidates, f)
 	}
 	sort.Slice(candidates, func(i, j int) bool {
 		vi, _ := strconv.Atoi(candidates[i].Vcpus)
@@ -213,10 +223,10 @@ func cheapestFlavor(ctx context.Context, c *ecsv2.EcsClient) (*model.Flavor, err
 		return candidates[i].Ram < candidates[j].Ram
 	})
 	if len(candidates) == 0 {
-		return nil, fmt.Errorf("no 2C4G flavor found")
+		return nil, fmt.Errorf("no 2C4G Turbo-capable flavor found")
 	}
 	// Prefer common x86 general-purpose families (more likely purchasable).
-	for _, prefix := range []string{"s6.", "c6.", "s7.", "c7.", "t6.", "e3.", "e7.", "kc1.", "kC1."} {
+	for _, prefix := range []string{"c6sne.", "c6.", "s6.", "s7.", "c7.", "t6.", "e3.", "e7.", "ac8.", "ac9."} {
 		for i := range candidates {
 			if strings.HasPrefix(candidates[i].Id, prefix) {
 				return &candidates[i], nil

@@ -262,9 +262,15 @@ func (s *Client) GetClusterKubeconfig(_ context.Context, clusterID string, durat
 func (s *Client) CreateNodePool(_ context.Context, in CreateNodePoolInput) (string, error) {
 	template := &model.NodeTemplate{
 		Flavor:     stringPtr(in.Flavor),
-		Az:         stringPtr(in.AvailabilityZone),
-		Os:         stringPtr(in.OS),
 		RootVolume: &model.Volume{Size: in.RootVolumeSize, Volumetype: defaultString(in.RootVolumeType, "GPSSD")},
+	}
+	if in.OS != "" {
+		template.Os = stringPtr(in.OS)
+	}
+	// Only set AZ when explicitly provided (empty AZ is rejected by CCE:
+	// verified "Az [] is not in available az list").
+	if in.AvailabilityZone != "" {
+		template.Az = stringPtr(in.AvailabilityZone)
 	}
 	if in.DataVolumeSize > 0 {
 		template.DataVolumes = &[]model.Volume{{Size: in.DataVolumeSize, Volumetype: defaultString(in.DataVolumeType, "GPSSD")}}
