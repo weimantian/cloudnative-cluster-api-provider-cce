@@ -79,100 +79,138 @@ flowchart LR
 
 ## 前置条件
 
-- 华为云账号,且 IAM 用户具备 Provider 所需的 CCE 权限(action 清单见 [docs/smoke-test-checklist.md](docs/smoke-test-checklist.md) §2;对应问卷 [docs/cce-verification-questionnaire.md](docs/cce-verification-questionnaire.md) Q6)。
-- 已有 VPC 和子网(CCE 创建集群前必须存在 VPC)。
-- 一个 Kubernetes 管理集群(`kind` 或专用集群),已安装 `clusterctl` v1.14+ 并配置好 `kubectl`。
-- Webhook TLS 证书:管理集群上安装 [cert-manager](https://cert-manager.io)(生产推荐),或预创建 `webhook-service-cert` TLS Secret(见下方步骤 3)。
+先安装命令行工具(macOS 用 [Homebrew](https://brew.sh),Linux 参见链接页面):
+
+```bash
+brew install docker kind kubectl    # docker: Docker Desktop;kubectl >= v1.28
+# clusterctl 必须用 v1.14.x(与本 Provider 使用的 CAPI 合约匹配;brew 公式可能滞后,建议直接下载对应版本):
+curl -L https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.0/clusterctl-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o clusterctl
+chmod +x clusterctl && sudo mv clusterctl /usr/local/bin/
+clusterctl version   # 应显示 v1.14.0
+```
+
+云侧前置条件(均在华为云控制台完成):
+
+- 一个 IAM 用户的访问密钥对(AK/SK),具备 [docs/smoke-test-checklist.md](docs/smoke-test-checklist.md) §2 所列的 CCE 权限。**账户必须有足够余额**——CCE 集群与节点按需计费,余额不足时创建会报 `CCE.01429004`。
+- 目标区域已有 VPC 和子网(CCE 创建集群前必须存在 VPC)。
+- 一个 SSH 密钥对(ECS → 密钥对),用于节点池的 `sshKey` 字段。
+
+> 提供了一键脚本 `scripts/deploy-kind.sh`,自动完成以下繁琐的本地步骤(镜像构建、kind 集群、webhook 证书、`clusterctl init`)。见[快速开始](#快速开始)。
 
 ## 快速开始
 
 > 以下完整流程已用 `clusterctl v1.14.0` + `kind` + 真实华为云 CCE 账号端到端验证通过(详见 [docs/clusterctl-deployment-validation.md](docs/clusterctl-deployment-validation.md))。凭证**只能**通过 Secret / 环境变量提供——切勿硬编码。
 
+**步骤 A — 在本地 kind 管理集群安装 Provider**(一条命令):
+
 ```bash
-# 1. 让 clusterctl 找到 Provider(发布前使用本地源;目录布局见"分步部署")
-mkdir -p ~/.cluster-api
-cat > ~/.cluster-api/clusterctl.yaml <<'EOF'
-providers:
-  - name: "cce"
-    url: "file:///tmp/cce/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
-    type: "InfrastructureProvider"
-EOF
+scripts/deploy-kind.sh
+# 构建镜像、创建 kind、生成 webhook 证书与组件清单、
+# 向 clusterctl 注册 Provider,并执行 `clusterctl init`
+```
 
-# 2. 在管理集群上安装 Provider(会同时安装 cert-manager、CAPI 核心、
-#    bootstrap/control-plane 与 infrastructure-cce)
-clusterctl init --infrastructure cce --wait-providers
+**步骤 B — 在真实 CCE 上创建工作负载集群:**
 
-# 3. 提供每集群凭证 Secret
+```bash
+# 1. 每集群凭证 Secret(名称 = <clusterName>-credentials)
 kubectl create secret generic my-cce-cluster-credentials \
   --namespace default \
   --from-literal=accessKey="$CCE_ACCESS_KEY" \
   --from-literal=secretKey="$CCE_SECRET_KEY"
 
-# 4. 应用工作集群并观察(真实创建 CCE 集群)
-kubectl apply -f cluster-template.yaml
+# 2. CAPI v1.14 MachinePool 合约要求的空 bootstrap Secret
+kubectl create secret generic my-cce-cluster-bootstrap \
+  --namespace default --from-literal=value=""
+
+# 3. 应用工作集群(先填好所有 VERIFY-... 占位符)
+kubectl apply -f config/samples/cluster-template.yaml
+
+# 4. 观察创建进度
 kubectl get ccemanagedcontrolplane --watch
 ```
 
 ## 分步部署
 
-1. **构建 Provider 组件**(每个版本一次;正式发布会直接附带 `infrastructure-components.yaml`):
+1. **构建 Provider 镜像**(每个版本一次;正式发布会直接附带现成镜像 + `infrastructure-components.yaml`):
 
    ```bash
-   make docker-build docker-push   # IMG=registry/org/cce-provider-controller:vX.Y.Z
+   make docker-build           # 推送到真实仓库时 IMG=registry/org/cce-provider-controller:vX.Y.Z
+   # 本地 kind 开发循环用:docker build -t cce-provider-controller:dev .
+   ```
+
+2. **生成 `infrastructure-components.yaml`**(`clusterctl` 安装用的清单):
+
+   ```bash
    kubectl kustomize config/default > infrastructure-components.yaml
-   # 6 个 webhook 需要 clientConfig.caBundle = base64(CA 证书);cert-manager 会自动注入,
-   # 否则需手动填充(见演练文档)。
    ```
 
-2. **配置 clusterctl** 定位 Provider。发布前的本地目录布局:
+   初次部署最容易踩的两个坑:
+
+   - **规范镜像名**。manager 镜像必须是三段式名称(`registry/org/repo:tag`),否则 `clusterctl init` 报 *"repository name must be canonical"*。用 kustomize 的 `images:` 转换覆盖(现成示例见 `scripts/deploy-kind.sh`)。
+   - **Webhook `caBundle`**。6 个准入 webhook 需要 `clientConfig.caBundle = base64(CA 证书)`;cert-manager 会自动注入,否则需手动填充(见步骤 3)。
+
+3. **Webhook TLS 证书**。manager 挂载 `/tmp/k8s-webhook-server/serving-certs`(`tls.crt`/`tls.key`)处的 Secret。不使用 cert-manager 时,自签一张 CN/SAN 匹配 webhook 服务的证书并创建 Secret:
 
    ```bash
-   mkdir -p /tmp/cce/infrastructure-cce/v0.1.0
-   cp infrastructure-components.yaml metadata.yaml /tmp/cce/infrastructure-cce/v0.1.0/
-   # ~/.cluster-api/clusterctl.yaml 同"快速开始"
-   ```
-
-   > 组件中的镜像名必须是三段式规范名(`registry/org/repo:tag`),否则 clusterctl 的镜像 override 会解析失败。
-
-3. **Webhook TLS 证书**。不使用 cert-manager 时,预创建 manager 挂载到 `/tmp/k8s-webhook-server/serving-certs` 的 Secret:
-
-   ```bash
-   # CN 必须匹配 webhook 服务:webhook-service.cce-provider-system.svc
-   # (SAN: webhook-service、webhook-service.cce-provider-system.svc(.cluster.local))
+   # CN = webhook-service.cce-provider-system.svc;SAN:
+   #   webhook-service、webhook-service.cce-provider-system、
+   #   webhook-service.cce-provider-system.svc、
+   #   webhook-service.cce-provider-system.svc.cluster.local
    kubectl -n cce-provider-system create secret tls webhook-service-cert \
      --cert=server.crt --key=server.key
+   # 并把 `caBundle: <ca.crt 的 base64>` 注入 infrastructure-components.yaml 的每个 webhook
+   # (scripts/deploy-kind.sh 已为你自动完成)
    ```
 
    > RBAC 注意:leader-election RoleBinding 的 subject.namespace 必须是真实命名空间(`cce-provider-system`);kustomize 不会改写 RoleBinding 的 subjects。
 
-4. **安装:**
+4. **配置 clusterctl 并安装**(发布前使用本地源):
 
    ```bash
+   mkdir -p /tmp/cce/infrastructure-cce/v0.1.0
+   cp infrastructure-components.yaml metadata.yaml /tmp/cce/infrastructure-cce/v0.1.0/
+   mkdir -p ~/.cluster-api
+   cat > ~/.cluster-api/clusterctl.yaml <<'EOF'
+   providers:
+     - name: "cce"
+       url: "file:///tmp/cce/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
+       type: "InfrastructureProvider"
+   EOF
    clusterctl init --infrastructure cce --wait-providers
-   clusterctl get providers          # 四个 Provider 均 Available
+   # 会安装 cert-manager + CAPI 核心 + bootstrap-kubeadm + control-plane-kubeadm + infrastructure-cce
+   kubectl get pods -A | grep -E 'capi-|cert-manager|cce-provider'   # 全部 Running
    ```
 
-5. **创建工作集群**(Cluster + CCECluster + CCEManagedControlPlane + MachinePool + CCEManagedMachinePool;样例见 `config/samples/cluster-template.yaml`,填入你的 VPC/子网 ID):
+5. **创建工作集群**(Cluster + CCECluster + CCEManagedControlPlane + MachinePool + CCEManagedMachinePool;样例见 `config/samples/cluster-template.yaml`,填好每个 `VERIFY-...` 占位符):
 
    ```bash
    kubectl create secret generic my-cce-cluster-credentials \
      --namespace default \
      --from-literal=accessKey="$CCE_ACCESS_KEY" \
      --from-literal=secretKey="$CCE_SECRET_KEY"
-   kubectl apply -f workload-cluster.yaml
-   kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -o yaml
+
+   # CAPI v1.14 MachinePool 合约要求(托管节点池无需引导数据,仅需该引用存在)
+   kubectl create secret generic my-cce-cluster-bootstrap \
+     --namespace default --from-literal=value=""
+
+   kubectl apply -f config/samples/cluster-template.yaml
+   kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -w
    ```
 
-   预期条件:`CCEClusterReady=True(ClusterAvailable)`、`CredentialsReady=True`、`KubeconfigReady=True`、`UpgradeReady=True`。
+   预期条件(全部 `True`):`CredentialsReady`、`CCEClusterReady`(`ClusterAvailable`)、`KubeconfigReady`、`AddonsConfigured`、`PodIdentityAssociationsConfigured`、`LoggingConfigured`、`UpgradeReady`。
 
 6. **验证与清理:**
 
    ```bash
    clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
    kubectl --kubeconfig my-cce-cluster.kubeconfig get nodes   # == replicas,全部 Ready
+   # 注意:endpointAccess.public=false 时,kubeconfig 的 server 是内网 VPC IP——
+   # 只能从该 VPC 内(如跳板机)访问,你的笔记本无法直连。
 
-   kubectl delete cluster my-cce-cluster   # 异步:CCE 集群 → kubeconfig Secret → finalizer
+   kubectl delete cluster my-cce-cluster   # 异步:节点池 → CCE 集群 → kubeconfig Secret → finalizer
    ```
+
+> **接管已有集群:** 由于创建是幂等的,应用一份 `clusterName` 与已有 CCE 集群同名的清单即可接管它(网段一致以触发冲突)。当无法新建计费资源(如账户余额不足)时,此方式非常实用。
 
 ## 使用方法 / 验证
 
@@ -240,9 +278,17 @@ clusterctl delete --infrastructure cce
 
 ## FAQ / 故障排除
 
-- **集群创建报网络错误**——CCE 要求先有 VPC,且容器/服务网段不能冲突;请检查 `spec.network` 与网段规划(见 [docs/architecture-design.md](docs/architecture-design.md) §6)。
-- **节点池不扩缩容**——确认控制面已 `Ready`(节点池只有在集群 `Available` 后才能创建),且 IAM 用户具备 `cce:nodepool:scale` 权限。
-- **`clusterctl get kubeconfig` 返回的 server 不可达**——私网集群的 kubeconfig server 是内网地址,请确保管理集群能访问。
+- **`clusterctl init` 报 *"repository name must be canonical"*** —— `infrastructure-components.yaml` 中 manager 镜像不是三段式 `registry/org/repo:tag` 名称。用 kustomize 的 `images:` 转换覆盖(见 `scripts/deploy-kind.sh`)。
+- **`cce-provider-controller-manager` 卡在 `ContainerCreating`,报 "secret webhook-service-cert not found"** —— 创建 webhook TLS Secret(`kubectl -n cce-provider-system create secret tls webhook-service-cert --cert=server.crt --key=server.key`)并重启 Deployment。
+- **`cert-manager` pod `ImagePullBackOff`(或 kind 上任何镜像拉取失败)** —— 你 shell 里的 `HTTP_PROXY`/`HTTPS_PROXY`(如失效的 `127.0.0.1:7890` 代理)被 kind 节点的 containerd 继承。去掉代理变量重建集群:`env -u http_proxy -u https_proxy kind create cluster ...`。
+- **集群创建报 `APIGW.0308`(429 限流)** —— 华为云限制写类 API 频率(实测 10 次/分钟)。控制器会自动退避重试,稍等即可(连续大量创建尝试后也会短暂出现此错误)。
+- **集群创建报 `CCE.01429004 Insufficient account balance`** —— 账户余额不足,无法创建计费的 CCE 资源。请充值,或改用接管已有集群的方式(见"分步部署"末尾说明)。
+- **集群创建报 `CCE_CM.0004 "Tag's parameters is invalid"`** —— 某个标签 key/value 违反 CCE 约束(key 字符集 `_.:=+-@` 等,不允许 `/`)。请使用已修复 owned-tag key 的版本。
+- **`kubectl --kubeconfig ...` 报 "unable to parse bytes as PEM block"** —— 旧版本 Provider 对 kubeconfig CA 做了双重 base64 编码;请升级到修复后的版本。
+- **`MachinePool` 被拒:"spec.template.spec.bootstrap: Required value"** —— CAPI v1.14 要求每个 MachinePool 都有 bootstrap 引用。添加 `bootstrap.dataSecretName: <cluster>-bootstrap`(托管节点池用空 Secret 即可)。
+- **集群创建报网络错误** —— CCE 要求先有 VPC,且容器/服务网段不能冲突;请检查 `spec.network` 与网段规划(见 [docs/architecture-design.md](docs/architecture-design.md) §6)。容器网段在同一 VPC 内必须唯一。
+- **节点池不扩缩容** —— 确认控制面已 `Ready`(节点池只有在集群 `Available` 后才能创建),且 IAM 用户具备 `cce:nodepool:scale` 权限。
+- **`clusterctl get kubeconfig` 返回的 server 不可达** —— 私网集群(`endpointAccess.public: false`)的 kubeconfig server 是内网 VPC IP,需从 VPC 内主机访问。
 - 更多:[docs/requirements-design.md](docs/requirements-design.md) §8(注意事项)与[验证清单](docs/research-sources.md) §4。
 
 ## 贡献指南

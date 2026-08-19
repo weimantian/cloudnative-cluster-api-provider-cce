@@ -71,3 +71,31 @@ kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -o yaml  # 观�
 - 正式发布时镜像名应为三段式规范名(`registry/org/repo:tag`),否则 clusterctl 的镜像 override 解析失败("repository name must be canonical")。
 - 生产环境推荐 cert-manager 注入 webhook 证书(本演练用自签证书 + 预创建 Secret 方案)。
 - `infrastructure-components.yaml` 由 `kubectl kustomize config/default` + caBundle 注入生成(演练脚本见上),发布流水线应固化为 Makefile target。
+
+---
+
+## 六、第二次全量演练(2026-08-20,kind + clusterctl v1.14.0)
+
+> 目的:按 README 从头复现"小白部署路径",并顺带验证 phase-2 新增的 addons/pod-identity/logging/滚动更新能力。
+
+### 演练结论
+
+| 验证点 | 结果 |
+|---|---|
+| `clusterctl init --infrastructure cce`(kind v0.32 + clusterctl v1.14.0) | ✅ 安装 cert-manager v1.21.1 + CAPI v1.14.0 + bootstrap/control-plane + infrastructure-cce v0.1.0 |
+| provider 控制器启动(leader election + 3 控制器) | ✅ 全部 Running |
+| 真实 CCE 接管(adopt-by-name,余额不足无法新建) | ✅ 7 条件全 True:`CredentialsReady/CCEClusterReady/KubeconfigReady/AddonsConfigured/PodIdentityAssociationsConfigured/LoggingConfigured/UpgradeReady` |
+| `clusterctl get kubeconfig` + CA 校验 | ✅ kubeconfig 结构正确(修复双编码后) |
+| 新建计费集群 | ⛔ 被账户余额阻断(`CCE.01429004 Insufficient account balance`) |
+
+### 本次发现并修复的真实问题
+
+1. **owned tag key 非法(`CCE_CM.0004 "Tag's parameters is invalid"`)**:CAPA 风格的 owned tag key(`sigs.k8s.io/.../cluster/<name>`)含 `/`,而 CCE `ResourceTag` key 不允许 `/`(官方字符集 `_.:=+-@` 等,128 字符)。改为点分 `cluster-api-provider-cce.cluster.<name>`。
+2. **kubeconfig CA 双编码**:CCE `CreateKubernetesClusterCert` 返回的 `certificate-authority-data`/`client-certificate-data`/`client-key-data` 是 **base64(PEM)**,原实现把 base64 字符串当原始字节再 base64 一次,导致 `kubectl` 报 "unable to parse bytes as PEM block"。修复:写回前先 base64 解码。
+3. **MachinePool 缺 bootstrap 被拒**:CAPI v1.14 的 MachinePool webhook 强制要求 `spec.template.spec.bootstrap`(configRef 或 dataSecretName)。托管节点池无引导数据,用空 Secret + `dataSecretName` 满足合约(控制器对该字段不做校验,见 CAPI `reconcileBootstrap` line 239-244)。
+4. **版本格式**:CCE 版本用 `v1.33`(无 patch),而 MachinePool 的 `version` 字段要求完整语义化版本 `v1.33.0`;样例模板 OS 字符串应为 `Huawei Cloud EulerOS 2.0`(带空格,实测验证),非 `HuaweiCloudEulerOS2.0`。
+5. **kind 节点镜像拉取被本地代理阻断**:宿主 shell 的 `HTTP_PROXY=127.0.0.1:7890`(失效代理)被 kind 节点 containerd 继承,导致 quay.io 拉取失败。去代理变量重建集群即可。
+
+### 对小白路径的产物
+
+- 新增一键脚本 `scripts/deploy-kind.sh`(镜像构建 → kind → 证书/组件 → clusterctl init),README(中英)重写为"一条命令 + 少量 kubectl"。

@@ -64,8 +64,8 @@ type CreateClusterInput struct {
 	IsAutoRenew string // "true" | "false"
 	IsAutoPay   string // "true" | "false"
 	// Tags are additional cluster tags (mapped to CCE clusterTags); the owned
-	// tag (sigs.k8s.io/cluster-api-provider-cce/cluster=<name>=owned) is always
-	// added by the service.
+	// tag (cluster-api-provider-cce.cluster.<name>=owned) is always added by
+	// the service.
 	Tags map[string]string
 }
 

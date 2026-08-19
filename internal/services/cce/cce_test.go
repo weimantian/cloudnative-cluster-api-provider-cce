@@ -56,7 +56,7 @@ func TestAssembleKubeconfig(t *testing.T) {
 	server := "https://10.0.0.10:5443"
 	ca := "QUJD"
 	cert := "Y2xpZW50LWNlcnQ="
-	key := "Y2xpZW50LWtleQ="
+	key := "Y2xpZW50LWtleQ=="
 	userName := "internal"
 	ctxName := "internal"
 	current := "internal"
@@ -97,10 +97,10 @@ func TestAssembleKubeconfig(t *testing.T) {
 	if cfg.CurrentContext != "internal" {
 		t.Errorf("current-context = %q, want internal", cfg.CurrentContext)
 	}
-	if c := cfg.Clusters["internalCluster"]; c == nil || c.Server != server || string(c.CertificateAuthorityData) != ca {
+	if c := cfg.Clusters["internalCluster"]; c == nil || c.Server != server || string(c.CertificateAuthorityData) != "ABC" {
 		t.Errorf("cluster entry mismatch: %+v", c)
 	}
-	if u := cfg.AuthInfos["internal"]; u == nil || string(u.ClientCertificateData) != cert || string(u.ClientKeyData) != key {
+	if u := cfg.AuthInfos["internal"]; u == nil || string(u.ClientCertificateData) != "client-cert" || string(u.ClientKeyData) != "client-key" {
 		t.Errorf("auth entry mismatch: %+v", u)
 	}
 	if ctx := cfg.Contexts["internal"]; ctx == nil || ctx.Cluster != "internalCluster" || ctx.AuthInfo != "internal" {
@@ -155,5 +155,52 @@ func TestUpdateClusterLogConfigBounds(t *testing.T) {
 		if err == nil || !strings.Contains(err.Error(), "ttlInDays must be in [0,30]") {
 			t.Errorf("ttl=%d: expected bounds error, got %v", ttl, err)
 		}
+	}
+}
+
+func TestOwnedTagKeyCCEConstraints(t *testing.T) {
+	// The owned tag key must satisfy the CCE ResourceTag key constraints
+	// (official: no "/", charset [a-zA-Z0-9_.:=+-@ and space], max 128, not
+	// starting with "_sys_"). The original CAPA-style slash key is invalid for
+	// CCE (verified live: CCE_CM.0004 "Tag's parameters is invalid").
+	for _, name := range []string{"cce-e2e-demo", "my-cluster", "a_very_long_cluster_name_with-many_chars1234567890"} {
+		key := ownedTagKey(name)
+		if strings.Contains(key, "/") {
+			t.Errorf("ownedTagKey(%q) = %q: must not contain '/', CCE tag keys reject it", name, key)
+		}
+		if len(key) > 128 {
+			t.Errorf("ownedTagKey(%q) = %q: exceeds 128-char CCE tag key limit", name, key)
+		}
+		if strings.HasPrefix(key, "_sys_") {
+			t.Errorf("ownedTagKey(%q) = %q: must not start with _sys_", name, key)
+		}
+		for _, r := range key {
+			if !(r == '.' || r == '-' || r == '_' || r == ':' || r == '=' || r == '+' || r == '@' || (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9')) {
+				t.Errorf("ownedTagKey(%q) = %q: contains invalid character %q", name, key, r)
+				break
+			}
+		}
+	}
+
+	// The owned tag must be first and the value "owned".
+	tags := toClusterTags("demo", map[string]string{"env": "test"})
+	if tags == nil || len(*tags) != 2 {
+		t.Fatalf("expected owned + 1 user tag, got %v", tags)
+	}
+	first := (*tags)[0]
+	if first.Key == nil || *first.Key != ownedTagKey("demo") || first.Value == nil || *first.Value != "owned" {
+		t.Errorf("unexpected owned tag: key=%v value=%v", first.Key, first.Value)
+	}
+}
+
+func TestDecodeCertData(t *testing.T) {
+	// Real CCE response returns base64-of-PEM; verify single decoding and the
+	// raw fallback for non-base64 input (e.g. plain PEM).
+	if got := decodeCertData("QUJD"); string(got) != "ABC" {
+		t.Errorf("decodeCertData(QUJD) = %q, want ABC", got)
+	}
+	pem := "-----BEGIN CERTIFICATE-----\nXYZ\n-----END CERTIFICATE-----\n"
+	if got := decodeCertData(pem); string(got) != pem {
+		t.Errorf("decodeCertData fallback = %q, want raw PEM", got)
 	}
 }

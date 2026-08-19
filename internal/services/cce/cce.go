@@ -8,6 +8,7 @@ package cce
 
 import (
 	"context"
+	"encoding/base64"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
@@ -803,12 +804,14 @@ func (s *Client) DeleteAddonInstance(_ context.Context, _, addonID string) error
 }
 
 // OwnedTagPrefix is the provider ownership tag key prefix, mirroring CAPA's
-// owned-tag model (sigs.k8s.io/cluster-api-provider-aws/cluster/<name>=owned).
-// Used for idempotent addressing and future external-resource GC.
-const OwnedTagPrefix = "sigs.k8s.io/cluster-api-provider-cce/cluster"
+// owned-tag model. NOTE: CCE tag keys cannot contain "/" (official ResourceTag
+// key charset is letters/digits/space/_.:=+-@, max 128), unlike AWS, so the
+// key uses "." separators instead of the CAPA slash form. Used for idempotent
+// addressing and future external-resource GC.
+const OwnedTagPrefix = "cluster-api-provider-cce.cluster"
 
 // ownedTagKey returns the ownership tag key for a cluster.
-func ownedTagKey(clusterName string) string { return OwnedTagPrefix + "/" + clusterName }
+func ownedTagKey(clusterName string) string { return OwnedTagPrefix + "." + clusterName }
 
 // ---- helpers ----
 
@@ -827,7 +830,7 @@ func assembleKubeconfig(resp *model.CreateKubernetesClusterCertResponse) (string
 		}
 		var ca []byte
 		if c.Cluster.CertificateAuthorityData != nil {
-			ca = []byte(*c.Cluster.CertificateAuthorityData)
+			ca = decodeCertData(*c.Cluster.CertificateAuthorityData)
 		}
 		cfg.Clusters[*c.Name] = &clientcmdapi.Cluster{Server: server, CertificateAuthorityData: ca}
 	}
@@ -837,10 +840,10 @@ func assembleKubeconfig(resp *model.CreateKubernetesClusterCertResponse) (string
 		}
 		auth := &clientcmdapi.AuthInfo{}
 		if u.User.ClientCertificateData != nil {
-			auth.ClientCertificateData = []byte(*u.User.ClientCertificateData)
+			auth.ClientCertificateData = decodeCertData(*u.User.ClientCertificateData)
 		}
 		if u.User.ClientKeyData != nil {
-			auth.ClientKeyData = []byte(*u.User.ClientKeyData)
+			auth.ClientKeyData = decodeCertData(*u.User.ClientKeyData)
 		}
 		cfg.AuthInfos[*u.Name] = auth
 	}
@@ -861,6 +864,20 @@ func assembleKubeconfig(resp *model.CreateKubernetesClusterCertResponse) (string
 		return "", errors.Wrap(err, "failed to serialize kubeconfig")
 	}
 	return string(data), nil
+}
+
+// decodeCertData decodes a base64-encoded certificate/key field from the CCE
+// cert API. The CCE CreateKubernetesClusterCert response returns
+// certificate-authority-data / client-certificate-data / client-key-data as
+// base64 of the PEM (verified live), but clientcmd expects raw bytes and
+// base64-encodes them again on write — passing the string through un-decoded
+// double-encodes the value and breaks `kubectl` ("unable to parse bytes as
+// PEM block"). Decode failures fall back to the raw value for robustness.
+func decodeCertData(s string) []byte {
+	if dec, err := base64.StdEncoding.DecodeString(s); err == nil {
+		return dec
+	}
+	return []byte(s)
 }
 
 func derefUsers(in *[]model.Users) []model.Users {

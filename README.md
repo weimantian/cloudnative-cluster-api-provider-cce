@@ -87,105 +87,156 @@ Design details: see [docs/architecture-design.md](docs/architecture-design.md) (
 
 ## Prerequisites
 
-- A Huawei Cloud account with an IAM user having the CCE permissions the provider needs (action list in [docs/smoke-test-checklist.md](docs/smoke-test-checklist.md) §2; Q6 in [docs/cce-verification-questionnaire.md](docs/cce-verification-questionnaire.md)).
-- An existing VPC and subnet(s) for the cluster (CCE requires a VPC before cluster creation).
-- A Kubernetes management cluster (`kind` or a dedicated cluster) with `clusterctl` v1.14+ and `kubectl` configured.
-- Webhook TLS certificates: either [cert-manager](https://cert-manager.io) on the management cluster (recommended for production), or a pre-created `webhook-service-cert` TLS Secret (see step 3 below).
+Install the CLI tools first (macOS via [Homebrew](https://brew.sh), Linux via the linked pages):
+
+```bash
+brew install docker kind kubectl    # docker: Docker Desktop; kubectl >= v1.28
+# clusterctl must be v1.14.x to match the CAPI contract this provider uses
+# (the brew formula may lag behind — download the exact release instead):
+curl -L https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.0/clusterctl-$(uname -s | tr '[:upper:]' '[:lower:]')-$(uname -m | sed 's/x86_64/amd64/;s/aarch64/arm64/') -o clusterctl
+chmod +x clusterctl && sudo mv clusterctl /usr/local/bin/
+clusterctl version   # should print v1.14.0
+```
+
+Cloud-side prerequisites (all in the Huawei Cloud console):
+
+- An IAM user Access Key/Secret Key (AK/SK) with the CCE permissions listed in [docs/smoke-test-checklist.md](docs/smoke-test-checklist.md) §2. **The account must have sufficient balance** — CCE clusters and nodes are billed; an empty balance makes creation fail with `CCE.01429004`.
+- An existing VPC and subnet in your region (CCE requires a VPC *before* cluster creation).
+- An SSH keypair (ECS → Key Pairs) for the node pool's `sshKey` field.
+
+> A one-command setup script (`scripts/deploy-kind.sh`) automates the fiddly local steps below (image build, kind cluster, webhook certs, `clusterctl init`). See [Quick Start](#quick-start).
 
 ## Quick Start
 
-> The full flow below was verified end-to-end with `clusterctl v1.14.0` on `kind` against a real CCE account (see [docs/clusterctl-deployment-validation.md](docs/clusterctl-deployment-validation.md)). Credentials are provided **only** via a Secret / environment variables — never hardcode them.
+> This flow was verified end-to-end with `clusterctl v1.14.0` on `kind` against a real CCE account (see [docs/clusterctl-deployment-validation.md](docs/clusterctl-deployment-validation.md)). Credentials are provided **only** via a Secret / environment variables — never hardcode them.
+
+**Step A — install the provider on a local kind management cluster** (one command):
 
 ```bash
-# 1. Point clusterctl at the provider (local source before a release is
-#    published; see Step-by-Step Deployment for the layout)
-mkdir -p ~/.cluster-api
-cat > ~/.cluster-api/clusterctl.yaml <<'EOF'
-providers:
-  - name: "cce"
-    url: "file:///tmp/cce/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
-    type: "InfrastructureProvider"
-EOF
+scripts/deploy-kind.sh
+# builds the image, creates kind, generates webhook certs + components,
+# registers the provider with clusterctl, and runs `clusterctl init`
+```
 
-# 2. Install the provider on the management cluster (installs cert-manager,
-#    CAPI core, bootstrap/control-plane, and infrastructure-cce)
-clusterctl init --infrastructure cce --wait-providers
+**Step B — create a workload cluster on real CCE:**
 
-# 3. Provide the per-cluster credentials Secret
+```bash
+# 1. Per-cluster credentials Secret (name = <clusterName>-credentials)
 kubectl create secret generic my-cce-cluster-credentials \
   --namespace default \
   --from-literal=accessKey="$CCE_ACCESS_KEY" \
   --from-literal=secretKey="$CCE_SECRET_KEY"
 
-# 4. Apply the workload cluster and watch it provision (real CCE cluster)
-kubectl apply -f cluster-template.yaml
+# 2. Empty bootstrap Secret required by the CAPI v1.14 MachinePool contract
+kubectl create secret generic my-cce-cluster-bootstrap \
+  --namespace default --from-literal=value=""
+
+# 3. Apply the workload cluster (fill in VERIFY-... placeholders first)
+kubectl apply -f config/samples/cluster-template.yaml
+
+# 4. Watch it provision
 kubectl get ccemanagedcontrolplane --watch
 ```
 
 ## Step-by-Step Deployment
 
-1. **Build the provider components** (once per version; a published release already ships `infrastructure-components.yaml`):
+1. **Build the provider image** (a published release already ships a ready-made image + `infrastructure-components.yaml`; for local development use the default tag):
 
    ```bash
-   make docker-build docker-push   # IMG=registry/org/cce-provider-controller:vX.Y.Z
+   make docker-build           # IMG=registry/org/cce-provider-controller:vX.Y.Z for a real registry
+   # or, for a local kind dev loop:  docker build -t cce-provider-controller:dev .
+   ```
+
+2. **Generate `infrastructure-components.yaml`** (the manifest `clusterctl` installs):
+
+   ```bash
    kubectl kustomize config/default > infrastructure-components.yaml
-   # 6 webhooks need clientConfig.caBundle = base64(CA cert); with cert-manager
-   # this is injected automatically, otherwise fill it in (see validation doc).
    ```
 
-2. **Configure clusterctl** to find the provider. Local layout before publishing:
+   Two requirements that trip up first-time deployments:
+
+   - **Canonical image name.** The manager image must be a three-part name
+     (`registry/org/repo:tag`) or `clusterctl init` fails with *"repository name
+     must be canonical"*. Override it with a kustomize `images:` transform — see
+     `scripts/deploy-kind.sh` for a ready example.
+   - **Webhook `caBundle`.** The 6 admission webhooks need
+     `clientConfig.caBundle = base64(CA cert)`. With cert-manager this is
+     injected automatically; without it you must fill it in (see step 3).
+
+3. **Webhook TLS certificates.** The manager mounts the Secret at
+   `/tmp/k8s-webhook-server/serving-certs` (`tls.crt`/`tls.key`). Without
+   cert-manager, self-sign a cert whose CN/SANs match the webhook service, then
+   create the Secret:
 
    ```bash
-   mkdir -p /tmp/cce/infrastructure-cce/v0.1.0
-   cp infrastructure-components.yaml metadata.yaml /tmp/cce/infrastructure-cce/v0.1.0/
-   # ~/.cluster-api/clusterctl.yaml as in Quick Start
-   ```
-
-   > Image names in the components must be canonical three-part names
-   > (`registry/org/repo:tag`), otherwise clusterctl's image override fails.
-
-3. **Webhook TLS certificates.** Without cert-manager, pre-create the Secret the manager mounts at `/tmp/k8s-webhook-server/serving-certs`:
-
-   ```bash
-   # CN must match the webhook service: webhook-service.cce-provider-system.svc
-   # (SAN: webhook-service, webhook-service.cce-provider-system.svc(.cluster.local))
+   # CN = webhook-service.cce-provider-system.svc; SANs:
+   #   webhook-service, webhook-service.cce-provider-system,
+   #   webhook-service.cce-provider-system.svc,
+   #   webhook-service.cce-provider-system.svc.cluster.local
    kubectl -n cce-provider-system create secret tls webhook-service-cert \
      --cert=server.crt --key=server.key
+   # and inject `caBundle: <base64 of ca.crt>` into every webhook in
+   # infrastructure-components.yaml (scripts/deploy-kind.sh does this for you)
    ```
 
    > RBAC note: the leader-election RoleBinding subject namespace must be the
    > real namespace (`cce-provider-system`); kustomize does not rewrite
    > RoleBinding subjects.
 
-4. **Install:**
+4. **Configure clusterctl and install** (local source before a release is published):
 
    ```bash
+   mkdir -p /tmp/cce/infrastructure-cce/v0.1.0
+   cp infrastructure-components.yaml metadata.yaml /tmp/cce/infrastructure-cce/v0.1.0/
+   mkdir -p ~/.cluster-api
+   cat > ~/.cluster-api/clusterctl.yaml <<'EOF'
+   providers:
+     - name: "cce"
+       url: "file:///tmp/cce/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
+       type: "InfrastructureProvider"
+   EOF
    clusterctl init --infrastructure cce --wait-providers
-   clusterctl get providers          # all four providers Available
+   # installs cert-manager + CAPI core + bootstrap-kubeadm + control-plane-kubeadm + infrastructure-cce
+   kubectl get pods -A | grep -E 'capi-|cert-manager|cce-provider'   # all Running
    ```
 
-5. **Create the workload cluster** (Cluster + CCECluster + CCEManagedControlPlane + MachinePool + CCEManagedMachinePool — sample in `config/samples/cluster-template.yaml`, fill in your VPC/subnet IDs):
+5. **Create the workload cluster** (Cluster + CCECluster + CCEManagedControlPlane + MachinePool + CCEManagedMachinePool — sample in `config/samples/cluster-template.yaml`; fill in every `VERIFY-...` placeholder):
 
    ```bash
    kubectl create secret generic my-cce-cluster-credentials \
      --namespace default \
      --from-literal=accessKey="$CCE_ACCESS_KEY" \
      --from-literal=secretKey="$CCE_SECRET_KEY"
-   kubectl apply -f workload-cluster.yaml
-   kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -o yaml
+
+   # Required by the CAPI v1.14 MachinePool contract (managed pools carry no
+   # bootstrap data; the reference just needs to exist)
+   kubectl create secret generic my-cce-cluster-bootstrap \
+     --namespace default --from-literal=value=""
+
+   kubectl apply -f config/samples/cluster-template.yaml
+   kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -w
    ```
 
-   Expected conditions: `CCEClusterReady=True(ClusterAvailable)`,
-   `CredentialsReady=True`, `KubeconfigReady=True`, `UpgradeReady=True`.
+   Expected conditions (all `True`): `CredentialsReady`, `CCEClusterReady`
+   (`ClusterAvailable`), `KubeconfigReady`, `AddonsConfigured`,
+   `PodIdentityAssociationsConfigured`, `LoggingConfigured`, `UpgradeReady`.
 
 6. **Verify and clean up:**
 
    ```bash
    clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
    kubectl --kubeconfig my-cce-cluster.kubeconfig get nodes   # == replicas, Ready
+   # NOTE: with endpointAccess.public=false the kubeconfig server is an
+   # internal VPC IP — reachable only from inside that VPC (a bastion host),
+   # not from your laptop.
 
-   kubectl delete cluster my-cce-cluster   # async: CCE cluster -> kubeconfig Secret -> finalizers
+   kubectl delete cluster my-cce-cluster   # async: node pools -> CCE cluster -> kubeconfig Secret -> finalizers
    ```
+
+> **Adopting an existing cluster:** because creation is idempotent, applying a
+> manifest whose `clusterName` matches an existing CCE cluster adopts it
+> (same CIDR to trigger the conflict). This is handy when you can't create new
+> billed resources (e.g. empty account balance).
 
 ## Usage / Verification
 
@@ -260,9 +311,17 @@ clusterctl delete --infrastructure cce
 
 ## FAQ / Troubleshooting
 
-- **Cluster creation fails with a network error** — CCE requires an existing VPC and non-overlapping container/service CIDRs; verify `spec.network` and the CIDR plan (see [docs/architecture-design.md](docs/architecture-design.md) §6).
+- **`clusterctl init` fails with *"repository name must be canonical"*** — the manager image in `infrastructure-components.yaml` is not a three-part `registry/org/repo:tag` name. Override it with a kustomize `images:` transform (see `scripts/deploy-kind.sh`).
+- **`cce-provider-controller-manager` stuck in `ContainerCreating` with "secret webhook-service-cert not found"** — create the webhook TLS Secret (`kubectl -n cce-provider-system create secret tls webhook-service-cert --cert=server.crt --key=server.key`) and restart the deployment.
+- **`cert-manager` pods `ImagePullBackOff` (or any image pull fails on kind)** — your shell's `HTTP_PROXY`/`HTTPS_PROXY` env vars (e.g. a dead `127.0.0.1:7890` proxy) are inherited by the kind node's containerd. Recreate the cluster with the proxy vars unset: `env -u http_proxy -u https_proxy kind create cluster ...`.
+- **Cluster creation fails with `APIGW.0308` (429 throttling)** — Huawei Cloud limits write API calls (observed 10/minute). The controller backs off and retries automatically; just wait. (The same message appears transiently right after many rapid create attempts.)
+- **Cluster creation fails with `CCE.01429004 Insufficient account balance`** — the account has no balance to create billed CCE resources. Top up the account, or adopt an existing cluster instead (see the note at the end of Step-by-Step Deployment).
+- **Cluster creation fails with `CCE_CM.0004 "Tag's parameters is invalid"`** — a tag key/value violates CCE's constraints (key charset `_.:=+-@` etc., no `/`). Use a provider version ≥ the one that fixed the owned-tag key.
+- **`kubectl --kubeconfig ...` reports "unable to parse bytes as PEM block"** — older provider builds double-encoded the kubeconfig CA; rebuild/upgrade to a fixed version.
+- **`MachinePool` rejected: "spec.template.spec.bootstrap: Required value"** — CAPI v1.14 requires a bootstrap reference on every MachinePool. Add `bootstrap.dataSecretName: <cluster>-bootstrap` (an empty Secret is fine for managed node pools).
+- **Cluster creation fails with a network error** — CCE requires an existing VPC and non-overlapping container/service CIDRs; verify `spec.network` and the CIDR plan (see [docs/architecture-design.md](docs/architecture-design.md) §6). Container CIDRs must be unique *per VPC*.
 - **Node pool does not scale** — confirm the control plane is `Ready` (node pools are only created after the cluster is `Available`) and that the IAM user has `cce:nodepool:scale`.
-- **`clusterctl get kubeconfig` returns an unreachable server** — for private clusters the kubeconfig server is an internal endpoint; make sure the management cluster can reach it.
+- **`clusterctl get kubeconfig` returns an unreachable server** — for private clusters (`endpointAccess.public: false`) the kubeconfig server is an internal VPC IP; reach it from a host inside the VPC.
 - More: [docs/requirements-design.md](docs/requirements-design.md) §8 (cautions) and the [verification checklist](docs/research-sources.md) §4.
 
 ## Contributing

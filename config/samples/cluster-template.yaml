@@ -1,11 +1,11 @@
 # Example workload cluster manifest for cloudnative-cluster-api-provider-cce.
-# Requires a management cluster with CAPI and this provider installed, plus a
-# credentials Secret <cluster>-credentials (keys accessKey/secretKey) or the
-# CLOUD_SDK_AK/CLOUD_SDK_SK environment fallback (see deploy/variables.md).
 #
-# NOTE: values marked "VERIFY" are subject to the Huawei Cloud CCE alignment
-# questionnaire (docs/cce-verification-questionnaire.md) — confirm before
-# production use.
+# Prereqs: a management cluster with CAPI + this provider installed, plus a
+# credentials Secret named "<clusterName>-credentials" with keys accessKey /
+# secretKey (see README Step-by-Step Deployment).
+#
+# Fill in every "VERIFY-..." placeholder before applying. Values below were
+# verified against a real Huawei Cloud CCE account (cn-north-4).
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: Cluster
 metadata:
@@ -14,7 +14,7 @@ metadata:
 spec:
   clusterNetwork:
     pods:
-      cidrBlocks: ["10.244.0.0/16"]
+      cidrBlocks: ["10.244.0.0/16"] # must not overlap other clusters in the same VPC
     services:
       cidrBlocks: ["10.247.0.0/16"]
   infrastructureRef:
@@ -37,7 +37,7 @@ spec:
     vpc:
       id: VERIFY-VPC-ID # an existing VPC is required before cluster creation
     subnets:
-      - id: VERIFY-SUBNET-ID
+      - id: VERIFY-SUBNET-ID # node subnet, same VPC as above
         availabilityZone: cn-north-4a
 ---
 apiVersion: controlplane.cluster.x-k8s.io/v1beta1
@@ -47,20 +47,21 @@ metadata:
   namespace: default
 spec:
   clusterName: my-cce-cluster
-  category: Turbo # CCE | Turbo (Turbo recommended, aligned with EKS-managed)
-  version: "v1.30.0" # VERIFY: supported versions
-  flavor: cce.s2.medium # VERIFY: flavor availability per region
+  # CCE (Standard, vpc-router) or Turbo (eni). Standard is the cheapest and
+  # most widely available; Turbo requires an ENI subnet and an ENI-capable
+  # node flavor.
+  category: CCE
+  version: "v1.33" # CCE version string (no patch suffix), e.g. v1.33
+  flavor: cce.s2.medium # control-plane (cluster) flavor
   containerNetwork:
-    mode: eni # overlay_l2 | vpc-router | eni (eni implies Turbo)
+    mode: vpc-router # overlay_l2 | vpc-router | eni (eni implies Turbo)
     cidr: 10.244.0.0/16
-    eniSubnets: # VERIFY (Turbo/eni): ENI subnets covering required AZs
-      - VERIFY-ENI-SUBNET-ID
   serviceNetwork:
     cidr: 10.247.0.0/16
   endpointAccess:
-    public: true
+    public: false # true binds an EIP to the API server (billed)
   billing:
-    mode: 0 # 0=on-demand
+    mode: 0 # 0=on-demand, 1=subscription (not supported yet)
 ---
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: MachinePool
@@ -69,11 +70,16 @@ metadata:
   namespace: default
 spec:
   clusterName: my-cce-cluster
-  replicas: 3
+  replicas: 1
   template:
     spec:
       clusterName: my-cce-cluster
-      version: v1.30.0
+      version: v1.33.0 # CAPI requires a full semantic version here
+      bootstrap:
+        # Managed node pools need no bootstrap data. The reference exists only
+        # to satisfy the CAPI MachinePool bootstrap contract (required in
+        # CAPI v1.14+). Point it at a (possibly empty) Secret.
+        dataSecretName: my-cce-cluster-bootstrap
       infrastructureRef:
         apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
         kind: CCEManagedMachinePool
@@ -87,12 +93,15 @@ metadata:
 spec:
   clusterName: my-cce-cluster
   nodePoolName: pool-0
-  flavor: c7.large.2 # VERIFY: flavor availability
-  os: HuaweiCloudEulerOS2.0
+  flavor: c6.large.2 # ECS node flavor; must exist in the region
+  os: Huawei Cloud EulerOS 2.0 # exact OS string required by CCE (verified)
   rootVolume:
     size: 40
     type: GPSSD
-  sshKey: VERIFY-KEYPAIR-NAME
+  sshKey: VERIFY-KEYPAIR-NAME # SSH keypair name in the region (ECS -> Key Pairs)
   availabilityZone: cn-north-4a
-  replicas: 3
+  replicas: 1
   billingMode: 0
+  # Optional: rolling-update batch size for attribute drift (CCE 同步节点池).
+  # updateConfig:
+  #   maxUnavailable: 1
