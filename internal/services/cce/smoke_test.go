@@ -1212,6 +1212,8 @@ func TestSmokeUpgradeWorkflow(t *testing.T) {
 	region := smokeEnv("CCE_SMOKE_REGION", "cn-north-4")
 	vpcID := smokeRequired(t, "CCE_SMOKE_VPC")
 	subnetID := smokeRequired(t, "CCE_SMOKE_SUBNET")
+	keypair := smokeRequired(t, "CCE_SMOKE_KEYPAIR")
+	flavor := smokeEnv("CCE_SMOKE_FLAVOR", "c6.large.2")
 	fromVersion := smokeEnv("CCE_SMOKE_UPGRADE_FROM", "v1.34")
 
 	svc, err := NewClient(region, ak, sk)
@@ -1221,7 +1223,8 @@ func TestSmokeUpgradeWorkflow(t *testing.T) {
 
 	clusterName := fmt.Sprintf("capi-upgwf-%d", time.Now().Unix()%100000)
 	containerCIDR := fmt.Sprintf("10.%d.0.0/16", 80+(time.Now().Unix()%100))
-	clusterID, err := svc.CreateCluster(ctx, CreateClusterInput{
+	upgradeMode := smokeEnv("CCE_SMOKE_UPGRADE_MODE", "vpc-router") // vpc-router (Standard) | eni (Turbo)
+	createIn := CreateClusterInput{
 		Name:                 clusterName,
 		Category:             "CCE",
 		Flavor:               smokeEnv("CCE_SMOKE_CLUSTER_FLAVOR", "cce.s1.small"),
@@ -1232,9 +1235,17 @@ func TestSmokeUpgradeWorkflow(t *testing.T) {
 		HostNetworkSubnetID:  subnetID,
 		ServiceCIDR:          "10.247.0.0/16",
 		BillingMode:          0,
-	})
+	}
+	if upgradeMode == "eni" {
+		// CCE Turbo: eni network; ENI subnets must use neutron_subnet_id
+		// (verified: plain subnet id -> CCE_CM.0004).
+		createIn.Category = "Turbo"
+		createIn.ContainerNetworkMode = "eni"
+		createIn.ENISubnets = []string{smokeRequired(t, "CCE_SMOKE_ENI_SUBNET")}
+	}
+	clusterID, err := svc.CreateCluster(ctx, createIn)
 	if err != nil {
-		t.Fatalf("CreateCluster(%s) failed: %v", fromVersion, err)
+		t.Fatalf("CreateCluster(%s, %s) failed: %v", fromVersion, upgradeMode, err)
 	}
 	t.Logf("upgrade-workflow: cluster %s at %s", clusterID, fromVersion)
 	defer func() {
@@ -1242,6 +1253,36 @@ func TestSmokeUpgradeWorkflow(t *testing.T) {
 	}()
 	if _, err := waitForPhase(ctx, svc, clusterID, "Available", smokeClusterWait, smokePollInterval); err != nil {
 		t.Fatalf("cluster not Available: %v", err)
+	}
+
+	// Optional: a node pool. The platform's upgrade orchestration rolls nodes
+	// in batches (in-place), so an EMPTY cluster may not be offered any
+	// upgrade target — verify both shapes (Q11).
+	var poolID string
+	if smokeEnv("CCE_SMOKE_UPGRADE_WITH_POOL", "0") == "1" {
+		poolID, err = svc.CreateNodePool(ctx, CreateNodePoolInput{
+			ClusterID:        clusterID,
+			Name:             "pool-0",
+			Flavor:           flavor,
+			OS:               "Huawei Cloud EulerOS 2.0",
+			SSHKey:           keypair,
+			AvailabilityZone: smokeEnv("CCE_SMOKE_AZ", "cn-north-4a"),
+			InitialNodeCount: 1,
+			RootVolumeSize:   40,
+			RootVolumeType:   "SSD",
+			DataVolumeSize:   100,
+			DataVolumeType:   "SSD",
+			BillingMode:      0,
+		})
+		if err != nil {
+			t.Fatalf("CreateNodePool failed: %v", err)
+		}
+		t.Logf("E3: node pool %s created (1 node)", poolID)
+		defer func() { _ = svc.DeleteNodePool(ctx, clusterID, poolID) }()
+		if err := waitForNodeCount(ctx, svc, clusterID, poolID, 1, smokePoolWait, smokePollInterval); err != nil {
+			t.Fatalf("node pool not ready: %v", err)
+		}
+		t.Log("E3: node pool reached 1 node (Active)")
 	}
 
 	// ---- E3: what does the platform actually offer? ----
@@ -1252,9 +1293,30 @@ func TestSmokeUpgradeWorkflow(t *testing.T) {
 	t.Logf("E3: GetUpgradeInfo -> current=%s targets=%v", info.CurrentVersion, info.TargetVersions)
 
 	if len(info.TargetVersions) == 0 {
-		// No upgrade path offered (Q11): verify the controller-facing signal —
-		// StartUpgrade must be rejected by the platform, which is why the
-		// controller reports UpgradeNotOffered instead of calling it.
+		// No cross-version target offered (Q11). The official upgrade-path
+		// table supports v1.34 -> v1.35, so an empty list usually means the
+		// running patch is not the latest one: the platform requires the
+		// latest patch before a version upgrade. Log the full version info
+		// (suggestPatch) to confirm.
+		raw, rerr := svc.cce.ShowClusterUpgradeInfo(&model.ShowClusterUpgradeInfoRequest{ClusterId: clusterID})
+		if rerr == nil && raw.Spec != nil && raw.Spec.VersionInfo != nil {
+			vi := raw.Spec.VersionInfo
+			suggest, release, patch := "", "", ""
+			if vi.SuggestPatch != nil {
+				suggest = *vi.SuggestPatch
+			}
+			if vi.Release != nil {
+				release = *vi.Release
+			}
+			if vi.Patch != nil {
+				patch = *vi.Patch
+			}
+			t.Logf("E3: ShowClusterUpgradeInfo -> release=%s patch=%s suggestPatch=%s targets=%v",
+				release, patch, suggest, info.TargetVersions)
+		}
+		// Verify the controller-facing signal: StartUpgrade must be rejected
+		// by the platform, which is why the controller reports
+		// UpgradeNotOffered instead of calling it.
 		t.Log("E3: no upgrade targets offered — attempting StartUpgrade to record the platform rejection…")
 		_, err := svc.StartUpgrade(ctx, clusterID, fromVersion)
 		if err != nil {

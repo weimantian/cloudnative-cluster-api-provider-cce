@@ -103,15 +103,18 @@
 - 官方约束:单区域每账号集群总数 **50**;默认最多 **1000 Pod**;不支持 HostPath/HostNetwork/NodePort/DaemonSet/ARM 镜像。
 - **官方无 CAPI/声明式对接说明** → CAPI 对接方式需自行设计(远期 P2,Cluster + 无 MachinePool)。
 
-## Q11 集群升级 — [官方文档/SDK] 大部分确认
+## Q11 集群升级 — [官方文档/SDK] 大部分确认(附官方升级路径确认)
 
 - 升级编排(官方 API/SDK):`CreateUpgradeWorkFlow`(WorkFlowSpec.`TargetVersion` 必填)→ `CreatePreCheck` → **备份(自动:etcd 备份 1-5min;可选 CBR 整机备份 20min-2h / EVS 快照 1-5min)** → `UpgradeCluster`(targetVersion 只能填更高版本;**策略仅 `inPlaceRollingUpdate` 原地升级**;`userDefinedStep` 每批最大节点数 1-60,默认 20)→ `CreatePostCheck`;任务支持 Pause/Retry/Continue;错误码 CCE.01400074(升级关键步骤失败)、CCE.01400075(升级前检查过期)。
 - 升级期间:集群状态 `Upgrading`;**控制面升级前系统自动保存并关闭节点池弹性伸缩,控制面升级完成后恢复(节点缩容能力要整个升级结束后恢复)**;API Server 访问短暂中断,已运行工作负载不中断;升级中不建议对集群做任何操作。
 - 节点处理:CCE 对节点**分批原地升级**(默认每批 20、最高 120,升级时节点不可调度,组件被更新而非整机替换);**节点操作系统不升级**(系统 EOS 才需替换)。
 - 失败处理:可 Retry/Continue;可按备份回滚(升级成功后做过其他操作则无法回滚)。
-- 升级路径(官方表格):v1.23→v1.25/v1.27/v1.28、v1.25→v1.27/v1.28、v1.28→v1.29/v1.31、v1.31→v1.32/v1.34、v1.33→v1.34 等;**v1.13 及以下不支持**;已停止维护版本需**连续多次升级**(如 v1.15→v1.19→v1.23→v1.27/v1.28);**补丁版本可一次直升最新补丁**。
-- **platformVersion 是输出非输入**(官方:不支持用户指定,创建时自动选最新平台版本)→ **无"仅升级 platform 不动 K8s 版本"的独立参数**,需实测确认。
-- **未确认(需实测)**:升级总体耗时量级;批次递增"2 的幂/4 的幂"两种表述差异。
+- **升级路径表(官方用户指南 cce_10_0197,用户 2026-08-19 提供确认)**:**v1.34 → v1.35 是官方支持的升级路径**(CCE Turbo 集群 v1.19+ 商用,v1.34 满足原地升级条件;v1.13 及以下不支持);其余路径:v1.23→v1.25/v1.27/v1.28、v1.25→v1.27/v1.28、v1.28→v1.29/v1.31、v1.31→v1.32/v1.34、v1.33→v1.34 等;已停止维护版本需**连续多次升级**;**补丁版本可一次直升最新补丁**。
+- **升级前提条件(官方 cce_10_0197)**:① **补丁版本需升级至最新补丁后方可进行版本升级**,控制台根据当前版本自动生成最佳升级路径;② 升级前检查(集群/插件/节点状态、工作负载兼容性);③ 建议备份(EVS 快照 / CBR 整机备份控制节点);④ **SnatIPRanges 检查(仅 Turbo)**:升级前检查该配置是否变化,如有变化升级后需重启 Pod 触发路由表更新。
+- **v1.35 主要变更(官方)**:cgroup v1 标记弃用(v1.35 支持 cgroupv2 并兼容 v1);kube-proxy ipvs 模式弃用,默认 nftables 转发;containerd 1.x 为最后支持版本,v1.35 起默认 containerd 2.x;**StorageVersionMigration v1alpha1 API 移除,升级前必须删除所有 v1alpha1 资源**。
+- **platformVersion 是输出非输入**(官方:不支持用户指定,创建时自动选最新平台版本)→ 无"仅升级 platform 不动 K8s 版本"的独立参数。
+- **⚠️ 实测(2026-08-19,三次,三种形态)**:Standard 空集群、Turbo(eni)空集群、Standard+节点池(1 节点 Active)的 `ShowClusterUpgradeInfo` **均返回 `suggestPatch=` 空 + `targets=[]`**——尽管官方路径表支持 v1.34→v1.35,**当前平台实例/区域未开放升级目标**(可能:补丁非最新但 suggestPatch 也未给出、或平台按版本生命周期/区域分批开放升级)。→ **官方路径表 = 产品支持的升级路径(设计约束);API 实测 = 当前可执行的升级目标(动态开放状态),两者不矛盾**。
+- **未确认(需华为云/待平台开放后实测)**:升级总体耗时量级(当前无可用目标,客观不可测;`TestSmokeUpgradeWorkflow` 已支持带节点池模式,平台开放后即可实测);批次递增"2 的幂/4 的幂"两种表述差异;StorageVersionMigration v1alpha1 清理对 CAPI 集群的影响(升级前需确保无 v1alpha1 资源)。
 
 ## Q12 计费与休眠/唤醒 — [官方文档] 大部分确认
 
@@ -152,7 +155,7 @@
 | 项 | 结论 |
 |---|---|
 | **Q2 授权项差异(闭环)** | ✅ 两处来源差异已解决:CCE 权限策略表将 clustercert 接口授权项列为 `cce:cluster:get`,API 参考页(接口约束)列为 **`cce:cluster:generateClientCredential`(依赖 `cce:cluster:get`)**——两者**不矛盾而是依赖关系**,Provider 最小 IAM 策略须同时包含 `cce:cluster:get` + `cce:cluster:generateClientCredential`(依赖项须显式授予) |
-| **Q11 升级目标(二次复证)** | ✅ 2026-08-19 再次实测:v1.34.8 集群 `ShowClusterUpgradeInfo` 仍返回 **targets=[]**(与第四轮一致)——平台当前**确实不提供跨版本升级目标**,非测试环境问题;**升级耗时在无可用目标时客观无法实测,需咨询华为云(升级策略/何时开放/单次耗时量级)**;controller 已按"空目标=正常状态(UpgradeNotOffered)"处理 |
+| **Q11 升级目标(三次实测+官方路径确认)** | ✅ **官方路径表(cce_10_0197)确认 v1.34→v1.35 为支持路径**(原地升级;前提:补丁最新/升级前检查/备份/SnatIPRanges);但 **2026-08-19 三种形态实测(Standard 空集群、Turbo 空集群、Standard+节点池)均返回 suggestPatch= 空 + targets=[]**——官方路径=产品支持约束,API 实测=当前动态开放状态,两者不矛盾;**升级耗时待平台开放目标后实测(测试已就绪:TestSmokeUpgradeWorkflow 带节点池模式)** |
 | **Q14 Retry-After(抓包确认)** | ✅✅ **429 响应携带 `Retry-After` 头(~57s,浮点秒,如 `56.818`)**:注入自定义 RoundTripper 抓包,2000 次并发 ListClusters(130 req/s)→ 1700×429 + 301×200,429 中仅 **8 个**带 Retry-After——该头**并非稳定出现**,重试实现不能只依赖 Retry-After,固定退避(实测窗口 ~1 分钟)更可靠;工具:`hack/check-retry-after` |
 
 ## 第二轮真实 CCE 冒烟确认记录(TestSmokeExtras / TestSmokeUpgrade)
@@ -217,7 +220,7 @@
 | Q8 | 删除 | ✅ 异步 1~3 分钟;delete_evs 默认残留、delete_eni/net 默认删;ondemand_node_policy 默认删按需节点保留纳管节点;休眠中不可删 | 存在节点池时直接删集群;删除不存在集群的错误码 |
 | Q9 | 单节点 | ✅ AddNode=重装 ECS(清数据)+严格前置(≥2C4G/单网卡/数据盘);CCE 自动安装;DefaultPool 无弹性 | CAPI Machine 路径取舍 |
 | Q10 | Autopilot | ✅ Serverless 无节点 API;50 集群/区域;按 CPU/内存计费 | CAPI 对接方式(远期) |
-| Q11 | 升级 | ✅ 仅原地升级(inPlaceRollingUpdate);TargetVersion 必填;升级中暂停节点池伸缩;补丁可直升;**两次实测(8/19 复证):ShowClusterUpgradeInfo 返回 offered 目标=空,平台当前无跨版本路径,controller 按正常状态处理** | 升级耗时量级(无可用目标,客观不可测,需咨询华为云);仅升 platformVersion 行为 |
+| Q11 | 升级 | ✅ 仅原地升级;**官方路径表确认 v1.34→v1.35 支持(cce_10_0197,前提:补丁最新/检查/备份/SnatIPRanges)**;三次实测(Standard/Turbo/带节点池)当前均 targets=[]——路径=产品支持,目标=动态开放 | 升级耗时量级(待平台开放目标后实测,测试已就绪);StorageVersionMigration v1alpha1 对 CAPI 影响 |
 | Q12 | 计费/休眠 | ✅ billingMode 默认按需;休眠停控制节点费用、节点/EIP 照常;唤醒 3~5 分钟 | 包周期是否禁休眠;唤醒失败错误码 |
 | Q13 | 网络路径 | ✅ 公网 https://EIP:5443;**实测:EIP 绑定后公网可达(reachable=true)**;私网 VPC 内 IP/VIP;跨 VPC=对等/专线/VPN | 跨 Region 方案 |
 | Q14 | 限流/错误码 | ✅ 错误码表公开(404=01404001、429=01429002/003、配额 01400007 系);**实测:读 ~70 req/s、写 10 次/分钟触发限流;429 携带 Retry-After(~57s)但非稳定出现(8/1700)→ 固定退避更可靠** | 无(全部实测关闭) |

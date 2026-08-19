@@ -297,11 +297,15 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, true
 	}
 	if len(info.TargetVersions) == 0 {
-		// Platform currently offers no upgrade path — normal state, not an
-		// error (questionnaire Q11, verified live).
+		// Platform currently offers no upgrade target — normal state, not an
+		// error (questionnaire Q11, verified live across cluster shapes).
+		// Official prerequisite (cce_10_0197): the running patch must be the
+		// latest before a version upgrade; the platform rolls out upgrade
+		// targets over time, so this is transient.
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.UpgradeNotOfferedReason,
-			"no upgrade targets offered from "+info.CurrentVersion+"; check Huawei Cloud upgrade policy")
+			"no upgrade targets offered from "+info.CurrentVersion+
+				"; ensure the patch is up to date and check Huawei Cloud upgrade policy")
 		return r.persistUpgradeStatus(ctx, cp)
 	}
 	if !slices.Contains(info.TargetVersions, cp.Spec.Version) {
