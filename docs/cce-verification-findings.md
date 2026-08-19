@@ -21,7 +21,7 @@
 - **吊销(官方 cce_02_0249 + cce_10_0744)**:`clustercertrevoke`(userId/agencyId 二选一);"吊销后此证书申请人之前下载的证书和 kubectl 配置文件**无法再用于连接集群**…可重新下载";旧凭证"无法恢复"。前提:v1.19.16-r50 等及以上版本。
 - 证书有效性(官方 cce_10_0107):"申请 kubeconfig 凭证后,即使该用户已被删除,其申请的 kubeconfig 凭证仍然有效。需要手动吊销" → 凭证默认持续有效至到期/被吊销。
 - **注意**:控制面内部证书(默认 5 年,公告 cce_bulletin_0136)与 kubeconfig 客户端证书是**不同对象**。
-- 权限:接口约束授权项 = **`cce:cluster:generateClientCredential`(依赖 `cce:cluster:get`)** → 最小集合需同时含 `cce:cluster:get` 与 `cce:cluster:generateClientCredential`(解决了权限表与 API 页两处来源的差异:表列 cce:cluster:get,API 页列 generateClientCredential 并注明依赖前者)。
+- 权限:接口约束授权项 = **`cce:cluster:generateClientCredential`**(官方 IAMActions 表中别名/兼容旧名为 `cce:cluster:get`);最小策略建议同时授予两者以兼容新旧命名(官方未将 get 列为硬依赖,保守配置更稳)。
 - **未确认(需实测)**:duration/expire_at 都不传的行为;证书到期瞬间的失败表现;重新签发是否即时生效(如需立即失效应先 revoke)。
 
 ## Q3 节点池扩缩容语义 — [官方文档] 已确认(绝对值语义),仍建议实测定稿

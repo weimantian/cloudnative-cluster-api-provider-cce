@@ -87,7 +87,7 @@ https://chat.deepseek.com/share/nndkkwyu1gg8seypbj (内容:从 Terraform 入门 
 
 **IAM 权限模型(官方文档 usermanual-cce/cce_10_0187.html"CCE权限概述",已抓取 /tmp/doc_perms2.md,原文权限表):**
 - 集群:`cce:cluster:list/get/create/update/delete/upgrade/start/stop/resize`(对应 POST /clusters、/operation/upgrade、/operation/awake、/operation/hibernate、/operation/resize 等)。
-- **获取集群证书(下载 kubeconfig):POST /clusters/{id}/clustercert,授权项 `cce:cluster:get`**;吊销证书 `cce:cluster:revokeClientCredential`。
+- **获取集群证书(下载 kubeconfig):POST /clusters/{id}/clustercert,授权项 `cce:cluster:generateClientCredential`(别名/兼容旧名 `cce:cluster:get`,官方 IAMActions 表)**,吊销证书 `cce:cluster:revokeClientCredential`。
 - 节点:`cce:node:list/get/create/update/delete/remove/migrate`。
 - 节点池:`cce:nodepool:list/get/create/update/delete/scale`(**伸缩节点池 POST /nodepools/{id}/operation/scale**)。
 - Job:`cce:job:get/list/delete`。
