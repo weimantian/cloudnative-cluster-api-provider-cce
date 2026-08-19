@@ -12,7 +12,7 @@
 |---|---|---|---|---|---|---|
 | A1 | `controllers/ccecluster_controller.go:89-90` TODO(P0) 网络校验服务 | **Q4**(eni VPC/子网硬性要求)、Q5 | eni 对 VPC/子网要求:ENI 子网、网段不重叠、AZ 覆盖;校验失败的错误码 | 实现 `internal/services/network` 校验服务:子网存在性、CIDR 与容器网段不重叠、eni 子网覆盖;接入 CCECluster reconcile(失败→`NetworkReady=False`+信息) | 单测(校验矩阵)+ 真实 CCE 冒烟(不满足条件→拒绝并给出明确错误) | ✅已实现(网络校验服务接入) |
 | A2 | `internal/services/cce/cce.go:128-129` TODO(P0) hostNetwork/authentication 映射 | Q4、Q5 | hostNetwork 子网、认证方式(认证模式/证书)的 API 参数 | `CreateClusterInput` 增加 `hostNetwork.subnetId`、`authentication` 字段并映射 SDK 模型 | 单测(映射)+ 冒烟(创建的集群参数与确认一致) | ✅已确认(Q4/Q5) |
-| A3 | `internal/services/cce/cce.go:149-150` + `controllers/ccemanagedcontrolplane_controller.go:223-224` TODO(P0) 删除语义 | **Q8** | ✅ 已确认(官方 cce_02_0241):DeleteCluster 带删除选项 `delete_evs`(默认 false→残留!)/`delete_eni`(默认 block)/`delete_net`(默认 block)/`delete_efs`/`delete_obs`/`delete_sfs`;删除为异步;实测:删除时长、Unavailable 可删性、节点池先行 | 实现删除编排:先删节点池→删集群(显式传 `delete_evs=true/block` 等选项防残留)→轮询消失;按确认处理 Unavailable | e2e(删除后核对无 EVS/ELB 残留)+ 单元(状态机) | ✅已实现(删除选项传参 delete_evs/eni/net=true),待实测 |
+| A3 | `internal/services/cce/cce.go:149-150` + `controllers/ccemanagedcontrolplane_controller.go:223-224` TODO(P0) 删除语义 | **Q8** | ✅ 已确认+实测(官方 cce_02_0241 + 冒烟):DeleteCluster 带删除选项 `delete_evs`(默认 false→残留!)/`delete_eni`(默认 block)/`delete_net`(默认 block);删除为异步;实测删除成功且复核无残留 | ✅ 已实现(删除选项传参 delete_evs/eni/net=true;controller 删除编排)+ 冒烟通过 | e2e(删除后核对无 EVS/ELB 残留)+ 单元(状态机) | ✅已实现+冒烟通过 |
 | A4 | `controllers/ccemanagedcontrolplane_controller.go` 主流程(等 infra → 建集群 → 等 Available) | **Q1/Q12** | ✅ **实测确认**:空集群(Turbo/eni 与 Standard/vpc-router 均成功)创建并到 Available;Q12:包周期创建响应不返回集群 ID → 按名称查询 | 主流程实测可行;实现注意:包周期后按名称查询集群 ID | 冒烟已通过 | ✅已确认+冒烟通过 |
 
 ### B 组:节点池与扩缩容(阻塞主链路)
@@ -31,7 +31,7 @@
 |---|---|---|---|---|---|---|
 | C1 | `controllers/ccemanagedcontrolplane_controller.go:35-36` kubeconfig 有效期(365 天) | **Q2** | 有效期上限(1~1827,`-1`=5 年?默认值);过期失效语义;external/internal 切换 | 有效期参数化(可配);实现到期前自动刷新(FR-3.3,reconcile 检查 Secret 有效期) | 单测(轮换)+ 冒烟(降级/恢复) | ✅已实现(kubeconfig 轮换,30 天阈值) |
 | C2 | `controllers/ccemanagedcontrolplane_controller.go` kubeconfig server 地址 | Q2/Q13 | internal 地址形态;跨 VPC/Region 网络路径 | 按确认选择 endpoint 回填策略(public/private)与 kubeconfig current-context;补充网络路径文档 | 冒烟(管理集群可达性) | ✅已确认(Q2/Q13);**实测:UpdateClusterEip 绑定 EIP 后 https://EIP:5443 公网可达(reachable=true)** |
-| C3 | `internal/services/cce/cce.go` CreateNodePool 安全组绑定 | Q5 | 节点池安全组上限(≤5)行为、Standard 是否支持、修改生效方式 | 按确认完善 securityGroups 映射与校验;集群级安全组策略(如需) | webhook 单测 + 冒烟 | ✅已确认(Q5),Standard 支持待实测 |
+| C3 | `internal/services/cce/cce.go` CreateNodePool 安全组绑定 | Q5 | ✅ 已确认+实测(官方 cce_02_0354 + 冒烟):节点池安全组上限 ≤5;**Standard(vpc-router)集群实测接受 customSecurityGroups**;修改只对新建节点生效 | ✅ 已实现(securityGroups 映射;controller 属性同步路径见 B1b) | webhook 单测 + 冒烟 | ✅已确认+已实现+冒烟通过 |
 
 ### D 组:错误处理与运维
 
