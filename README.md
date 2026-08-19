@@ -87,45 +87,105 @@ Design details: see [docs/architecture-design.md](docs/architecture-design.md) (
 
 ## Prerequisites
 
-- A Huawei Cloud account with an IAM user/agency having at least the CCE permissions required by the provider (see [docs/requirements-design.md](docs/requirements-design.md) §8.1 and the [verification checklist](docs/research-sources.md) — **minimum permissions are still to be confirmed with Huawei Cloud**).
+- A Huawei Cloud account with an IAM user having the CCE permissions the provider needs (action list in [docs/smoke-test-checklist.md](docs/smoke-test-checklist.md) §2; Q6 in [docs/cce-verification-questionnaire.md](docs/cce-verification-questionnaire.md)).
 - An existing VPC and subnet(s) for the cluster (CCE requires a VPC before cluster creation).
-- A Kubernetes management cluster (`kind` or a dedicated cluster) with `clusterctl` v1.x installed.
-- `kubectl` configured for the management cluster.
+- A Kubernetes management cluster (`kind` or a dedicated cluster) with `clusterctl` v1.14+ and `kubectl` configured.
+- Webhook TLS certificates: either [cert-manager](https://cert-manager.io) on the management cluster (recommended for production), or a pre-created `webhook-service-cert` TLS Secret (see step 3 below).
 
 ## Quick Start
 
-> The provider is under development; the following flow becomes executable once a release is published. Credentials are provided **only** through environment variables — never hardcode them.
+> The full flow below was verified end-to-end with `clusterctl v1.14.0` on `kind` against a real CCE account (see [docs/clusterctl-deployment-validation.md](docs/clusterctl-deployment-validation.md)). Credentials are provided **only** via a Secret / environment variables — never hardcode them.
 
 ```bash
-# 1. Install the provider on the management cluster
-export CCE_ACCESS_KEY=... CCE_SECRET_KEY=...
-clusterctl init --infrastructure cce
+# 1. Point clusterctl at the provider (local source before a release is
+#    published; see Step-by-Step Deployment for the layout)
+mkdir -p ~/.cluster-api
+cat > ~/.cluster-api/clusterctl.yaml <<'EOF'
+providers:
+  - name: "cce"
+    url: "file:///tmp/cce/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
+    type: "InfrastructureProvider"
+EOF
 
-# 2. Apply a workload cluster manifest (see config/samples/ after implementation)
+# 2. Install the provider on the management cluster (installs cert-manager,
+#    CAPI core, bootstrap/control-plane, and infrastructure-cce)
+clusterctl init --infrastructure cce --wait-providers
+
+# 3. Provide the per-cluster credentials Secret
+kubectl create secret generic my-cce-cluster-credentials \
+  --namespace default \
+  --from-literal=accessKey="$CCE_ACCESS_KEY" \
+  --from-literal=secretKey="$CCE_SECRET_KEY"
+
+# 4. Apply the workload cluster and watch it provision (real CCE cluster)
 kubectl apply -f cluster-template.yaml
+kubectl get ccemanagedcontrolplane --watch
 ```
 
 ## Step-by-Step Deployment
 
-1. Prepare credentials Secret for the target project (per-cluster recommended):
+1. **Build the provider components** (once per version; a published release already ships `infrastructure-components.yaml`):
 
    ```bash
-   kubectl create secret generic my-cluster-credentials \
+   make docker-build docker-push   # IMG=registry/org/cce-provider-controller:vX.Y.Z
+   kubectl kustomize config/default > infrastructure-components.yaml
+   # 6 webhooks need clientConfig.caBundle = base64(CA cert); with cert-manager
+   # this is injected automatically, otherwise fill it in (see validation doc).
+   ```
+
+2. **Configure clusterctl** to find the provider. Local layout before publishing:
+
+   ```bash
+   mkdir -p /tmp/cce/infrastructure-cce/v0.1.0
+   cp infrastructure-components.yaml metadata.yaml /tmp/cce/infrastructure-cce/v0.1.0/
+   # ~/.cluster-api/clusterctl.yaml as in Quick Start
+   ```
+
+   > Image names in the components must be canonical three-part names
+   > (`registry/org/repo:tag`), otherwise clusterctl's image override fails.
+
+3. **Webhook TLS certificates.** Without cert-manager, pre-create the Secret the manager mounts at `/tmp/k8s-webhook-server/serving-certs`:
+
+   ```bash
+   # CN must match the webhook service: webhook-service.cce-provider-system.svc
+   # (SAN: webhook-service, webhook-service.cce-provider-system.svc(.cluster.local))
+   kubectl -n cce-provider-system create secret tls webhook-service-cert \
+     --cert=server.crt --key=server.key
+   ```
+
+   > RBAC note: the leader-election RoleBinding subject namespace must be the
+   > real namespace (`cce-provider-system`); kustomize does not rewrite
+   > RoleBinding subjects.
+
+4. **Install:**
+
+   ```bash
+   clusterctl init --infrastructure cce --wait-providers
+   clusterctl get providers          # all four providers Available
+   ```
+
+5. **Create the workload cluster** (Cluster + CCECluster + CCEManagedControlPlane + MachinePool + CCEManagedMachinePool — sample in `config/samples/cluster-template.yaml`, fill in your VPC/subnet IDs):
+
+   ```bash
+   kubectl create secret generic my-cce-cluster-credentials \
      --namespace default \
      --from-literal=accessKey="$CCE_ACCESS_KEY" \
      --from-literal=secretKey="$CCE_SECRET_KEY"
+   kubectl apply -f workload-cluster.yaml
+   kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -o yaml
    ```
 
-2. Create the workload cluster definition (Cluster + CceCluster + CceManagedControlPlane + MachinePool + CceManagedMachinePool). A sample is planned under `config/samples/`.
+   Expected conditions: `CCEClusterReady=True(ClusterAvailable)`,
+   `CredentialsReady=True`, `KubeconfigReady=True`, `UpgradeReady=True`.
 
-3. Apply and watch:
+6. **Verify and clean up:**
 
    ```bash
-   kubectl apply -f workload-cluster.yaml
-   kubectl get cluster --watch
-   ```
+   clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
+   kubectl --kubeconfig my-cce-cluster.kubeconfig get nodes   # == replicas, Ready
 
-4. When `Phase` becomes `Provisioned`, fetch the kubeconfig (see [Usage / Verification](#usage--verification)).
+   kubectl delete cluster my-cce-cluster   # async: CCE cluster -> kubeconfig Secret -> finalizers
+   ```
 
 ## Usage / Verification
 
@@ -184,6 +244,8 @@ clusterctl delete --infrastructure cce
 - [Architecture design (Chinese)](docs/architecture-design.md)
 - [Requirements design (Chinese)](docs/requirements-design.md)
 - [Research sources & verification checklist (Chinese)](docs/research-sources.md)
+- [Huawei Cloud CCE alignment questionnaire](docs/cce-verification-questionnaire.md) · [verification findings](docs/cce-verification-findings.md)
+- [clusterctl deployment validation (kind + real CCE)](docs/clusterctl-deployment-validation.md)
 - [CAPA code analysis](docs/CAPA架构分析报告.md) · [Alibaba ACK provider code analysis](docs/ACKProvider架构分析报告.md) · [CAPHW code analysis](docs/CAPHW架构分析报告.md)
 
 ## Dependencies & Acknowledgements

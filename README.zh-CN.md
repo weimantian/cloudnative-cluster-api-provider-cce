@@ -79,45 +79,100 @@ flowchart LR
 
 ## 前置条件
 
-- 华为云账号,且 IAM 用户/委托具备 Provider 所需的 CCE 权限(见 [docs/requirements-design.md](docs/requirements-design.md) §8.1 与[验证清单](docs/research-sources.md)——**最小权限集合仍需与华为云确认**)。
+- 华为云账号,且 IAM 用户具备 Provider 所需的 CCE 权限(action 清单见 [docs/smoke-test-checklist.md](docs/smoke-test-checklist.md) §2;对应问卷 [docs/cce-verification-questionnaire.md](docs/cce-verification-questionnaire.md) Q6)。
 - 已有 VPC 和子网(CCE 创建集群前必须存在 VPC)。
-- 一个 Kubernetes 管理集群(`kind` 或专用集群),已安装 `clusterctl` v1.x。
-- 已为管理集群配置 `kubectl`。
+- 一个 Kubernetes 管理集群(`kind` 或专用集群),已安装 `clusterctl` v1.14+ 并配置好 `kubectl`。
+- Webhook TLS 证书:管理集群上安装 [cert-manager](https://cert-manager.io)(生产推荐),或预创建 `webhook-service-cert` TLS Secret(见下方步骤 3)。
 
 ## 快速开始
 
-> Provider 正在开发中;以下流程在发布版本后即可执行。凭证**只能**通过环境变量提供——切勿硬编码。
+> 以下完整流程已用 `clusterctl v1.14.0` + `kind` + 真实华为云 CCE 账号端到端验证通过(详见 [docs/clusterctl-deployment-validation.md](docs/clusterctl-deployment-validation.md))。凭证**只能**通过 Secret / 环境变量提供——切勿硬编码。
 
 ```bash
-# 1. 在管理集群上安装 Provider
-export CCE_ACCESS_KEY=... CCE_SECRET_KEY=...
-clusterctl init --infrastructure cce
+# 1. 让 clusterctl 找到 Provider(发布前使用本地源;目录布局见"分步部署")
+mkdir -p ~/.cluster-api
+cat > ~/.cluster-api/clusterctl.yaml <<'EOF'
+providers:
+  - name: "cce"
+    url: "file:///tmp/cce/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
+    type: "InfrastructureProvider"
+EOF
 
-# 2. 应用工作集群清单(实现完成后参见 config/samples/)
+# 2. 在管理集群上安装 Provider(会同时安装 cert-manager、CAPI 核心、
+#    bootstrap/control-plane 与 infrastructure-cce)
+clusterctl init --infrastructure cce --wait-providers
+
+# 3. 提供每集群凭证 Secret
+kubectl create secret generic my-cce-cluster-credentials \
+  --namespace default \
+  --from-literal=accessKey="$CCE_ACCESS_KEY" \
+  --from-literal=secretKey="$CCE_SECRET_KEY"
+
+# 4. 应用工作集群并观察(真实创建 CCE 集群)
 kubectl apply -f cluster-template.yaml
+kubectl get ccemanagedcontrolplane --watch
 ```
 
 ## 分步部署
 
-1. 为目标项目准备凭证 Secret(推荐每集群一个):
+1. **构建 Provider 组件**(每个版本一次;正式发布会直接附带 `infrastructure-components.yaml`):
 
    ```bash
-   kubectl create secret generic my-cluster-credentials \
+   make docker-build docker-push   # IMG=registry/org/cce-provider-controller:vX.Y.Z
+   kubectl kustomize config/default > infrastructure-components.yaml
+   # 6 个 webhook 需要 clientConfig.caBundle = base64(CA 证书);cert-manager 会自动注入,
+   # 否则需手动填充(见演练文档)。
+   ```
+
+2. **配置 clusterctl** 定位 Provider。发布前的本地目录布局:
+
+   ```bash
+   mkdir -p /tmp/cce/infrastructure-cce/v0.1.0
+   cp infrastructure-components.yaml metadata.yaml /tmp/cce/infrastructure-cce/v0.1.0/
+   # ~/.cluster-api/clusterctl.yaml 同"快速开始"
+   ```
+
+   > 组件中的镜像名必须是三段式规范名(`registry/org/repo:tag`),否则 clusterctl 的镜像 override 会解析失败。
+
+3. **Webhook TLS 证书**。不使用 cert-manager 时,预创建 manager 挂载到 `/tmp/k8s-webhook-server/serving-certs` 的 Secret:
+
+   ```bash
+   # CN 必须匹配 webhook 服务:webhook-service.cce-provider-system.svc
+   # (SAN: webhook-service、webhook-service.cce-provider-system.svc(.cluster.local))
+   kubectl -n cce-provider-system create secret tls webhook-service-cert \
+     --cert=server.crt --key=server.key
+   ```
+
+   > RBAC 注意:leader-election RoleBinding 的 subject.namespace 必须是真实命名空间(`cce-provider-system`);kustomize 不会改写 RoleBinding 的 subjects。
+
+4. **安装:**
+
+   ```bash
+   clusterctl init --infrastructure cce --wait-providers
+   clusterctl get providers          # 四个 Provider 均 Available
+   ```
+
+5. **创建工作集群**(Cluster + CCECluster + CCEManagedControlPlane + MachinePool + CCEManagedMachinePool;样例见 `config/samples/cluster-template.yaml`,填入你的 VPC/子网 ID):
+
+   ```bash
+   kubectl create secret generic my-cce-cluster-credentials \
      --namespace default \
      --from-literal=accessKey="$CCE_ACCESS_KEY" \
      --from-literal=secretKey="$CCE_SECRET_KEY"
+   kubectl apply -f workload-cluster.yaml
+   kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -o yaml
    ```
 
-2. 创建工作集群定义(Cluster + CceCluster + CceManagedControlPlane + MachinePool + CceManagedMachinePool)。样例计划放在 `config/samples/`。
+   预期条件:`CCEClusterReady=True(ClusterAvailable)`、`CredentialsReady=True`、`KubeconfigReady=True`、`UpgradeReady=True`。
 
-3. 应用并观察:
+6. **验证与清理:**
 
    ```bash
-   kubectl apply -f workload-cluster.yaml
-   kubectl get cluster --watch
-   ```
+   clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
+   kubectl --kubeconfig my-cce-cluster.kubeconfig get nodes   # == replicas,全部 Ready
 
-4. 当 `Phase` 变为 `Provisioned` 后,获取 kubeconfig(见[使用方法 / 验证](#使用方法--验证))。
+   kubectl delete cluster my-cce-cluster   # 异步:CCE 集群 → kubeconfig Secret → finalizer
+   ```
 
 ## 使用方法 / 验证
 
@@ -169,6 +224,8 @@ clusterctl delete --infrastructure cce
 - [架构设计文档](docs/architecture-design.md)
 - [需求设计文档](docs/requirements-design.md)
 - [调研依据与事实清单(含验证清单)](docs/research-sources.md)
+- [华为云 CCE 对齐问卷](docs/cce-verification-questionnaire.md) · [验证结论记录](docs/cce-verification-findings.md)
+- [clusterctl 部署演练记录(kind + 真实 CCE)](docs/clusterctl-deployment-validation.md)
 - [CAPA 源码分析报告](docs/CAPA架构分析报告.md) · [阿里云 ACK Provider 源码分析报告](docs/ACKProvider架构分析报告.md) · [CAPHW 源码分析报告](docs/CAPHW架构分析报告.md)
 
 ## 依赖与致谢
