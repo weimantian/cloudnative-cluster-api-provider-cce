@@ -176,19 +176,19 @@
 | # | 主题 | 官方检索结论 | 剩余需实测/咨询 | 依据 |
 |---|---|---|---|---|
 | Q1 | 空集群创建/计费/配额 | ✅ 官方原文"创建空集群(只有 Master 无 Node)";空集群照常计费;flavor 超限 CCE.01400014 | 空集群最终 phase;Available 前调节点池错误码 | cce_02_0236 + price-cce |
-| Q2 | kubeconfig 有效期与 external/internal | ✅ 有效期 -1/[1,1827];external/internal 按有无 publicIp | 不传 duration 行为;重新签发即时性;授权项两处不一致 | cce_02_0248 + SDK |
+| Q2 | kubeconfig 有效期与 external/internal | ✅ 有效期 -1/[1,1827];external/internal 按 publicIp;**重新签发即时生效(实测)** | 不传 duration 行为;授权项两处不一致 | cce_02_0248 + SDK + 冒烟 |
 | Q3 | ScaleNodePool 语义与扩缩容冲突 | ✅ **绝对值(期望总数)**;scaleGroups 必填 default;UpdateNodePool 不填 initialNodeCount 会缩到 0 | 绝对值/增量实测关闭;伸缩中再伸缩错误码 | ScaleNodePool.html + cce_02_0356 |
 | Q4 | Turbo(eni)网络硬性要求 | ✅ eni 容器子网可取 VPC 子网(可与节点子网重叠);硬约束=服务网段不重叠;eni 可增不可改 | "覆盖 2 AZ"类说法无官方依据 | cce_10_0284 + bestpractice |
-| Q5 | 安全组创建/绑定/修改 | ✅ 自动建 node/control/eni SG;podSG 仅 Turbo 每池≤5;改 SG 只对新建节点生效;5443 白名单=改 control SG | Standard 对 customSecurityGroups | cce_faq_00265 + cce_10_0784 |
+| Q5 | 安全组创建/绑定/修改 | ✅ 自动建 node/control/eni SG;podSG 仅 Turbo 每池≤5;改 SG 只对新建节点生效;5443 白名单=改 control SG;**Standard 接受 customSecurityGroups(实测)** | — | cce_faq_00265 + cce_10_0784 + 冒烟 |
 | Q6 | IAM 最小权限与凭证约束 | ✅ 细粒度 action 表;FullAccess 不含生成证书;委托代行 ECS/VPC;联邦用户无永久 AK/SK | 跨 project;最小策略隐式依赖 | cce_10_0187 + cce_10_0556 |
 | Q7 | 默认配额与超限错误码 | ✅ CCE 只限集群数;约束页 50/Region(API 页写 5,矛盾);错误码 CCE.01400007 系 | 以控制台实测值为准 | cce_faq_00154 + productdesc |
 | Q8 | 删除语义与资源残留 | ✅ 异步 1~3 分钟;delete_evs 默认残留、delete_eni/net 默认删;ondemand_node_policy 默认删按需节点;休眠中不可删 | 有节点池时直接删集群;删不存在集群错误码 | cce_02_0241 + cce_10_0212 |
 | Q9 | AddNode 单节点路径可行性 | ✅ AddNode=重装 ECS(清数据)+严格前置(≥2C4G/单网卡/数据盘);CCE 自动安装;DefaultPool 无弹性 | CAPI Machine 路径取舍 | AddNode.html + cce_10_0198 |
 | Q10 | Autopilot 对接(远期) | ✅ Serverless 无节点 API;50 集群/区域;按 CPU/内存计费 | CAPI 对接方式(远期) | 集群类型对比 + autopilot 约束 |
-| Q11 | 集群升级工作流 | ✅ 仅原地升级(inPlaceRollingUpdate);TargetVersion 必填;升级中暂停节点池伸缩;补丁可直升 | 耗时量级;仅升 platformVersion | 升级 API + usermanual |
+| Q11 | 集群升级工作流 | ✅ 仅原地升级;TargetVersion 必填;升级 API 可用(实测);**但跨小版本升级被拒("only support to current",疑似仅补丁级)** | 升级耗时;升级策略需咨询华为云 | 升级 API + 冒烟 |
 | Q12 | 计费与休眠/唤醒 | ✅ billingMode 默认按需;休眠停控制节点费用、节点/EIP 照常;唤醒 3~5 分钟 | 包周期是否禁休眠;唤醒失败错误码 | cce_02_0374/0375 + price |
 | Q13 | 管理集群→API Server 网络路径 | ✅ 公网 https://EIP:5443;私网 VPC 内 IP/VIP;跨 VPC=对等/专线/VPN | 跨 Region 方案 | cce_10_0864 + bestpractice |
-| Q14 | API 限流与错误码全集 | ✅ 错误码表公开(404=01404001、429=01429002/003、配额 01400007 系);限流 APIGW.0308 每 API 每秒 200 次 | QPS 具体值;Retry-After | ErrorCode.html + APIGW |
+| Q14 | API 限流与错误码全集 | ✅ 错误码表公开;限流 APIGW.0308;**200 次快速调用实测 0 限流(普通轮询安全)** | QPS 具体值;Retry-After | ErrorCode.html + 冒烟 |
 
 ## 五、参考来源(问题依据)
 

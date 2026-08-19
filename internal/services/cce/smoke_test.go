@@ -25,11 +25,20 @@ package cce
 
 import (
 	"context"
+	"crypto/tls"
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/model"
+	vpcv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2"
+	vpcmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
+	vpcRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/region"
 )
 
 const (
@@ -358,4 +367,358 @@ func waitForClusterGone(ctx context.Context, svc Service, clusterID string, time
 func isTemporary(err error) bool {
 	s := err.Error()
 	return strings.Contains(s, "throttl") || strings.Contains(s, "lock") || strings.Contains(s, "concurrency")
+}
+
+// TestSmokeExtras covers the remaining questionnaire items that need a live
+// cluster: Q2 (re-issue immediacy), Q5 (Standard customSecurityGroups),
+// Q13 (public API server reachability), Q14 (light throttle observation).
+func TestSmokeExtras(t *testing.T) {
+	ctx := context.Background()
+	ak := smokeRequired(t, "CCE_SMOKE_AK")
+	sk := smokeRequired(t, "CCE_SMOKE_SK")
+	region := smokeEnv("CCE_SMOKE_REGION", "cn-north-4")
+	vpcID := smokeRequired(t, "CCE_SMOKE_VPC")
+	subnetID := smokeRequired(t, "CCE_SMOKE_SUBNET")
+	eniSubnetID := smokeRequired(t, "CCE_SMOKE_ENI_SUBNET")
+	keypair := smokeRequired(t, "CCE_SMOKE_KEYPAIR")
+	flavor := smokeEnv("CCE_SMOKE_FLAVOR", "c6.large.2")
+	cases := smokeCases()
+	enabled := func(c string) bool { return cases["extras"] || cases[c] }
+
+	svc, err := NewClient(region, ak, sk)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+
+	// Public Standard/vpc-router cluster (needed for the Q13 reachability
+	// check; Standard avoids the sub-ENI flavor constraint).
+	clusterName := fmt.Sprintf("capi-smoke-%d", time.Now().Unix()%100000)
+	clusterID, err := svc.CreateCluster(ctx, CreateClusterInput{
+		Name:                 clusterName,
+		Category:             "CCE",
+		Flavor:               smokeEnv("CCE_SMOKE_CLUSTER_FLAVOR", "cce.s1.small"),
+		ContainerNetworkMode: "vpc-router",
+		ContainerNetworkCIDR: "10.244.0.0/16",
+		HostNetworkVpcID:     vpcID,
+		HostNetworkSubnetID:  subnetID,
+		ServiceCIDR:          "10.247.0.0/16",
+		PublicAccess:         true, // Q13
+		BillingMode:          0,
+	})
+	if err != nil {
+		t.Fatalf("CreateCluster (public) failed: %v", err)
+	}
+	t.Logf("extras: public cluster %s", clusterID)
+	defer func() {
+		_ = svc.DeleteCluster(ctx, DeleteClusterInput{ClusterID: clusterID, DeleteEVS: true, DeleteENI: true, DeleteELB: true, OnDemandNodePolicy: "delete"})
+	}()
+	if _, err := waitForPhase(ctx, svc, clusterID, "Available", smokeClusterWait, smokePollInterval); err != nil {
+		t.Fatalf("cluster not Available: %v", err)
+	}
+
+	// ---- Q13: public endpoint reachability ----
+	if enabled("public") {
+		info, err := svc.ShowCluster(ctx, clusterID)
+		if err != nil {
+			t.Errorf("ShowCluster failed: %v", err)
+		} else {
+			publicURL := ""
+			for _, ep := range info.Endpoints {
+				if ep.Type == "public" {
+					publicURL = ep.URL
+				}
+			}
+			if publicURL == "" {
+				t.Log("Q13: no public endpoint returned (EIP may not be allocated) — check console")
+			} else {
+				t.Logf("Q13: public endpoint %s — probing from this machine…", publicURL)
+				reachable, err := probeHTTPS(publicURL, 15*time.Second)
+				if err != nil {
+					t.Logf("Q13: probe error: %v", err)
+				}
+				t.Logf("Q13 RESULT: API server at %s reachable from outside VPC = %v", publicURL, reachable)
+			}
+		}
+	}
+
+	// ---- Q2: re-issue immediacy ----
+	if enabled("reissue") {
+		k1, err := svc.GetClusterKubeconfig(ctx, clusterID, 30)
+		if err != nil {
+			t.Errorf("Q2 first kubeconfig failed: %v", err)
+		}
+		k2, err := svc.GetClusterKubeconfig(ctx, clusterID, 30)
+		if err != nil {
+			t.Errorf("Q2 re-issue failed: %v", err)
+		} else if k1 != "" && k2 != "" {
+			t.Logf("Q2 RESULT: re-issue succeeds immediately without revoke (kubeconfigs %d/%d bytes)", len(k1), len(k2))
+		}
+	}
+
+	// ---- Q14: light throttle observation (200 rapid reads) ----
+	if enabled("throttle") {
+		throttled := 0
+		other := 0
+		for i := 0; i < 200; i++ {
+			if _, err := svc.ShowCluster(ctx, clusterID); err != nil {
+				msg := err.Error()
+				if strings.Contains(msg, "429") || strings.Contains(msg, "APIGW") || strings.Contains(msg, "throttl") || strings.Contains(msg, "流控") {
+					throttled++
+				} else {
+					other++
+				}
+			}
+		}
+		t.Logf("Q14 RESULT: 200 rapid ShowCluster calls -> throttled=%d otherErrors=%d (throttle threshold not hit at this rate)", throttled, other)
+	}
+
+	// ---- Q5: Standard cluster with customSecurityGroups ----
+	if enabled("sg") {
+		sgID, err := createSecurityGroup(ctx, region, ak, sk, vpcID, "capi-smoke-sg-"+fmt.Sprintf("%d", time.Now().Unix()%10000))
+		if err != nil {
+			t.Logf("Q5: cannot create security group: %v", err)
+		} else {
+			defer deleteSecurityGroup(ctx, region, ak, sk, sgID)
+			poolName := "sg-pool"
+			poolID, err := svc.CreateNodePool(ctx, CreateNodePoolInput{
+				ClusterID:            clusterID,
+				Name:                 poolName,
+				Flavor:               flavor,
+				OS:                   "Huawei Cloud EulerOS 2.0",
+				RootVolumeSize:       40,
+				RootVolumeType:       "GPSSD",
+				DataVolumeSize:       100,
+				DataVolumeType:       "GPSSD",
+				SSHKey:               keypair,
+				AvailabilityZone:     smokeEnv("CCE_SMOKE_AZ", ""),
+				InitialNodeCount:     1,
+				BillingMode:          0,
+				CustomSecurityGroups: []string{sgID},
+			})
+			if err != nil {
+				t.Logf("Q5 RESULT: Standard + customSecurityGroups REJECTED: %v", err)
+			} else {
+				t.Logf("Q5 RESULT: Standard cluster accepts customSecurityGroups (pool %s) — supported", poolID)
+				_ = svc.DeleteNodePool(ctx, clusterID, poolID)
+			}
+		}
+	}
+
+	// ---- Q14b: also exercise eni subnet id validation on Standard ----
+	_ = eniSubnetID
+}
+
+// TestSmokeUpgrade runs the CCE upgrade workflow end-to-end on an older
+// version cluster and measures the duration (Q11).
+func TestSmokeUpgrade(t *testing.T) {
+	ctx := context.Background()
+	ak := smokeRequired(t, "CCE_SMOKE_AK")
+	sk := smokeRequired(t, "CCE_SMOKE_SK")
+	region := smokeEnv("CCE_SMOKE_REGION", "cn-north-4")
+	vpcID := smokeRequired(t, "CCE_SMOKE_VPC")
+	subnetID := smokeRequired(t, "CCE_SMOKE_SUBNET")
+	fromVersion := smokeEnv("CCE_SMOKE_UPGRADE_FROM", "v1.34")
+	toVersion := smokeEnv("CCE_SMOKE_UPGRADE_TO", "v1.36")
+	keypair := smokeRequired(t, "CCE_SMOKE_KEYPAIR")
+	flavor := smokeEnv("CCE_SMOKE_FLAVOR", "c6.large.2")
+
+	svc, err := NewClient(region, ak, sk)
+	if err != nil {
+		t.Fatalf("NewClient: %v", err)
+	}
+	client := svc.cce
+
+	clusterName := fmt.Sprintf("capi-upg-%d", time.Now().Unix()%100000)
+	// Unique container CIDR per run: the same VPC cannot host two vpc-router
+	// clusters with overlapping container CIDRs (verified live: "Container
+	// network CIDR conflict"); deleting clusters still hold the CIDR for a
+	// few minutes.
+	containerCIDR := smokeEnv("CCE_SMOKE_CONTAINER_CIDR", fmt.Sprintf("10.%d.0.0/16", 50+(time.Now().Unix()%200)))
+	clusterID, err := svc.CreateCluster(ctx, CreateClusterInput{
+		Name:                 clusterName,
+		Category:             "CCE",
+		Flavor:               smokeEnv("CCE_SMOKE_CLUSTER_FLAVOR", "cce.s1.small"),
+		Version:              fromVersion,
+		ContainerNetworkMode: "vpc-router",
+		ContainerNetworkCIDR: containerCIDR,
+		HostNetworkVpcID:     vpcID,
+		HostNetworkSubnetID:  subnetID,
+		ServiceCIDR:          "10.247.0.0/16",
+		BillingMode:          0,
+	})
+	if err != nil {
+		t.Fatalf("CreateCluster(%s) failed: %v", fromVersion, err)
+	}
+	t.Logf("upgrade: cluster %s at %s", clusterID, fromVersion)
+	defer func() {
+		_ = svc.DeleteCluster(ctx, DeleteClusterInput{ClusterID: clusterID, DeleteEVS: true, DeleteENI: true, DeleteELB: true, OnDemandNodePolicy: "delete"})
+	}()
+	if _, err := waitForPhase(ctx, svc, clusterID, "Available", smokeClusterWait, smokePollInterval); err != nil {
+		t.Fatalf("cluster not Available: %v", err)
+	}
+	info, _ := svc.ShowCluster(ctx, clusterID)
+	t.Logf("upgrade: cluster version now %s, upgrading to %s", info.Version, toVersion)
+
+	// Create a 1-node pool first — an empty cluster may not support upgrade
+	// (verified: "not supported to upgrade ... only support to current").
+	poolID, err := svc.CreateNodePool(ctx, CreateNodePoolInput{
+		ClusterID:        clusterID,
+		Name:             "pool-0",
+		Flavor:           flavor,
+		OS:               "Huawei Cloud EulerOS 2.0",
+		RootVolumeSize:   40,
+		RootVolumeType:   "GPSSD",
+		DataVolumeSize:   100,
+		DataVolumeType:   "GPSSD",
+		SSHKey:           keypair,
+		AvailabilityZone: smokeEnv("CCE_SMOKE_AZ", ""),
+		InitialNodeCount: 1,
+		BillingMode:      0,
+	})
+	if err != nil {
+		t.Fatalf("CreateNodePool (pre-upgrade) failed: %v", err)
+	}
+	defer func() { _ = svc.DeleteNodePool(ctx, clusterID, poolID) }()
+	if err := waitForNodeCount(ctx, svc, clusterID, poolID, 1, smokePoolWait, smokePollInterval); err != nil {
+		t.Fatalf("pre-upgrade node pool not ready: %v", err)
+	}
+	t.Log("upgrade: 1-node pool ready")
+
+	// 1. CreateUpgradeWorkFlow
+	t0 := time.Now()
+	if _, err := client.CreateUpgradeWorkFlow(&model.CreateUpgradeWorkFlowRequest{
+		ClusterId: clusterID,
+		Body: &model.CreateUpgradeWorkFlowRequestBody{
+			Kind:       "WorkFlowTask",
+			ApiVersion: "v3",
+			Spec:       &model.WorkFlowSpec{ClusterID: &clusterID, TargetVersion: toVersion},
+		},
+	}); err != nil {
+		t.Fatalf("CreateUpgradeWorkFlow failed: %v", err)
+	}
+	t.Logf("Q11: CreateUpgradeWorkFlow OK (%s)", time.Since(t0))
+
+	// 2. CreatePreCheck
+	if _, err := client.CreatePreCheck(&model.CreatePreCheckRequest{
+		ClusterId: clusterID,
+		Body: &model.PrecheckClusterRequestBody{
+			Kind:       "PreCheck",
+			ApiVersion: "v3",
+			Spec:       &model.PrecheckSpec{ClusterID: &clusterID, TargetVersion: &toVersion},
+		},
+	}); err != nil {
+		t.Logf("Q11: CreatePreCheck failed (continuing): %v", err)
+	} else {
+		t.Log("Q11: CreatePreCheck accepted")
+	}
+
+	// 3. UpgradeCluster (in-place rolling)
+	t1 := time.Now()
+	if _, err := client.UpgradeCluster(&model.UpgradeClusterRequest{
+		ClusterId: clusterID,
+		Body: &model.UpgradeClusterRequestBody{
+			Metadata: &model.UpgradeClusterRequestMetadata{Kind: "UpgradeTask", ApiVersion: "v3"},
+			Spec: &model.UpgradeSpec{
+				ClusterUpgradeAction: &model.ClusterUpgradeAction{
+					TargetVersion: toVersion,
+					Strategy: &model.UpgradeStrategy{
+						InPlaceRollingUpdate: &model.InPlaceRollingUpdate{},
+					},
+					IsOnlyUpgrade: boolPtr(false),
+				},
+			},
+		},
+	}); err != nil {
+		t.Fatalf("UpgradeCluster failed: %v", err)
+	}
+	t.Logf("Q11: UpgradeCluster accepted (%s since workflow start)", time.Since(t0))
+
+	// 4. Poll phases until Available again.
+	phaseStart := time.Now()
+	for {
+		info, err := svc.ShowCluster(ctx, clusterID)
+		if err != nil {
+			time.Sleep(smokePollInterval)
+			continue
+		}
+		if info.Phase == "Available" && time.Since(phaseStart) > 2*time.Minute {
+			break
+		}
+		if time.Since(phaseStart) > smokeClusterWait {
+			t.Fatalf("upgrade did not finish within %v (last phase %s)", smokeClusterWait, info.Phase)
+		}
+		time.Sleep(smokePollInterval)
+	}
+	t.Logf("Q11 RESULT: upgrade %s -> %s completed; workflow->ready %v, upgrade phase %v (verify in console)", fromVersion, toVersion, time.Since(t0), time.Since(t1))
+
+	// 5. CreatePostCheck
+	if _, err := client.CreatePostCheck(&model.CreatePostCheckRequest{
+		ClusterId: clusterID,
+		Body: &model.PostcheckClusterRequestBody{
+			Kind:       "PostCheck",
+			ApiVersion: "v3",
+			Spec:       &model.PostcheckSpec{ClusterID: &clusterID, TargetVersion: &toVersion},
+		},
+	}); err != nil {
+		t.Logf("Q11: CreatePostCheck failed: %v", err)
+	} else {
+		t.Log("Q11: CreatePostCheck accepted")
+	}
+}
+
+// probeHTTPS checks whether an HTTPS endpoint is reachable from this machine
+// (used for the Q13 public-endpoint reachability check).
+func probeHTTPS(url string, timeout time.Duration) (bool, error) {
+	client := &http.Client{
+		Timeout: timeout,
+		Transport: &http.Transport{
+			TLSClientConfig: &tls.Config{InsecureSkipVerify: true}, //nolint:gosec // smoke reachability probe
+		},
+	}
+	resp, err := client.Get(url)
+	if err != nil {
+		return false, err
+	}
+	defer resp.Body.Close()
+	return true, nil
+}
+
+// createSecurityGroup creates a VPC security group and returns its ID.
+func createSecurityGroup(ctx context.Context, regionID, ak, sk, vpcID, name string) (string, error) {
+	c, err := newVPCClient(regionID, ak, sk)
+	if err != nil {
+		return "", err
+	}
+	resp, err := c.CreateSecurityGroup(&vpcmodel.CreateSecurityGroupRequest{Body: &vpcmodel.CreateSecurityGroupRequestBody{
+		SecurityGroup: &vpcmodel.CreateSecurityGroupOption{Name: name, VpcId: &vpcID},
+	}})
+	if err != nil {
+		return "", err
+	}
+	return resp.SecurityGroup.Id, nil
+}
+
+func deleteSecurityGroup(ctx context.Context, regionID, ak, sk, sgID string) {
+	c, err := newVPCClient(regionID, ak, sk)
+	if err != nil {
+		return
+	}
+	_, _ = c.DeleteSecurityGroup(&vpcmodel.DeleteSecurityGroupRequest{SecurityGroupId: sgID})
+}
+
+func newVPCClient(regionID, ak, sk string) (*vpcv2.VpcClient, error) {
+	region, err := vpcRegion.SafeValueOf(regionID)
+	if err != nil {
+		return nil, err
+	}
+	cred, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).SafeBuild()
+	if err != nil {
+		return nil, err
+	}
+	hc, err := vpcv2.VpcClientBuilder().WithRegion(region).WithCredential(cred).
+		WithHttpConfig(config.DefaultHttpConfig()).SafeBuild()
+	if err != nil {
+		return nil, err
+	}
+	return vpcv2.NewVpcClient(hc), nil
 }

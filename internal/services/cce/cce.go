@@ -288,8 +288,12 @@ func (s *Client) CreateNodePool(_ context.Context, in CreateNodePoolInput) (stri
 		NodeTemplate:     template,
 		InitialNodeCount: int32Ptr(in.InitialNodeCount),
 	}
-	if len(in.SecurityGroups) > 0 {
-		spec.CustomSecurityGroups = &in.SecurityGroups
+	if len(in.SecurityGroups) > 0 || len(in.CustomSecurityGroups) > 0 {
+		groups := in.SecurityGroups
+		if len(in.CustomSecurityGroups) > 0 {
+			groups = in.CustomSecurityGroups
+		}
+		spec.CustomSecurityGroups = &groups
 	}
 	pool := &model.NodePool{
 		Kind:       "NodePool",

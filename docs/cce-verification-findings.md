@@ -147,6 +147,17 @@
 - 已按此更新 PoC `internal/services/errors/errors.go`(修正原先占位的 not-found 码,新增 Quota/Throttle 分类)。
 
 ---
+## 第二轮真实 CCE 冒烟确认记录(TestSmokeExtras / TestSmokeUpgrade)
+
+| 项 | 实测结果 |
+|---|---|
+| **Q2 重新签发** | ✅ **重新签发即时生效**:连续两次 CreateKubernetesClusterCert 均成功(10254/10262 字节),无需先吊销 |
+| **Q5 Standard 安全组** | ✅✅ **Standard(vpc-router)集群接受 customSecurityGroups**,节点池创建成功——"Standard 是否支持"从待实测升级为**支持** |
+| **Q13 公网访问** | ⚠️ `publicAccess=true` 创建集群后 **未自动分配公网 endpoint**(ShowClusterEndpoints 无 public 项)——公网访问可能需要显式 EIP 绑定(UpdateClusterEip);外部可达性未能实测 |
+| **Q14 限流** | ✅ 200 次快速 ShowCluster 调用 **0 次限流**(该速率未触发;APIGW.0308 阈值实测仍未知,但普通轮询频率安全) |
+| **Q11 升级** | ⚠️ 升级编排 API 可用(CreateUpgradeWorkFlow/CreatePreCheck/UpgradeCluster/PostCheck 均可调用并校验版本),但**跨小版本升级被拒**:v1.34.8-r2→v1.35/v1.36、v1.35.5-r2→v1.36 均返回 "not supported to upgrade ... only support to <current>"——当前账号/区域疑似仅支持补丁级升级或跨版本升级需特定条件;**升级耗时无法实测,需咨询华为云当前升级策略** |
+| **新约束(实测)** | ⚠️ 同一 VPC 下多个 vpc-router 集群的**容器网段不能重叠**(报 CCE_CM.0410 "Container network CIDR conflict")——创建新集群必须规划唯一容器网段 |
+
 ## 真实 CCE 冒烟确认记录(2026-08-18,cn-north-4,账号实测)
 
 > 在真实华为云 CCE 账号上完成冒烟(`internal/services/cce/smoke_test.go`,`-tags smoke`),以下项由文档推断升级为**实测确认**:

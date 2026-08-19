@@ -74,6 +74,8 @@ type CreateNodePoolInput struct {
 	Taints           []string // "key=value:effect"
 	Labels           map[string]string
 	SecurityGroups   []string
+	// CustomSecurityGroups to bind to newly scaled nodes (Q5).
+	CustomSecurityGroups []string
 	Tags             map[string]string
 }
 
