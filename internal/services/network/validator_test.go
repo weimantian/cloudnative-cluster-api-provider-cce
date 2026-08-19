@@ -128,3 +128,44 @@ func TestCIDRsOverlap(t *testing.T) {
 		}
 	}
 }
+
+func TestValidateInvalidCIDR(t *testing.T) {
+	v := &Validator{} // nil vpc => no cloud fetch, uses provided facts
+	issues, err := v.Validate(context.Background(), ValidateInput{
+		VPCCloudCIDR: "10.0.0.0/16",
+		ServiceCIDR:  "not-a-cidr",
+	})
+	if err != nil {
+		t.Fatalf("Validate returned error: %v", err)
+	}
+	found := false
+	for _, i := range issues {
+		if i.Field == "serviceNetwork.cidr" && i.Message == "invalid CIDR: not-a-cidr" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected invalid service CIDR issue, got %+v", issues)
+	}
+}
+
+func TestValidateEniRequiresSubnets(t *testing.T) {
+	v := &Validator{}
+	issues, err := v.Validate(context.Background(), ValidateInput{
+		VPCCloudCIDR:  "10.0.0.0/16",
+		ContainerMode: "eni",
+		ENISubnetIDs:  []string{},
+	})
+	if err != nil {
+		t.Fatalf("Validate returned error: %v", err)
+	}
+	found := false
+	for _, i := range issues {
+		if i.Field == "containerNetwork.eniSubnets" {
+			found = true
+		}
+	}
+	if !found {
+		t.Errorf("expected eni-no-subnets issue, got %+v", issues)
+	}
+}

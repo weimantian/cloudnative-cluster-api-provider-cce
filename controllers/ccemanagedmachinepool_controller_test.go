@@ -16,6 +16,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
@@ -433,3 +434,126 @@ func TestMachinePoolReconcileWaitsForControlPlane(t *testing.T) {
 func int32Ptr(i int32) *int32 { return &i }
 
 func stringPtr(s string) *string { return &s }
+
+// TestMachinePoolReconcileDelete exercises the full deletion path: keeps
+// requesting deletion while the pool still exists, then clears the ID and
+// removes the finalizer once it is gone (the earlier bug left the finalizer
+// forever).
+func TestMachinePoolReconcileDelete(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-delete"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	cp.Status.ClusterID = "cluster-1"
+	cp.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+
+	pool := &infrav1beta1.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "test-cluster-pool-0",
+			Namespace:  ns,
+			Labels:     map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+			Finalizers: []string{MachinePoolFinalizer},
+		},
+		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+			ClusterName:  "test-cluster",
+			NodePoolName: "pool-0",
+			Flavor:       "c7.large.2",
+			Replicas:     3,
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create machine pool: %v", err)
+	}
+	// Set the status AFTER Create (Create round-trips the object and would
+	// otherwise overwrite the in-memory status with an empty one).
+	pool.Status.NodePoolID = "nodepool-1"
+	if err := k8sClient.Status().Update(ctx, pool); err != nil {
+		t.Fatalf("failed to set pool status: %v", err)
+	}
+
+	deleteCalls := 0
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeSvc.DeleteNodePoolFn = func(_ context.Context, _, _ string) error {
+		deleteCalls++
+		return nil
+	}
+	// First pass: the pool still exists -> DeleteNodePool, requeue, keep ID.
+	fakeSvc.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
+		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", NodeCount: 3, ActiveNodeCount: 3}}, nil
+	}
+	r := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	res, err := r.reconcileDelete(ctx, cluster, pool)
+	if err != nil {
+		t.Fatalf("first reconcileDelete returned error: %v", err)
+	}
+	if res.RequeueAfter != defaultRequeue {
+		t.Errorf("expected requeue while pool still exists, got %v", res.RequeueAfter)
+	}
+	if deleteCalls != 1 {
+		t.Errorf("expected 1 DeleteNodePool call, got %d", deleteCalls)
+	}
+	if pool.Status.NodePoolID == "" {
+		t.Error("NodePoolID must be kept while the pool still exists")
+	}
+
+	// Second pass: the pool is gone -> clear ID, remove finalizer.
+	fakeSvc.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
+		return []cceService.NodePoolInfo{}, nil
+	}
+	if _, err := r.reconcileDelete(ctx, cluster, pool); err != nil {
+		t.Fatalf("second reconcileDelete returned error: %v", err)
+	}
+	if pool.Status.NodePoolID != "" {
+		t.Errorf("expected NodePoolID cleared, got %q", pool.Status.NodePoolID)
+	}
+	if hasFinalizer(pool.Finalizers, MachinePoolFinalizer) {
+		t.Error("expected finalizer removed after pool deletion")
+	}
+}
+
+// TestControlPlaneReconcileCredentialsFailure verifies that a missing
+// credentials Secret surfaces as CredentialsReady=False (persisted), not a
+// silent env fallback.
+func TestControlPlaneReconcileCredentialsFailure(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-credsfail"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	markInfrastructureProvisioned(t, cluster)
+	// NOTE: no credentials Secret is created.
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err == nil {
+		t.Fatal("expected Reconcile to fail when credentials Secret is missing")
+	}
+
+	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	if c := capiconditions.Get(got, conditions.CredentialsReadyCondition); c == nil || c.Status != metav1.ConditionFalse {
+		t.Errorf("expected CredentialsReady=False persisted, got %v", c)
+	}
+	if len(fakeSvc.CreatedClusters) != 0 {
+		t.Error("no cluster must be created when credentials are missing")
+	}
+}

@@ -319,6 +319,11 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 				return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 			}
 			pool.Status.NodePoolID = ""
+			// Persist the cleared ID (status subresource) so a surviving object
+			// does not keep trying to delete a pool that is already gone.
+			if err := r.Status().Update(ctx, pool); err != nil {
+				return ctrl.Result{}, err
+			}
 		}
 	}
 

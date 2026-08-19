@@ -95,6 +95,20 @@ func NewValidator(regionID, ak, sk string) (*Validator, error) {
 func (v *Validator) Validate(ctx context.Context, in ValidateInput) ([]Issue, error) {
 	var issues []Issue
 
+	// 0. CIDR format: a malformed CIDR must be reported, not silently treated
+	// as "no overlap" (which would pass it through to a cryptic platform error).
+	if in.ServiceCIDR != "" && !validCIDR(in.ServiceCIDR) {
+		issues = append(issues, Issue{Field: "serviceNetwork.cidr", Message: "invalid CIDR: " + in.ServiceCIDR})
+	}
+	if in.ContainerCIDR != "" && !validCIDR(in.ContainerCIDR) {
+		issues = append(issues, Issue{Field: "containerNetwork.cidr", Message: "invalid CIDR: " + in.ContainerCIDR})
+	}
+	// eni mode requires at least one ENI subnet (official: eniNetwork.subnets).
+	if in.ContainerMode == "eni" && len(in.ENISubnetIDs) == 0 {
+		issues = append(issues, Issue{Field: "containerNetwork.eniSubnets",
+			Message: "eni mode requires at least one ENI subnet"})
+	}
+
 	// Query cloud-side network facts.
 	vpcCIDR := in.VPCCloudCIDR
 	subnetCIDRs := map[string]string{}
@@ -219,4 +233,10 @@ func cidrsOverlap(a, b string) bool {
 	pa = pa.Masked()
 	pb = pb.Masked()
 	return pa.Contains(pb.Addr()) || pb.Contains(pa.Addr())
+}
+
+// validCIDR reports whether s is a parseable CIDR prefix.
+func validCIDR(s string) bool {
+	_, err := netip.ParsePrefix(s)
+	return err == nil
 }
