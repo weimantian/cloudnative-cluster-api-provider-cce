@@ -118,6 +118,18 @@ func main() {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEManagedControlPlane")
 			os.Exit(1)
 		}
+		if err := (&infrav1beta1.CCEClusterTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "CCEClusterTemplate")
+			os.Exit(1)
+		}
+		if err := (&controlplanev1beta1.CCEManagedControlPlaneTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "CCEManagedControlPlaneTemplate")
+			os.Exit(1)
+		}
+		if err := (&infrav1beta1.CCEManagedMachinePoolTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "CCEManagedMachinePoolTemplate")
+			os.Exit(1)
+		}
 	}
 
 	// +kubebuilder:scaffold:builder

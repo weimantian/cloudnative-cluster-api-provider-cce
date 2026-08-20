@@ -12,7 +12,7 @@
 #      (clusterctl requires "registry/org/repo:tag"), and sets
 #      imagePullPolicy=Never so the locally-loaded image is used.
 #   4. Generates a self-signed CA + webhook server cert and injects the
-#      caBundle into the 6 admission webhooks.
+#      caBundle into the 11 admission webhooks.
 #   5. Registers the provider with clusterctl (local file:// source) and runs
 #      `clusterctl init --infrastructure cce`.
 #   6. Creates the webhook-service-cert Secret and waits for the provider.

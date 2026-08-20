@@ -1,0 +1,141 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: cceclustertemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CCEClusterTemplate
+    listKind: CCEClusterTemplateList
+    plural: cceclustertemplates
+    shortNames:
+    - ccect
+    singular: cceclustertemplate
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CCEClusterTemplate is the Schema for the CCEClusterTemplates API
+          (InfrastructureClusterTemplate).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEClusterTemplateSpec defines the desired state of CCEClusterTemplate.
+              It wraps the CCEClusterSpec so the Cluster API topology controller can
+              stamp a CCECluster from a ClusterClass (InfrastructureClusterTemplate
+              contract: spec.template.spec).
+            properties:
+              template:
+                description: |-
+                  CCEClusterTemplateResource describes the data needed to create a CCECluster
+                  from a template.
+                properties:
+                  spec:
+                    description: |-
+                      CCEClusterSpec defines the desired state of CCECluster.
+                      CCECluster is the thin "shell" (InfrastructureCluster contract object) that
+                      carries cluster-level network/region configuration. The control plane
+                      implementation lives in CCEManagedControlPlane (controlplane group).
+                    properties:
+                      network:
+                        description: |-
+                          Network references the VPC/subnets the CCE cluster consumes.
+                          CCE requires a VPC to exist before cluster creation.
+                        properties:
+                          subnets:
+                            description: Subnets referenced by the cluster (node subnets
+                              / ENI subnets for Turbo).
+                            items:
+                              description: Subnet references an existing or to-be-created
+                                subnet.
+                              properties:
+                                availabilityZone:
+                                  description: AvailabilityZone of the subnet (only
+                                    used when creating).
+                                  type: string
+                                cidr:
+                                  description: CIDR of the subnet to create (only
+                                    used when ID is empty).
+                                  type: string
+                                id:
+                                  description: ID of an existing subnet. If set, the
+                                    subnet is referenced and not managed.
+                                  type: string
+                                name:
+                                  description: Name of the subnet to create (only
+                                    used when ID is empty).
+                                  type: string
+                                resourceID:
+                                  description: ResourceID records the created subnet
+                                    resource ID (provider-managed).
+                                  type: string
+                                vpcId:
+                                  description: VPCID of the VPC the subnet belongs
+                                    to (only used when creating).
+                                  type: string
+                              type: object
+                            type: array
+                          vpc:
+                            description: VPC referenced by the cluster.
+                            properties:
+                              cidr:
+                                description: CIDR of the VPC to create (only used
+                                  when ID is empty).
+                                type: string
+                              description:
+                                description: Description of the VPC to create.
+                                type: string
+                              id:
+                                description: ID of an existing VPC. If set, the VPC
+                                  is referenced and not managed.
+                                type: string
+                              name:
+                                description: Name of the VPC to create (only used
+                                  when ID is empty).
+                                type: string
+                              resourceID:
+                                description: ResourceID records the created VPC resource
+                                  ID (provider-managed).
+                                type: string
+                            type: object
+                        type: object
+                      region:
+                        description: Region is the Huawei Cloud region (e.g. cn-north-4).
+                          Required.
+                        type: string
+                    required:
+                    - region
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true

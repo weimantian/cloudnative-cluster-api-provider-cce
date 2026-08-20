@@ -1,0 +1,285 @@
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  name: ccemanagedcontrolplanetemplates.controlplane.cluster.x-k8s.io
+spec:
+  group: controlplane.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CCEManagedControlPlaneTemplate
+    listKind: CCEManagedControlPlaneTemplateList
+    plural: ccemanagedcontrolplanetemplates
+    shortNames:
+    - ccemcpt
+    singular: ccemanagedcontrolplanetemplate
+  scope: Namespaced
+  versions:
+  - name: v1beta1
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CCEManagedControlPlaneTemplate is the Schema for the
+          CCEManagedControlPlaneTemplates API (ControlPlaneTemplate).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEManagedControlPlaneTemplateSpec defines the desired state of
+              CCEManagedControlPlaneTemplate. It wraps the CCEManagedControlPlaneSpec so
+              the Cluster API topology controller can stamp a CCEManagedControlPlane from
+              a ClusterClass (ControlPlaneTemplate contract: spec.template.spec).
+            properties:
+              template:
+                description: |-
+                  CCEManagedControlPlaneTemplateResource describes the data needed to create a
+                  CCEManagedControlPlane from a template.
+                properties:
+                  spec:
+                    description: |-
+                      CCEManagedControlPlaneSpec defines the desired state of
+                      CCEManagedControlPlane. It maps to the CCE CreateCluster API (ClusterSpec):
+                      category / flavor / version / containerNetwork / serviceNetwork /
+                      customSan / publicAccess / agencyName / billingMode.
+                    properties:
+                      addons:
+                        description: |-
+                          Addons are the CCE addon instances to manage (declarative set; the
+                          controller installs missing ones, upgrades version drift, and removes
+                          those no longer listed — mirrors CAPA EKS addons).
+                        items:
+                          description: AddonSpec declares a CCE addon to install.
+                          properties:
+                            name:
+                              description: Name is the addon template name (e.g. "coredns",
+                                "metrics-server").
+                              type: string
+                            version:
+                              description: |-
+                                Version is the addon template version (e.g. "1.0.0"); empty means the
+                                latest supported by the cluster.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                      agencyName:
+                        description: AgencyName used by the cluster (1.27+; empty
+                          uses the system agency).
+                        type: string
+                      billing:
+                        description: 'Billing controls billing mode: 0=on-demand,
+                          1=subscription.'
+                        properties:
+                          mode:
+                            default: 0
+                            description: 'Mode: 0=on-demand, 1=subscription.'
+                            enum:
+                            - 0
+                            - 1
+                            format: int32
+                            type: integer
+                        type: object
+                      category:
+                        default: Turbo
+                        description: 'Category of the CCE cluster: CCE (Standard)
+                          or Turbo.'
+                        enum:
+                        - CCE
+                        - Turbo
+                        type: string
+                      clusterName:
+                        description: ClusterName of the owning CCE cluster.
+                        type: string
+                      containerNetwork:
+                        description: ContainerNetwork of the cluster.
+                        properties:
+                          cidr:
+                            description: CIDR of the container network (immutable
+                              after creation for tunnel mode).
+                            type: string
+                          eniSubnets:
+                            description: ENISubnets for eni mode (Turbo).
+                            items:
+                              type: string
+                            type: array
+                          mode:
+                            default: eni
+                            description: 'Mode: overlay_l2 | vpc-router | eni (eni
+                              implies Turbo).'
+                            enum:
+                            - overlay_l2
+                            - vpc-router
+                            - eni
+                            type: string
+                        type: object
+                      customSan:
+                        description: CustomSan entries for the API server certificate.
+                        items:
+                          type: string
+                        type: array
+                      endpointAccess:
+                        description: EndpointAccess controls public API server access.
+                        properties:
+                          public:
+                            description: Public enables public API server access.
+                            type: boolean
+                        type: object
+                      flavor:
+                        description: Flavor of the cluster (official enum e.g. cce.s1.small
+                          ... cce.s2.xlarge).
+                        type: string
+                      identityRef:
+                        description: |-
+                          IdentityRef references a CCECluster*Identity (Controller/Static/Role).
+                          Empty means the controller default identity (CLOUD_SDK_AK/SK env).
+                        properties:
+                          apiVersion:
+                            description: API version of the referent.
+                            type: string
+                          fieldPath:
+                            description: |-
+                              If referring to a piece of an object instead of an entire object, this string
+                              should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                              For example, if the object reference is to a container within a pod, this would take on a value like:
+                              "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                              the event) or if no container name is specified "spec.containers[2]" (container with
+                              index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                              referencing a part of an object.
+                            type: string
+                          kind:
+                            description: |-
+                              Kind of the referent.
+                              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                            type: string
+                          name:
+                            description: |-
+                              Name of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          namespace:
+                            description: |-
+                              Namespace of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                            type: string
+                          resourceVersion:
+                            description: |-
+                              Specific resourceVersion to which this reference is made, if any.
+                              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                            type: string
+                          uid:
+                            description: |-
+                              UID of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      logging:
+                        description: |-
+                          Logging configures control-plane log collection (mirrors CAPA EKS
+                          Logging). Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
+                        properties:
+                          logs:
+                            description: Logs lists the components to collect.
+                            items:
+                              description: ControlPlaneLogSpec declares one log collection
+                                item.
+                              properties:
+                                enable:
+                                  description: Enable turns collection on/off for
+                                    this item.
+                                  type: boolean
+                                name:
+                                  description: |-
+                                    Name is the log type: kube-apiserver, kube-controller-manager,
+                                    kube-scheduler, audit, or a system addon name.
+                                  type: string
+                                type:
+                                  description: 'Type is the component type: control,
+                                    audit, or system-addon.'
+                                  enum:
+                                  - control
+                                  - audit
+                                  - system-addon
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                          ttlInDays:
+                            description: TTLInDays is the log retention in days (official
+                              range 0-30).
+                            format: int32
+                            maximum: 30
+                            minimum: 0
+                            type: integer
+                        type: object
+                      podIdentityAssociations:
+                        description: |-
+                          PodIdentityAssociations bind Kubernetes ServiceAccounts to Huawei Cloud
+                          agencies (the CCE equivalent of EKS Pod Identity). Declarative set:
+                          create missing, delete removed.
+                        items:
+                          description: PodIdentityAssociationSpec declares a ServiceAccount
+                            -> agency binding.
+                          properties:
+                            agencyName:
+                              description: AgencyName is the Huawei Cloud agency (委托)
+                                to bind.
+                              type: string
+                            namespace:
+                              description: Namespace of the ServiceAccount (immutable
+                                per association).
+                              type: string
+                            serviceAccount:
+                              description: ServiceAccount name (one association per
+                                ServiceAccount).
+                              type: string
+                          required:
+                          - agencyName
+                          - namespace
+                          - serviceAccount
+                          type: object
+                        type: array
+                      serviceNetwork:
+                        description: ServiceNetwork of the cluster.
+                        properties:
+                          cidr:
+                            description: CIDR of the service network.
+                            type: string
+                        type: object
+                      version:
+                        description: Version of Kubernetes, e.g. "v1.30.0". Empty
+                          means CCE latest.
+                        type: string
+                    required:
+                    - clusterName
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true

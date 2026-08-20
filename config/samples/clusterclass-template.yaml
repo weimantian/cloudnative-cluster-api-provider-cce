@@ -1,0 +1,140 @@
+# ClusterClass example for cloudnative-cluster-api-provider-cce.
+#
+# Demonstrates ClusterClass (topology) support: a CCEClusterTemplate, a
+# CCEManagedControlPlaneTemplate and a CCEManagedMachinePoolTemplate are wired
+# into a ClusterClass, and a Cluster is created from it via spec.topology.
+#
+# NOTE: clusterName on the control plane and node pool templates is left empty
+# and injected by the topology controller through the {{ .builtin.cluster.name }}
+# patch below — the provider webhooks tolerate an empty clusterName on templates
+# for exactly this reason.
+#
+# Fill in every VERIFY-... placeholder. Verified structurally; an end-to-end
+# topology run requires a management cluster with the CAPI topology controllers
+# (clusterctl init installs them by default).
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: CCEClusterTemplate
+metadata:
+  name: cce-cluster-template
+  namespace: default
+spec:
+  template:
+    spec:
+      region: cn-north-4
+      network:
+        vpc:
+          id: VERIFY-VPC-ID
+        subnets:
+          - id: VERIFY-NODE-SUBNET-ID
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: CCEManagedControlPlaneTemplate
+metadata:
+  name: cce-control-plane-template
+  namespace: default
+spec:
+  template:
+    spec:
+      # clusterName is injected by the topology controller (patch below).
+      category: Turbo
+      flavor: cce.s2.medium
+      version: v1.34.0
+      containerNetwork:
+        mode: eni
+        eniSubnets:
+          - VERIFY-ENI-SUBNET-ID
+      serviceNetwork:
+        cidr: 10.247.0.0/16
+      endpointAccess:
+        public: true
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: CCEManagedMachinePoolTemplate
+metadata:
+  name: cce-worker-pool-template
+  namespace: default
+spec:
+  template:
+    spec:
+      # clusterName is injected by the topology controller (patch below).
+      nodePoolName: worker-pool
+      flavor: c7.large.2
+      os: Huawei Cloud EulerOS 2.0
+      availabilityZone: VERIFY-AZ
+      rootVolume:
+        size: 100
+        type: SSD
+      sshKey: VERIFY-SSH-KEYPAIR
+      updateConfig:
+        maxUnavailable: 1
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: ClusterClass
+metadata:
+  name: cce-clusterclass
+  namespace: default
+spec:
+  infrastructure:
+    ref:
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      kind: CCEClusterTemplate
+      name: cce-cluster-template
+  controlPlane:
+    ref:
+      apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+      kind: CCEManagedControlPlaneTemplate
+      name: cce-control-plane-template
+  workers:
+    machinePools:
+      - class: cce-worker
+        template:
+          infrastructure:
+            ref:
+              apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+              kind: CCEManagedMachinePoolTemplate
+              name: cce-worker-pool-template
+  patches:
+    # The builtin .cluster.name is injected into clusterName on the stamped
+    # control plane and node pool objects, which the provider requires to be
+    # the CAPI Cluster name.
+    - name: control-plane-cluster-name
+      definitions:
+        - selector:
+            apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+            kind: CCEManagedControlPlaneTemplate
+            matchResources:
+              controlPlane: true
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/clusterName
+              valueFrom:
+                template: "{{ .builtin.cluster.name }}"
+    - name: machine-pool-cluster-name
+      definitions:
+        - selector:
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            kind: CCEManagedMachinePoolTemplate
+            matchResources:
+              machinePoolClass:
+                names:
+                  - cce-worker
+          jsonPatches:
+            - op: add
+              path: /spec/template/spec/clusterName
+              valueFrom:
+                template: "{{ .builtin.cluster.name }}"
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: my-cce-topology-cluster
+  namespace: default
+spec:
+  topology:
+    class: cce-clusterclass
+    version: v1.34.0
+    workers:
+      machinePools:
+        - name: worker-pool
+          class: cce-worker
+          replicas: 3
