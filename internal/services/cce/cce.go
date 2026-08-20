@@ -334,6 +334,38 @@ func (s *Client) ShowQuotas(ctx context.Context) (*QuotaInfo, error) {
 	return info, nil
 }
 
+// ListClusters implements Service. It lists all CCE clusters in the region,
+// returning their ID, name and tags (used by the garbage collector's orphan
+// sweeper).
+func (s *Client) ListClusters(ctx context.Context) ([]ClusterRef, error) {
+	resp, err := s.cce.ListClusters(&model.ListClustersRequest{})
+	if err != nil {
+		return nil, errors.Wrap(err, "ListClusters failed")
+	}
+	var refs []ClusterRef
+	if resp.Items != nil {
+		for _, c := range *resp.Items {
+			ref := ClusterRef{}
+			if c.Metadata != nil {
+				if c.Metadata.Uid != nil {
+					ref.ClusterID = *c.Metadata.Uid
+				}
+				ref.Name = c.Metadata.Name
+			}
+			ref.Tags = map[string]string{}
+			if c.Spec != nil && c.Spec.ClusterTags != nil {
+				for _, t := range *c.Spec.ClusterTags {
+					if t.Key != nil && t.Value != nil {
+						ref.Tags[*t.Key] = *t.Value
+					}
+				}
+			}
+			refs = append(refs, ref)
+		}
+	}
+	return refs, nil
+}
+
 // GetClusterKubeconfig implements Service. It downloads the cluster certificate
 // via CreateKubernetesClusterCert and assembles a standard kubeconfig
 // (mirrors the ACK provider's controller_kubeconfig.go approach).

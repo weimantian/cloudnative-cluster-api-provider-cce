@@ -303,6 +303,14 @@ type LogConfigInfo struct {
 	Logs []LogConfigInput
 }
 
+// ClusterRef is a minimal reference to a CCE cluster as returned by
+// ListClusters, used by the garbage collector to detect orphaned clusters.
+type ClusterRef struct {
+	ClusterID string
+	Name      string
+	Tags      map[string]string
+}
+
 // Service is the CCE API surface consumed by the provider controllers.
 type Service interface { // ShowCluster returns the current state of a CCE cluster.
 	ShowCluster(ctx context.Context, clusterID string) (*ClusterInfo, error)
@@ -314,6 +322,9 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	GetClusterKubeconfig(ctx context.Context, clusterID string, durationDays int32) (string, error)
 	// ShowQuotas returns the project cluster quota (ShowQuotas API).
 	ShowQuotas(ctx context.Context) (*QuotaInfo, error)
+	// ListClusters lists all CCE clusters in the region (used by the garbage
+	// collector's orphan sweeper; returns cluster ID, name and tags).
+	ListClusters(ctx context.Context) ([]ClusterRef, error)
 	// CreateNodePool creates a node pool and returns its ID.
 	CreateNodePool(ctx context.Context, in CreateNodePoolInput) (string, error)
 	// ScaleNodePool scales a node pool to the given absolute desired total

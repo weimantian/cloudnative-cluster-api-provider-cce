@@ -26,6 +26,7 @@ type FakeCCEService struct {
 	DeleteClusterFn          func(ctx context.Context, in cceService.DeleteClusterInput) error
 	GetClusterKubeconfigFn   func(ctx context.Context, clusterID string, durationDays int32) (string, error)
 	ShowQuotasFn             func(ctx context.Context) (*cceService.QuotaInfo, error)
+	ListClustersFn           func(ctx context.Context) ([]cceService.ClusterRef, error)
 	CreateNodePoolFn         func(ctx context.Context, in cceService.CreateNodePoolInput) (string, error)
 	ScaleNodePoolFn          func(ctx context.Context, clusterID, nodePoolID string, desiredCount int32) error
 	UpdateNodePoolFn         func(ctx context.Context, in cceService.UpdateNodePoolInput) error
@@ -97,6 +98,9 @@ func NewFakeCCEService() *FakeCCEService {
 	}
 	f.ShowQuotasFn = func(_ context.Context) (*cceService.QuotaInfo, error) {
 		return &cceService.QuotaInfo{ClusterQuotaLimit: 50, ClusterQuotaUsed: 1}, nil
+	}
+	f.ListClustersFn = func(_ context.Context) ([]cceService.ClusterRef, error) {
+		return []cceService.ClusterRef{}, nil
 	}
 	f.CreateNodePoolFn = func(_ context.Context, in cceService.CreateNodePoolInput) (string, error) {
 		f.CreatedNodePools = append(f.CreatedNodePools, in)
@@ -200,6 +204,11 @@ func (f *FakeCCEService) GetClusterKubeconfig(ctx context.Context, clusterID str
 // ShowQuotas implements cceService.Service.
 func (f *FakeCCEService) ShowQuotas(ctx context.Context) (*cceService.QuotaInfo, error) {
 	return f.ShowQuotasFn(ctx)
+}
+
+// ListClusters implements cceService.Service.
+func (f *FakeCCEService) ListClusters(ctx context.Context) ([]cceService.ClusterRef, error) {
+	return f.ListClustersFn(ctx)
 }
 
 // CreateNodePool implements cceService.Service.

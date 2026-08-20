@@ -25,6 +25,12 @@ const (
 	// CCEClusterControllerIdentity singleton named "default" (mirrors CAPA
 	// AutoControllerIdentityCreator). Off by default.
 	AutoControllerIdentityCreator featuregate.Feature = "AutoControllerIdentityCreator"
+
+	// ExternalResourceGC enables the periodic orphaned-cluster sweeper
+	// (mirrors CAPA ExternalResourceGC): CCE clusters carrying the owned tag
+	// whose Cluster CR no longer exists are deleted. Off by default; requires
+	// --gc-region.
+	ExternalResourceGC featuregate.Feature = "ExternalResourceGC"
 )
 
 var (
@@ -32,6 +38,7 @@ var (
 	featureGates = map[featuregate.Feature]featuregate.FeatureSpec{
 		NodePoolAutoscaling:           {Default: false, PreRelease: featuregate.Alpha},
 		AutoControllerIdentityCreator: {Default: false, PreRelease: featuregate.Alpha},
+		ExternalResourceGC:            {Default: false, PreRelease: featuregate.Alpha},
 	}
 
 	// featureGatesMutable is the mutable registry used by the manager.

@@ -11,6 +11,7 @@ import (
 	"flag"
 	"os"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/runtime"
@@ -31,6 +32,7 @@ import (
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/controllers"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
+	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 )
 
 var (
@@ -58,6 +60,8 @@ func main() {
 		clusterConcurrency      int
 		controlPlaneConcurrency int
 		machinePoolConcurrency  int
+		gcRegion                string
+		gcInterval              time.Duration
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -77,6 +81,10 @@ func main() {
 		"Max concurrent reconciles of the CCEManagedControlPlane controller (0 = default of 1).")
 	flag.IntVar(&machinePoolConcurrency, "cce-machine-pool-concurrency", 1,
 		"Max concurrent reconciles of the CCEManagedMachinePool controller (0 = default of 1).")
+	flag.StringVar(&gcRegion, "gc-region", "",
+		"Region for the external-resource GC orphan sweeper (empty disables GC even when the gate is on).")
+	flag.DurationVar(&gcInterval, "gc-interval", time.Hour,
+		"Interval between external-resource GC sweeps.")
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -121,6 +129,23 @@ func main() {
 	}); err != nil {
 		setupLog.Error(err, "unable to create controllers")
 		os.Exit(1)
+	}
+
+	// External-resource garbage collector (orphaned-cluster sweeper, mirrors
+	// CAPA ExternalResourceGC). Requires both the gate and a region.
+	if features.Enabled(features.ExternalResourceGC) && gcRegion != "" {
+		if err := mgr.Add(&controllers.GarbageCollector{
+			Client: mgr.GetClient(),
+			ServiceFactory: func(regionID, ak, sk string) (cceService.Service, error) {
+				return cceService.NewClient(regionID, ak, sk)
+			},
+			Region:   gcRegion,
+			Interval: gcInterval,
+			Log:      ctrl.Log.WithName("garbage-collector"),
+		}); err != nil {
+			setupLog.Error(err, "unable to add garbage collector")
+			os.Exit(1)
+		}
 	}
 
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
