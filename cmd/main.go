@@ -23,9 +23,12 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
+	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/controllers"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 )
@@ -39,7 +42,9 @@ func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(clusterv1.AddToScheme(scheme))
 	utilruntime.Must(infrav1beta1.AddToScheme(scheme))
+	utilruntime.Must(infrav1beta2.AddToScheme(scheme))
 	utilruntime.Must(controlplanev1beta1.AddToScheme(scheme))
+	utilruntime.Must(controlplanev1beta2.AddToScheme(scheme))
 }
 
 func main() {
@@ -155,6 +160,11 @@ func main() {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEClusterRoleIdentity")
 			os.Exit(1)
 		}
+		// CRD conversion webhook (v1beta1 <-> v1beta2). The scheme's
+		// conversion.Hub (v1beta2) + conversion.Convertible (v1beta1) types
+		// drive the conversion; the registry is empty so conversion falls
+		// back to the Hub/Convertible type assertions.
+		mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme(), conversion.NewRegistry()))
 	}
 
 	// +kubebuilder:scaffold:builder

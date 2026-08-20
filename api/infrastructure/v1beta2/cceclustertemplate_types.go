@@ -4,7 +4,7 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-package v1beta1
+package v1beta2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -25,6 +25,7 @@ type CCEClusterTemplateResource struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 // +kubebuilder:resource:path=cceclustertemplates,scope=Namespaced,categories=cluster-api,shortName=ccect
 
 // CCEClusterTemplate is the Schema for the CCEClusterTemplates API
@@ -37,6 +38,7 @@ type CCEClusterTemplate struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 
 // CCEClusterTemplateList contains a list of CCEClusterTemplate.
 type CCEClusterTemplateList struct {

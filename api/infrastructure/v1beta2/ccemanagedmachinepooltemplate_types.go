@@ -4,7 +4,7 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-package v1beta1
+package v1beta2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -26,6 +26,7 @@ type CCEManagedMachinePoolTemplateResource struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 // +kubebuilder:resource:path=ccemanagedmachinepooltemplates,scope=Namespaced,categories=cluster-api,shortName=ccemmpt
 
 // CCEManagedMachinePoolTemplate is the Schema for the
@@ -38,6 +39,7 @@ type CCEManagedMachinePoolTemplate struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 
 // CCEManagedMachinePoolTemplateList contains a list of
 // CCEManagedMachinePoolTemplate.

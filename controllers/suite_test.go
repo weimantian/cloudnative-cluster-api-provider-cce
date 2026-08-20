@@ -28,7 +28,9 @@ import (
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
@@ -71,7 +73,13 @@ func TestMain(m *testing.M) {
 	if err := infrav1beta1.AddToScheme(scheme); err != nil {
 		panic(err)
 	}
+	if err := infrav1beta2.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
 	if err := controlplanev1beta1.AddToScheme(scheme); err != nil {
+		panic(err)
+	}
+	if err := controlplanev1beta2.AddToScheme(scheme); err != nil {
 		panic(err)
 	}
 

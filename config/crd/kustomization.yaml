@@ -1,9 +1,5 @@
 apiVersion: kustomize.config.k8s.io/v1beta1
 kind: Kustomization
-# CAPI contract labels: this CRD (API version v1beta1) implements the v1beta2
-# provider contract (conditions as []metav1.Condition).
-commonLabels:
-  cluster.x-k8s.io/v1beta2: v1beta1
 resources:
   - bases/controlplane.cluster.x-k8s.io_ccemanagedcontrolplanes.yaml
   - bases/controlplane.cluster.x-k8s.io_ccemanagedcontrolplanetemplates.yaml
@@ -11,3 +7,18 @@ resources:
   - bases/infrastructure.cluster.x-k8s.io_cceclustertemplates.yaml
   - bases/infrastructure.cluster.x-k8s.io_ccemanagedmachinepools.yaml
   - bases/infrastructure.cluster.x-k8s.io_ccemanagedmachinepooltemplates.yaml
+  - bases/infrastructure.cluster.x-k8s.io_cceclustercontrolleridentities.yaml
+  - bases/infrastructure.cluster.x-k8s.io_cceclusterstaticidentities.yaml
+  - bases/infrastructure.cluster.x-k8s.io_cceclusterroleidentities.yaml
+
+# Enables the conversion webhook (v1beta1 <-> v1beta2) for every CRD.
+patchesStrategicMerge:
+  - patches/webhook_in_cceclusters.yaml
+  - patches/webhook_in_cceclustertemplates.yaml
+  - patches/webhook_in_ccemanagedmachinepools.yaml
+  - patches/webhook_in_ccemanagedmachinepooltemplates.yaml
+  - patches/webhook_in_cceclustercontrolleridentities.yaml
+  - patches/webhook_in_cceclusterstaticidentities.yaml
+  - patches/webhook_in_cceclusterroleidentities.yaml
+  - patches/webhook_in_ccemanagedcontrolplanes.yaml
+  - patches/webhook_in_ccemanagedcontrolplanetemplates.yaml

@@ -4,7 +4,7 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-package v1beta1
+package v1beta2
 
 import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -40,6 +40,7 @@ type CCEClusterControllerIdentitySpec struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 // +kubebuilder:resource:path=cceclustercontrolleridentities,scope=Cluster,categories=cluster-api,shortName=cceci
 
 // CCEClusterControllerIdentity is the controller's default credential
@@ -52,6 +53,7 @@ type CCEClusterControllerIdentity struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 
 // CCEClusterControllerIdentityList contains a list of controller identities.
 type CCEClusterControllerIdentityList struct {
@@ -74,6 +76,7 @@ type CCEClusterStaticIdentitySpec struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 // +kubebuilder:resource:path=cceclusterstaticidentities,scope=Cluster,categories=cluster-api,shortName=ccesi
 
 // CCEClusterStaticIdentity is a reference to a static AK/SK Secret (mirrors
@@ -86,6 +89,7 @@ type CCEClusterStaticIdentity struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 
 // CCEClusterStaticIdentityList contains a list of static identities.
 type CCEClusterStaticIdentityList struct {
@@ -108,6 +112,7 @@ type CCEClusterRoleIdentitySpec struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 // +kubebuilder:resource:path=cceclusterroleidentities,scope=Cluster,categories=cluster-api,shortName=cceri
 
 // CCEClusterRoleIdentity is a Huawei Cloud agency identity (mirrors CAPA
@@ -120,6 +125,7 @@ type CCEClusterRoleIdentity struct {
 }
 
 // +kubebuilder:object:root=true
+// +kubebuilder:storageversion
 
 // CCEClusterRoleIdentityList contains a list of role identities.
 type CCEClusterRoleIdentityList struct {

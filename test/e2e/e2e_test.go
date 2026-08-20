@@ -43,7 +43,9 @@ import (
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
 
 const e2eTimeout = 30 * time.Minute
@@ -84,6 +86,15 @@ func TestE2EClusterLifecycle(t *testing.T) {
 	}
 	if err := infrav1beta1.AddToScheme(scheme); err != nil {
 		t.Fatalf("failed to add infrastructure scheme: %v", err)
+	}
+	if err := infrav1beta2.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add infrastructure v1beta2 scheme: %v", err)
+	}
+	if err := controlplanev1beta1.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add control plane scheme: %v", err)
+	}
+	if err := controlplanev1beta2.AddToScheme(scheme); err != nil {
+		t.Fatalf("failed to add control plane v1beta2 scheme: %v", err)
 	}
 	if err := controlplanev1beta1.AddToScheme(scheme); err != nil {
 		t.Fatalf("failed to add control plane scheme: %v", err)

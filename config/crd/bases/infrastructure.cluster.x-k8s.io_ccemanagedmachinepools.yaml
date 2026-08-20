@@ -339,6 +339,332 @@ spec:
             type: object
         type: object
     served: true
+    storage: false
+    subresources:
+      status: {}
+  - additionalPrinterColumns:
+    - description: Cluster to which this CCEManagedMachinePool belongs
+      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - description: Actual node count
+      jsonPath: .status.replicas
+      name: Replicas
+      type: integer
+    - description: Node pool ready
+      jsonPath: .status.ready
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CCEManagedMachinePool is the Schema for the CCE node pools
+          (InfrastructureMachinePool).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEManagedMachinePoolSpec defines the desired state of CCEManagedMachinePool.
+              It maps 1:1 to a CCE node pool (NodePool). Field semantics follow the
+              official CreateNodePool API (nodeTemplate / initialNodeCount / autoscaling).
+            properties:
+              autoscaling:
+                description: |-
+                  Autoscaling maps to the CCE node pool autoscaling
+                  (NodePoolNodeAutoscaling). Only honored when the NodePoolAutoscaling
+                  feature gate is enabled (Alpha, off by default); otherwise scaling is
+                  driven solely by CAPI MachinePool replicas (questionnaire Q3, FR-2.6).
+                properties:
+                  enable:
+                    description: Enable turns autoscaling on for the node pool.
+                    type: boolean
+                  maxNodeCount:
+                    description: MaxNodeCount is the maximum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                  minNodeCount:
+                    description: MinNodeCount is the minimum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                type: object
+              availabilityZone:
+                description: |-
+                  AvailabilityZone of the nodes. Required by the webhook (CCE does not
+                  support random AZ via API).
+                type: string
+              billingMode:
+                description: 'BillingMode: 0=on-demand, 1=subscription.'
+                enum:
+                - 0
+                - 1
+                format: int32
+                type: integer
+              clusterName:
+                description: ClusterName of the owning CCE cluster (matches Cluster
+                  name).
+                type: string
+              dataVolumes:
+                description: DataVolumes of the nodes (nodeTemplate.dataVolumes).
+                items:
+                  description: NodeVolume describes a root or data volume of a node.
+                  properties:
+                    size:
+                      description: Size in GiB.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    type:
+                      description: Type of the volume, e.g. GPSSD / SSD / SAS.
+                      type: string
+                  required:
+                  - size
+                  type: object
+                type: array
+              extensionScaleGroups:
+                description: |-
+                  ExtensionScaleGroups extends the node pool into additional availability
+                  zones (CCE 扩展伸缩组). Each entry carries its own flavor and AZ; the
+                  base nodeTemplate.az remains the primary AZ.
+                items:
+                  description: |-
+                    ExtensionScaleGroupSpec describes one CCE extension scale group — an
+                    additional flavor/AZ set in a multi-AZ node pool.
+                  properties:
+                    availabilityZone:
+                      description: AvailabilityZone for this group.
+                      type: string
+                    flavor:
+                      description: Flavor is the ECS flavor for this group.
+                      type: string
+                    name:
+                      description: Name of the extension scale group.
+                      type: string
+                  required:
+                  - availabilityZone
+                  - flavor
+                  - name
+                  type: object
+                type: array
+              flavor:
+                description: Flavor is the ECS instance flavor of the nodes (nodeTemplate.flavor).
+                type: string
+              labels:
+                additionalProperties:
+                  type: string
+                description: Labels applied to the nodes.
+                type: object
+              nodePoolName:
+                description: NodePoolName is the CCE node pool name.
+                type: string
+              os:
+                description: |-
+                  OS image family of the nodes (nodeTemplate.os), e.g.
+                  "Huawei Cloud EulerOS 2.0". Required by the webhook (official
+                  CreateNodePool requires os unless a private image is used).
+                type: string
+              replicas:
+                description: |-
+                  Replicas is the desired node count (maps to the node pool expected count).
+                  It is normally driven by the owning MachinePool.spec.replicas.
+                format: int32
+                type: integer
+              rootVolume:
+                description: |-
+                  RootVolume of the nodes (nodeTemplate.rootVolume). Pointer so an empty
+                  value is omitted; required by the webhook (size 40-1024 GiB).
+                properties:
+                  size:
+                    description: Size in GiB.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  type:
+                    description: Type of the volume, e.g. GPSSD / SSD / SAS.
+                    type: string
+                required:
+                - size
+                type: object
+              securityGroups:
+                description: |-
+                  SecurityGroups to bind to the node pool (Turbo >= 1.21, max 5 per
+                  official constraint).
+                items:
+                  type: string
+                maxItems: 5
+                type: array
+              spot:
+                description: |-
+                  Spot requests spot (竞价) instances for the node pool. Only effective
+                  when billingMode=0 (on-demand); maps to nodeTemplate.extendParam.
+                  marketType=spot.
+                type: boolean
+              spotPrice:
+                description: |-
+                  SpotPrice is the maximum hourly price the user is willing to pay for
+                  spot instances. Empty = the on-demand price is used as the spot price.
+                  Only effective when spot is set and billingMode=0.
+                type: string
+              sshKey:
+                description: SSHKey used to access the nodes (nodeTemplate.sshKey).
+                type: string
+              taints:
+                description: Taints applied to the nodes (max 20 per official constraint).
+                items:
+                  type: string
+                maxItems: 20
+                type: array
+              updateConfig:
+                description: |-
+                  UpdateConfig controls how spec changes are rolled onto existing nodes
+                  (CCE 同步节点池 UpgradeNodePool, the analogue of CAPA's UpdateConfig /
+                  rolling update). Node attributes such as securityGroups, taints, labels
+                  and OS only apply to newly created nodes, so the controller calls
+                  UpgradeNodePool to synchronise them onto running nodes.
+                properties:
+                  maxUnavailable:
+                    description: |-
+                      MaxUnavailable is the maximum number of nodes made unavailable per
+                      rolling batch (official range [1,20]; default 1).
+                    format: int32
+                    maximum: 20
+                    minimum: 1
+                    type: integer
+                type: object
+            required:
+            - clusterName
+            - flavor
+            - nodePoolName
+            type: object
+          status:
+            description: CCEManagedMachinePoolStatus defines the observed state of
+              CCEManagedMachinePool.
+            properties:
+              availableReplicas:
+                description: AvailableReplicas is the number of nodes in Active state.
+                format: int32
+                type: integer
+              conditions:
+                description: Conditions defines current service state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              lastAppliedAutoscaling:
+                description: |-
+                  LastAppliedAutoscaling records the autoscaling config last synced to the
+                  cloud node pool (only meaningful when the NodePoolAutoscaling gate is
+                  on). Mirrors spec.autoscaling for drift detection.
+                properties:
+                  enable:
+                    description: Enable turns autoscaling on for the node pool.
+                    type: boolean
+                  maxNodeCount:
+                    description: MaxNodeCount is the maximum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                  minNodeCount:
+                    description: MinNodeCount is the minimum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                type: object
+              lastAppliedSecurityGroups:
+                description: |-
+                  LastAppliedSecurityGroups records the security groups last synced to the
+                  cloud node pool. Used to detect attribute drift so the controller only
+                  issues an UpdateNodePool when needed (and never rescales the pool just
+                  because an attribute changed — questionnaire Q3/Q5).
+                items:
+                  type: string
+                type: array
+              nodePoolID:
+                description: NodePoolID is the CCE node pool UUID.
+                type: string
+              ready:
+                description: Ready indicates the node pool is ready.
+                type: boolean
+              replicas:
+                description: Replicas is the actual number of nodes (consumed by CAPI
+                  MachinePool).
+                format: int32
+                type: integer
+            type: object
+        type: object
+    served: true
     storage: true
     subresources:
       status: {}
