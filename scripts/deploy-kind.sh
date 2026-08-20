@@ -12,6 +12,8 @@
 #      (clusterctl requires "registry/org/repo:tag"), and sets
 #      imagePullPolicy=Never so the locally-loaded image is used.
 #   4. Generates a self-signed CA + webhook server cert and injects the
+#      caBundle into the 14 admission webhooks and the 9 CRD conversion
+#      webhooks (both use a clientConfig block).
 #      caBundle into the 14 admission webhooks.
 #   5. Registers the provider with clusterctl (local file:// source) and runs
 #      `clusterctl init --infrastructure cce`.
@@ -113,6 +115,17 @@ EOF2
 )
 
 CABUNDLE="$(base64 < "$ARTIFACTS/ca.crt" | tr -d '\n')"
+awk -v cab="$CABUNDLE" '
+  { print }
+  # Match clientConfig: at any indentation (admission webhooks use 2-space,
+  # CRD conversion webhooks use 6-space) and inject caBundle at indent+2.
+  $0 ~ /^[ ]*clientConfig:$/ {
+    indent = $0
+    sub(/clientConfig:.*$/, "", indent)
+    print indent "  caBundle: " cab
+  }
+' "$ARTIFACTS/infrastructure-components-raw.yaml" > "$ARTIFACTS/infrastructure-components.yaml"
+echo "  injected caBundle into $(grep -c caBundle "$ARTIFACTS/infrastructure-components.yaml") webhook clientConfigs"
 awk -v cab="$CABUNDLE" '
   { print }
   $0 == "  clientConfig:" { print "    caBundle: " cab }
