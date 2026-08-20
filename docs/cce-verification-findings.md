@@ -86,6 +86,7 @@
   - **实现必须显式传删除选项,否则 EVS/存储卷会残留。**
 - **残留规则(官方 cce_10_0212)**:删除集群不会删除**包周期资源**(继续计费);集群**非运行状态(冻结/不可用)删除会残留存储、网络等关联资源**;存储按卷回收策略(PV 策略 Delete 时云硬盘/SFS/OBS 等会删,Retain 保留);ELB 仅删除自动创建的;删除后集群停止计费,但残留资源仍计费。
 - **包周期集群不能直接删**,需退订/释放;`tobedeleted=true` 可预置删除参数(供退订识别);休眠中集群不能直接删,需先唤醒;有"禁止删除集群"保护(错误码 `CCE.01400034`);删除响应含 JobID 与 deleteStatus。
+- **实测新增确认(2026-08-20 冒烟)**:节点池存在"安装中"(Installing)节点时,**DeleteNodePool 报 `CCE.01403006`**("Node pool cannot be deleted when exists installing or deleting nodes, Nodepool has node not in Active, Abnormal or Error status");此时直接 **DeleteCluster 报 `CCE.01400024`**("Cannot delete cluster when creating node")。**必须在所有节点进入 Active 后才删**——注意 `status.currentNode` 会统计 Installing 节点,应以 `status.activeNode`(ActiveNodeCount)为就绪判据,否则扩/缩/删都会撞上该错误。
 - **未确认(需实测)**:存在节点池时直接删集群的行为;删除不存在集群的确切错误码(通用表 404 `CCE.01404001`,未在删除页逐条列出);Deleting 中重复删除。
 
 ## Q9 单节点路径(AddNode) — [官方文档/SDK] 完全确认:需重装系统,不适合免干预 CAPI Machine
@@ -241,7 +242,7 @@
 | Q5 | 安全组 | ✅ 自动建 node/control/eni SG;podSG 仅 Turbo 每池≤5;改 SG 只对新建节点生效;5443 白名单=改 control SG | Standard 对 customSecurityGroups 支持 |
 | Q6 | IAM 权限 | ✅ 细粒度 action 表;FullAccess 不含生成证书;委托代行 ECS/VPC;联邦用户无永久 AK/SK | 跨 project;最小策略隐式依赖 |
 | Q7 | 配额 | ✅ CCE 只限集群数;约束页 50/Region(API 页写 5,矛盾);错误码 CCE.01400007 等 | 以控制台实测值为准 |
-| Q8 | 删除 | ✅ 异步 1~3 分钟;delete_evs 默认残留、delete_eni/net 默认删;ondemand_node_policy 默认删按需节点保留纳管节点;休眠中不可删 | 存在节点池时直接删集群;删除不存在集群的错误码 |
+| Q8 | 删除 | ✅ 异步 1~3 分钟;delete_evs 默认残留、delete_eni/net 默认删;ondemand_node_policy 默认删按需节点保留纳管节点;休眠中不可删;**实测:节点 Installing 时删节点池报 `CCE.01403006`、删集群报 `CCE.01400024`,须等节点全部 Active(以 `activeNode` 判据)** | 删除不存在集群的错误码 |
 | Q9 | 单节点 | ✅ AddNode=重装 ECS(清数据)+严格前置(≥2C4G/单网卡/数据盘);CCE 自动安装;DefaultPool 无弹性 | CAPI Machine 路径取舍 |
 | Q10 | Autopilot | ✅ Serverless 无节点 API;50 集群/区域;按 CPU/内存计费 | CAPI 对接方式(远期) |
 | Q11 | 升级 | ✅ **完整确认(官方 cce_10_0197,2026-07-28 版)**:路径表/维护周期 24 个月/批次 4 的幂/备份回滚/证书+OIDC;**实测 v1.33→v1.34 目标开放并跑通升级工作流**(3 真实约束已修复);v1.34 目标 v1.35 未开放——目标按版本线动态开放 | 完整成功升级耗时(预检查通过后实测,测试已就绪) |

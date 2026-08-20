@@ -316,7 +316,7 @@ func waitForPhase(ctx context.Context, svc Service, clusterID, want string, time
 func waitForNodeCount(ctx context.Context, svc Service, clusterID, nodePoolID string, want int32, timeout, interval time.Duration) error {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
-		count, err := currentNodeCount(ctx, svc, clusterID, nodePoolID)
+		count, err := currentActiveNodeCount(ctx, svc, clusterID, nodePoolID)
 		if err == nil && count >= want {
 			return nil
 		}
@@ -339,6 +339,24 @@ func currentNodeCount(ctx context.Context, svc Service, clusterID, nodePoolID st
 			// in the live drill; nodes were stuck "Installing" but the check
 			// reported success).
 			return p.NodeCount, nil
+		}
+	}
+	return 0, fmt.Errorf("node pool %s not found", nodePoolID)
+}
+
+func currentActiveNodeCount(ctx context.Context, svc Service, clusterID, nodePoolID string) (int32, error) {
+	pools, err := svc.ListNodePools(ctx, clusterID)
+	if err != nil {
+		return 0, err
+	}
+	for _, p := range pools {
+		if p.NodePoolID == nodePoolID {
+			// ActiveNodeCount is status.activeNode — only nodes in Active
+			// state. Waiting on this (not currentNode, which also counts
+			// "Installing" nodes) ensures the pool is fully provisioned before
+			// scale/update/delete; CCE rejects DeleteNodePool while any node is
+			// still installing (CCE.01403006, observed live).
+			return p.ActiveNodeCount, nil
 		}
 	}
 	return 0, fmt.Errorf("node pool %s not found", nodePoolID)
