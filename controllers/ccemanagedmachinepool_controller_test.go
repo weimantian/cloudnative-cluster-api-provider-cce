@@ -19,6 +19,7 @@ import (
 	capiconditions "sigs.k8s.io/cluster-api/util/conditions"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
@@ -794,7 +795,7 @@ func TestMachinePoolScaleTriggeredByWatch(t *testing.T) {
 			return fakeSvc, nil
 		},
 	}
-	if err := r.SetupWithManager(ctx, mgr); err != nil {
+	if err := r.SetupWithManager(ctx, mgr, controller.Options{}); err != nil {
 		t.Fatalf("SetupWithManager failed: %v", err)
 	}
 	go func() { _ = mgr.Start(ctx) }()

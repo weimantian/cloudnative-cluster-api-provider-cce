@@ -21,6 +21,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 	"sigs.k8s.io/controller-runtime/pkg/handler"
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
@@ -397,7 +398,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 }
 
 // SetupWithManager registers the controller with the manager.
-func (r *CCEManagedMachinePoolReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
+func (r *CCEManagedMachinePoolReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrav1beta1.CCEManagedMachinePool{}).
 		// Watch the owning CAPI MachinePool so replica changes (kubectl scale
@@ -411,6 +412,7 @@ func (r *CCEManagedMachinePoolReconciler) SetupWithManager(ctx context.Context, 
 			handler.EnqueueRequestsFromMapFunc(r.machinePoolToInfraPool),
 			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
 		).
+		WithOptions(opts).
 		Named("ccemanagedmachinepool").
 		Complete(r)
 }

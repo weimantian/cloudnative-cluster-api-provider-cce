@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/cluster-api/util/annotations"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
@@ -534,9 +535,10 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 }
 
 // SetupWithManager registers the controller with the manager.
-func (r *CCEManagedControlPlaneReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
+func (r *CCEManagedControlPlaneReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&controlplanev1beta1.CCEManagedControlPlane{}).
+		WithOptions(opts).
 		Named("ccemanagedcontrolplane").
 		Complete(r)
 }

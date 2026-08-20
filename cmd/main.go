@@ -44,12 +44,15 @@ func init() {
 
 func main() {
 	var (
-		metricsAddr          string
-		enableLeaderElection bool
-		probeAddr            string
-		leaderElectionID     string
-		featureGates         string
-		validFlavors         string
+		metricsAddr             string
+		enableLeaderElection    bool
+		probeAddr               string
+		leaderElectionID        string
+		featureGates            string
+		validFlavors            string
+		clusterConcurrency      int
+		controlPlaneConcurrency int
+		machinePoolConcurrency  int
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -63,6 +66,12 @@ func main() {
 	flag.StringVar(&validFlavors, "valid-flavors", "",
 		"Comma-separated allowlist of ECS flavors accepted by the CCEManagedMachinePool webhook "+
 			"(empty = format check only; region availability is still enforced by CCE at create time).")
+	flag.IntVar(&clusterConcurrency, "cce-cluster-concurrency", 1,
+		"Max concurrent reconciles of the CCECluster controller (0 = controller-runtime default of 1).")
+	flag.IntVar(&controlPlaneConcurrency, "cce-control-plane-concurrency", 1,
+		"Max concurrent reconciles of the CCEManagedControlPlane controller (0 = default of 1).")
+	flag.IntVar(&machinePoolConcurrency, "cce-machine-pool-concurrency", 1,
+		"Max concurrent reconciles of the CCEManagedMachinePool controller (0 = default of 1).")
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -100,7 +109,11 @@ func main() {
 		os.Exit(1)
 	}
 
-	if err := controllers.SetupControllers(mgr); err != nil {
+	if err := controllers.SetupControllers(mgr, controllers.ControllerConcurrency{
+		Cluster:      clusterConcurrency,
+		ControlPlane: controlPlaneConcurrency,
+		MachinePool:  machinePoolConcurrency,
+	}); err != nil {
 		setupLog.Error(err, "unable to create controllers")
 		os.Exit(1)
 	}
