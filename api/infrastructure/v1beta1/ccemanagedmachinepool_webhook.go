@@ -109,7 +109,9 @@ func (m *CCEManagedMachinePool) validate() error {
 	}
 	if m.Spec.OS == "" {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "os"),
-			"os is required unless a private image is used, e.g. \"Huawei Cloud EulerOS 2.0\""))
+			"os is required unless a private image is used; supported values include "+
+				"\"Huawei Cloud EulerOS 2.0\", \"EulerOS release 2.9\", \"Ubuntu 22.04\" "+
+				"(exact string, see the CCE node OS list)"))
 	}
 	if m.Spec.RootVolume == nil {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "rootVolume"),

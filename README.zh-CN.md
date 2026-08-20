@@ -286,6 +286,7 @@ clusterctl delete --infrastructure cce
 - **集群创建报 `CCE_CM.0004 "Tag's parameters is invalid"`** —— 某个标签 key/value 违反 CCE 约束(key 字符集 `_.:=+-@` 等,不允许 `/`)。请使用已修复 owned-tag key 的版本。
 - **`kubectl --kubeconfig ...` 报 "unable to parse bytes as PEM block"** —— 旧版本 Provider 对 kubeconfig CA 做了双重 base64 编码;请升级到修复后的版本。
 - **`MachinePool` 被拒:"spec.template.spec.bootstrap: Required value"** —— CAPI v1.14 要求每个 MachinePool 都有 bootstrap 引用。添加 `bootstrap.dataSecretName: <cluster>-bootstrap`(托管节点池用空 Secret 即可)。
+- **节点池创建报 `OS: should not be empty`** —— 实测 CCE 要求显式指定 `os`(尽管 API 文档称会自动选择)。它**不是唯一值**:当前集群版本支持的镜像包括 `Huawei Cloud EulerOS 2.0`、`EulerOS release 2.9`、`Ubuntu 22.04`、`Huawei Cloud EulerOS 1.1` 等(需精确匹配字符串;见官方[节点操作系统说明](https://support.huaweicloud.com/usermanual-cce/cce_10_0476.html)以及 `config/samples/cluster-template.yaml` 中的注释清单)。
 - **集群创建报网络错误** —— CCE 要求先有 VPC,且容器/服务网段不能冲突;请检查 `spec.network` 与网段规划(见 [docs/architecture-design.md](docs/architecture-design.md) §6)。容器网段在同一 VPC 内必须唯一。
 - **节点池不扩缩容** —— 确认控制面已 `Ready`(节点池只有在集群 `Available` 后才能创建),且 IAM 用户具备 `cce:nodepool:scale` 权限。
 - **`clusterctl get kubeconfig` 返回的 server 不可达** —— 私网集群(`endpointAccess.public: false`)的 kubeconfig server 是内网 VPC IP,需从 VPC 内主机访问。

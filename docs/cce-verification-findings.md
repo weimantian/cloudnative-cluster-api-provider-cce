@@ -226,7 +226,7 @@
 | **Q8 删除** | ✅ DeleteNodePool + DeleteCluster(delete_evs/eni/net=true)成功,复核无残留集群 |
 | **Q4/eni(实测新发现)** | ⚠️ eniNetwork.subnets[].subnetID 必须是 **neutron_subnet_id**(普通子网 ID 报 CCE_CM.0004 "Eni subnetId is not in cluster vpc") |
 | **Turbo 规格(sub-ENI)** | ⚠️ 实测 c6.large.2 **sub-ENI 配额=0 → 不支持 eni 网络**(报 "subeni quota is 0",对应官方 CCE.01400025);需选 `quota:sub_network_interface_max_num>0` 的规格(如 c6sne.large.2,但 cn-north-4a 部分规格 abandon) |
-| **节点池参数(实测新发现)** | ⚠️ 非本地盘规格(c6.large.2)必须配**数据盘**(报 "Data volume needed");**OS 必填**(报 "OS:should not be empty",与 SDK 注释"可自动选择"矛盾,合法值 "Huawei Cloud EulerOS 2.0");**AZ 必填**(报 "Az [] is not in available az list") |
+| **节点池参数(实测新发现)** | ⚠️ 非本地盘规格(c6.large.2)必须配**数据盘**(报 "Data volume needed");**OS 必填**(报 "OS:should not be empty",与 SDK 注释"可自动选择"矛盾);**AZ 必填**(报 "Az [] is not in available az list")。**OS 合法值非单一**(官方 API 参考附录表 8-5):`Huawei Cloud EulerOS 2.0`(x86/ARM)、`Huawei Cloud EulerOS 1.1`、`EulerOS release 2.9`(x86/ARM)、`Ubuntu 22.04`(cgroup v1/v2,仅 VPC 网络模型)、`CentOS Linux release 7.6`(停止维护);实测仅验证过 `Huawei Cloud EulerOS 2.0` |
 
 > 冒烟环境:VPC `capi-smoke-vpc`(10.0.0.0/16)+ 双子网 + 密钥对 `capi-smoke-key` + 规格 c6.large.2(Standard/vpc-router 模式跑通全链路);Turbo/eni 集群创建同样成功(用 neutron 子网 ID)。搭建工具:`hack/smoke-setup`。
 

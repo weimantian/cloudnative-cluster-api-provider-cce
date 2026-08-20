@@ -94,7 +94,15 @@ spec:
   clusterName: my-cce-cluster
   nodePoolName: pool-0
   flavor: c6.large.2 # ECS node flavor; must exist in the region
-  os: Huawei Cloud EulerOS 2.0 # exact OS string required by CCE (verified)
+  # Node OS image. One of the values CCE supports for this cluster version
+  # (official API reference 附录 表 8-5; exact string matters):
+  #   Huawei Cloud EulerOS 2.0   (verified example; also available for ARM)
+  #   Huawei Cloud EulerOS 1.1
+  #   EulerOS release 2.9        (also available for ARM)
+  #   Ubuntu 22.04               (cgroup v1 / v2; VPC-network model only)
+  #   CentOS Linux release 7.6   (停止维护 / deprecated)
+  # Omit it to let CCE auto-select an OS for the cluster version.
+  os: Huawei Cloud EulerOS 2.0
   rootVolume:
     size: 40
     type: GPSSD
