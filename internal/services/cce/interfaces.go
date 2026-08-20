@@ -54,8 +54,12 @@ type CreateClusterInput struct {
 	ServiceCIDR         string
 	CustomSAN           []string
 	PublicAccess        bool
-	AgencyName          string
-	BillingMode         int32
+	// PublicAccessCIDRs is the public API server whitelist (PublicAccess
+	// model cidrs). Only sent when PublicAccess is true; empty = the
+	// platform default ["0.0.0.0/0"].
+	PublicAccessCIDRs []string
+	AgencyName        string
+	BillingMode       int32
 	// PeriodType/PeriodNum are REQUIRED when BillingMode=1 (subscription):
 	// periodType month|year, periodNum month [1-9] / year [1-3] (official
 	// ClusterExtendParam; verified against CreateCluster.txt).
@@ -72,14 +76,15 @@ type CreateClusterInput struct {
 // CreateNodePoolInput maps the CCEManagedMachinePool spec to the CCE
 // CreateNodePool API (nodeTemplate + initialNodeCount).
 type CreateNodePoolInput struct {
-	ClusterID        string
-	Name             string
-	Flavor           string
-	OS               string
-	RootVolumeSize   int32
-	RootVolumeType   string
-	DataVolumeSize   int32
-	DataVolumeType   string
+	ClusterID      string
+	Name           string
+	Flavor         string
+	OS             string
+	RootVolumeSize int32
+	RootVolumeType string
+	// DataVolumes of the nodes (nodeTemplate.dataVolumes); each entry maps
+	// to a model.Volume{Size, Volumetype}. Empty = no data volumes.
+	DataVolumes      []NodeVolumeInput
 	SSHKey           string
 	AvailabilityZone string
 	InitialNodeCount int32
@@ -104,6 +109,13 @@ type NodePoolAutoscaling struct {
 	Enable       bool
 	MinNodeCount int32
 	MaxNodeCount int32
+}
+
+// NodeVolumeInput describes a root or data volume in the service layer.
+// It is a projection of the API common.NodeVolume (Size + Type).
+type NodeVolumeInput struct {
+	Size int32
+	Type string
 }
 
 // NodePoolInfo is the provider-side representation of a CCE node pool.

@@ -169,6 +169,13 @@ type EndpointAccessSpec struct {
 	// Public enables public API server access.
 	// +optional
 	Public bool `json:"public,omitempty"`
+
+	// CIDRs is the public API server access whitelist (mapped to the CCE
+	// PublicAccess.cidrs). Only sent when public access is enabled; empty
+	// means the platform default ["0.0.0.0/0"]. CCE always exposes a
+	// VPC-internal (private) endpoint regardless of this field.
+	// +optional
+	CIDRs []string `json:"cidrs,omitempty"`
 }
 
 // BillingSpec controls cluster billing.

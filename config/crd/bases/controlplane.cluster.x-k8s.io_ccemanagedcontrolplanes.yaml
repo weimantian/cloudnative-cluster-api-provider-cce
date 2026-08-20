@@ -140,6 +140,15 @@ spec:
               endpointAccess:
                 description: EndpointAccess controls public API server access.
                 properties:
+                  cidrs:
+                    description: |-
+                      CIDRs is the public API server access whitelist (mapped to the CCE
+                      PublicAccess.cidrs). Only sent when public access is enabled; empty
+                      means the platform default ["0.0.0.0/0"]. CCE always exposes a
+                      VPC-internal (private) endpoint regardless of this field.
+                    items:
+                      type: string
+                    type: array
                   public:
                     description: Public enables public API server access.
                     type: boolean

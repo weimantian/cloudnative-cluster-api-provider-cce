@@ -202,8 +202,7 @@ func TestSmoke(t *testing.T) {
 			// Non-local-disk flavors (e.g. c6.large.2) require a data volume
 			// (verified: CCE_CM.0004 "Data volume needed for non-local-disk
 			// flavor or non-system diskType").
-			DataVolumeSize:   100,
-			DataVolumeType:   "GPSSD",
+			DataVolumes:      []NodeVolumeInput{{Size: 100, Type: "GPSSD"}},
 			SSHKey:           keypair,
 			AvailabilityZone: smokeEnv("CCE_SMOKE_AZ", ""),
 			InitialNodeCount: 2,
@@ -516,8 +515,7 @@ func TestSmokeExtras(t *testing.T) {
 				OS:                   "Huawei Cloud EulerOS 2.0",
 				RootVolumeSize:       40,
 				RootVolumeType:       "GPSSD",
-				DataVolumeSize:       100,
-				DataVolumeType:       "GPSSD",
+				DataVolumes:          []NodeVolumeInput{{Size: 100, Type: "GPSSD"}},
 				SSHKey:               keypair,
 				AvailabilityZone:     smokeEnv("CCE_SMOKE_AZ", ""),
 				InitialNodeCount:     1,
@@ -597,8 +595,7 @@ func TestSmokeUpgrade(t *testing.T) {
 		OS:               "Huawei Cloud EulerOS 2.0",
 		RootVolumeSize:   40,
 		RootVolumeType:   "GPSSD",
-		DataVolumeSize:   100,
-		DataVolumeType:   "GPSSD",
+		DataVolumes:      []NodeVolumeInput{{Size: 100, Type: "GPSSD"}},
 		SSHKey:           keypair,
 		AvailabilityZone: smokeEnv("CCE_SMOKE_AZ", ""),
 		InitialNodeCount: 1,
@@ -977,7 +974,7 @@ func TestSmokeUpgradeInfo(t *testing.T) {
 		// Add a node pool first (nodes are rolled during upgrade).
 		poolID, err := svc.CreateNodePool(ctx, CreateNodePoolInput{
 			ClusterID: clusterID, Name: "pool-0", Flavor: flavor, OS: "Huawei Cloud EulerOS 2.0",
-			RootVolumeSize: 40, RootVolumeType: "GPSSD", DataVolumeSize: 100, DataVolumeType: "GPSSD",
+			RootVolumeSize: 40, RootVolumeType: "GPSSD", DataVolumes: []NodeVolumeInput{{Size: 100, Type: "GPSSD"}},
 			SSHKey: keypair, InitialNodeCount: 1, BillingMode: 0,
 		})
 		if err != nil {
@@ -1153,8 +1150,7 @@ func TestSmokeAutoscaling(t *testing.T) {
 		InitialNodeCount: 1,
 		RootVolumeSize:   40,
 		RootVolumeType:   "SSD",
-		DataVolumeSize:   100,
-		DataVolumeType:   "SSD",
+		DataVolumes:      []NodeVolumeInput{{Size: 100, Type: "SSD"}},
 		Autoscaling:      &NodePoolAutoscaling{Enable: true, MinNodeCount: 1, MaxNodeCount: 4},
 	})
 	if err != nil {
@@ -1299,8 +1295,7 @@ func TestSmokeUpgradeWorkflow(t *testing.T) {
 			InitialNodeCount: 1,
 			RootVolumeSize:   40,
 			RootVolumeType:   "SSD",
-			DataVolumeSize:   100,
-			DataVolumeType:   "SSD",
+			DataVolumes:      []NodeVolumeInput{{Size: 100, Type: "SSD"}},
 			BillingMode:      0,
 		})
 		if err != nil {

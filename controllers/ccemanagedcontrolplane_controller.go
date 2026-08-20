@@ -587,6 +587,7 @@ func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane, vpcID,
 		ServiceCIDR:          cp.Spec.ServiceNetwork.CIDR,
 		CustomSAN:            cp.Spec.CustomSan,
 		PublicAccess:         cp.Spec.EndpointAccess.Public,
+		PublicAccessCIDRs:    cp.Spec.EndpointAccess.CIDRs,
 		AgencyName:           agency,
 		BillingMode:          cp.Spec.Billing.Mode,
 	}

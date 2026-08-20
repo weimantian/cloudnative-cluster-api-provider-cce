@@ -469,8 +469,10 @@ func toCreateNodePoolInput(clusterID string, pool *infrav1beta1.CCEManagedMachin
 		in.RootVolumeType = pool.Spec.RootVolume.Type
 	}
 	if len(pool.Spec.DataVolumes) > 0 {
-		in.DataVolumeSize = pool.Spec.DataVolumes[0].Size
-		in.DataVolumeType = pool.Spec.DataVolumes[0].Type
+		in.DataVolumes = make([]cceService.NodeVolumeInput, 0, len(pool.Spec.DataVolumes))
+		for _, v := range pool.Spec.DataVolumes {
+			in.DataVolumes = append(in.DataVolumes, cceService.NodeVolumeInput{Size: v.Size, Type: v.Type})
+		}
 	}
 	return in
 }

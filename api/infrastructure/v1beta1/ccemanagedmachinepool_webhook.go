@@ -94,11 +94,7 @@ func (m *CCEManagedMachinePool) validate() error {
 	if len(m.Spec.SecurityGroups) > 5 {
 		allErrs = append(allErrs, field.TooMany(field.NewPath("spec", "securityGroups"), len(m.Spec.SecurityGroups), 5))
 	}
-	// Multiple data volumes are not yet mapped (the service only forwards one);
-	// reject instead of silently truncating.
-	if len(m.Spec.DataVolumes) > 1 {
-		allErrs = append(allErrs, field.TooMany(field.NewPath("spec", "dataVolumes"), len(m.Spec.DataVolumes), 1))
-	}
+	// Required nodeTemplate fields per the official CreateNodePool API:
 	// Required nodeTemplate fields per the official CreateNodePool API:
 	// az ("通过api创建节点不支持随机可用区"), os (required unless a private
 	// image is used), rootVolume (size 40-1024 GiB). Fail fast at the API

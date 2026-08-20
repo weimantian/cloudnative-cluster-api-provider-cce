@@ -139,8 +139,13 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		spec.EniNetwork = &model.EniNetwork{Subnets: &subnets}
 	}
 	if in.PublicAccess {
-		// Empty whitelist defaults to 0.0.0.0/0 (official PublicAccess model).
-		spec.PublicAccess = &model.PublicAccess{}
+		// Empty whitelist defaults to 0.0.0.0/0 (official PublicAccess model);
+		// explicit cidrs restrict the public API to the given networks.
+		pa := &model.PublicAccess{}
+		if len(in.PublicAccessCIDRs) > 0 {
+			pa.Cidrs = &in.PublicAccessCIDRs
+		}
+		spec.PublicAccess = pa
 	}
 	spec.HostNetwork = &model.HostNetwork{Vpc: in.HostNetworkVpcID, Subnet: in.HostNetworkSubnetID}
 	// Ownership + user tags -> CCE clusterTags (official ResourceTag array).
@@ -364,8 +369,12 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 	if in.AvailabilityZone != "" {
 		template.Az = stringPtr(in.AvailabilityZone)
 	}
-	if in.DataVolumeSize > 0 {
-		template.DataVolumes = &[]model.Volume{{Size: in.DataVolumeSize, Volumetype: defaultString(in.DataVolumeType, "GPSSD")}}
+	if len(in.DataVolumes) > 0 {
+		volumes := make([]model.Volume, 0, len(in.DataVolumes))
+		for _, v := range in.DataVolumes {
+			volumes = append(volumes, model.Volume{Size: v.Size, Volumetype: defaultString(v.Type, "GPSSD")})
+		}
+		template.DataVolumes = &volumes
 	}
 	if in.SSHKey != "" {
 		template.Login = &model.Login{SshKey: stringPtr(in.SSHKey)}
