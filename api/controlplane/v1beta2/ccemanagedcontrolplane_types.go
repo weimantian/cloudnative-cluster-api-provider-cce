@@ -80,6 +80,12 @@ type CCEManagedControlPlaneSpec struct {
 	// Logging). Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
 	// +optional
 	Logging *ControlPlaneLoggingSpec `json:"logging,omitempty"`
+
+	// AccessPolicies declare CCE access policies (the CCE equivalent of EKS
+	// access entries). Declarative set: create missing, update drift, remove
+	// those no longer listed.
+	// +optional
+	AccessPolicies []AccessPolicySpec `json:"accessPolicies,omitempty"`
 }
 
 // ControlPlaneLoggingSpec maps the CCE ClusterLogConfig (ttl_in_days +
@@ -111,6 +117,35 @@ type ControlPlaneLogSpec struct {
 	// Enable turns collection on/off for this item.
 	// +optional
 	Enable bool `json:"enable,omitempty"`
+}
+
+// AccessPolicySpec declares one CCE access policy (maps to the CCE
+// AccessPolicy API). Structurally identical to the v1beta1 type.
+type AccessPolicySpec struct {
+	// Name of the access policy (unique within the account).
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=56
+	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9.-]*$`
+	Name string `json:"name"`
+
+	// PolicyType is the permission level.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=CCEClusterAdminPolicy;CCEAdminPolicy;CCEEditPolicy;CCEViewPolicy
+	PolicyType string `json:"policyType"`
+
+	// PrincipalType is the IAM principal kind: user, group or agency.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=user;group;agency
+	PrincipalType string `json:"principalType"`
+
+	// PrincipalIds are the IAM user/group/agency IDs the policy applies to.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	PrincipalIds []string `json:"principalIds"`
+
+	// Namespaces the policy applies to (["*"] = all).
+	// +optional
+	Namespaces []string `json:"namespaces,omitempty"`
 }
 
 // PodIdentityAssociationSpec declares a ServiceAccount -> agency binding.

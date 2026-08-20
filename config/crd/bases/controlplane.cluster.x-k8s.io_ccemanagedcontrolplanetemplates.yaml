@@ -61,6 +61,65 @@ spec:
                       category / flavor / version / containerNetwork / serviceNetwork /
                       customSan / publicAccess / agencyName / billingMode.
                     properties:
+                      accessPolicies:
+                        description: |-
+                          AccessPolicies declare CCE access policies (the CCE equivalent of EKS
+                          access entries): which IAM principal (user/group/agency) may access the
+                          cluster with which role, scoped to which namespaces. Declarative set:
+                          create missing, update drift, remove those no longer listed.
+                        items:
+                          description: |-
+                            AccessPolicySpec declares one CCE access policy (maps to the CCE
+                            AccessPolicy API: principal + policyType + accessScope.namespaces). The
+                            controller scopes it to the owning cluster (clusters=[clusterID]).
+                          properties:
+                            name:
+                              description: |-
+                                Name of the access policy. Unique within the account; lowercase start,
+                                [a-z0-9.-], max 56 chars.
+                              maxLength: 56
+                              pattern: ^[a-z][a-z0-9.-]*$
+                              type: string
+                            namespaces:
+                              description: |-
+                                Namespaces the policy applies to (["*"] = all namespaces). Defaults
+                                to ["*"] when empty.
+                              items:
+                                type: string
+                              type: array
+                            policyType:
+                              description: |-
+                                PolicyType is the permission level: CCEClusterAdminPolicy (cluster
+                                admin), CCEAdminPolicy (ops), CCEEditPolicy (developer),
+                                CCEViewPolicy (read-only).
+                              enum:
+                              - CCEClusterAdminPolicy
+                              - CCEAdminPolicy
+                              - CCEEditPolicy
+                              - CCEViewPolicy
+                              type: string
+                            principalIds:
+                              description: PrincipalIds are the IAM user/group/agency
+                                IDs the policy applies to.
+                              items:
+                                type: string
+                              minItems: 1
+                              type: array
+                            principalType:
+                              description: 'PrincipalType is the IAM principal kind:
+                                user, group or agency.'
+                              enum:
+                              - user
+                              - group
+                              - agency
+                              type: string
+                          required:
+                          - name
+                          - policyType
+                          - principalIds
+                          - principalType
+                          type: object
+                        type: array
                       addons:
                         description: |-
                           Addons are the CCE addon instances to manage (declarative set; the
@@ -335,6 +394,58 @@ spec:
                       category / flavor / version / containerNetwork / serviceNetwork /
                       customSan / publicAccess / agencyName / billingMode.
                     properties:
+                      accessPolicies:
+                        description: |-
+                          AccessPolicies declare CCE access policies (the CCE equivalent of EKS
+                          access entries). Declarative set: create missing, update drift, remove
+                          those no longer listed.
+                        items:
+                          description: |-
+                            AccessPolicySpec declares one CCE access policy (maps to the CCE
+                            AccessPolicy API). Structurally identical to the v1beta1 type.
+                          properties:
+                            name:
+                              description: Name of the access policy (unique within
+                                the account).
+                              maxLength: 56
+                              pattern: ^[a-z][a-z0-9.-]*$
+                              type: string
+                            namespaces:
+                              description: Namespaces the policy applies to (["*"]
+                                = all).
+                              items:
+                                type: string
+                              type: array
+                            policyType:
+                              description: PolicyType is the permission level.
+                              enum:
+                              - CCEClusterAdminPolicy
+                              - CCEAdminPolicy
+                              - CCEEditPolicy
+                              - CCEViewPolicy
+                              type: string
+                            principalIds:
+                              description: PrincipalIds are the IAM user/group/agency
+                                IDs the policy applies to.
+                              items:
+                                type: string
+                              minItems: 1
+                              type: array
+                            principalType:
+                              description: 'PrincipalType is the IAM principal kind:
+                                user, group or agency.'
+                              enum:
+                              - user
+                              - group
+                              - agency
+                              type: string
+                          required:
+                          - name
+                          - policyType
+                          - principalIds
+                          - principalType
+                          type: object
+                        type: array
                       addons:
                         description: |-
                           Addons are the CCE addon instances to manage (declarative set; the

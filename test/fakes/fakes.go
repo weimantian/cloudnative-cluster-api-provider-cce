@@ -45,6 +45,10 @@ type FakeCCEService struct {
 	UpgradeNodePoolFn        func(ctx context.Context, clusterID, nodePoolID string, maxUnavailable int32) error
 	ShowClusterLogConfigFn   func(ctx context.Context, clusterID string) (*cceService.LogConfigInfo, error)
 	UpdateClusterLogConfigFn func(ctx context.Context, clusterID string, ttlInDays int32, logs []cceService.LogConfigInput) error
+	CreateAccessPolicyFn     func(ctx context.Context, in cceService.AccessPolicyInput) (string, error)
+	UpdateAccessPolicyFn     func(ctx context.Context, policyID string, in cceService.AccessPolicyInput) error
+	ListAccessPoliciesFn     func(ctx context.Context) ([]cceService.AccessPolicyInfo, error)
+	DeleteAccessPolicyFn     func(ctx context.Context, policyID string) error
 
 	// Records for assertions.
 	CreatedClusters      []cceService.CreateClusterInput
@@ -59,7 +63,11 @@ type FakeCCEService struct {
 	AddonDeleteCalls     []string               // addon IDs
 	Addons               []cceService.AddonInfo // returned by ListAddonInstances
 	PodIdentityCreate    []cceService.PodIdentityAssociationInput
-	PodIdentityDelete    []string // association IDs
+	AccessPolicyCreate   []cceService.AccessPolicyInput
+	AccessPolicyUpdate   []cceService.AccessPolicyInput
+	AccessPolicyDelete   []string                      // policy IDs
+	AccessPolicies       []cceService.AccessPolicyInfo // returned by ListAccessPolicies
+	PodIdentityDelete    []string                      // association IDs
 	PodIdentities        []cceService.PodIdentityAssociationInfo
 	UpgradeNodePoolCalls []struct {
 		ClusterID      string
@@ -119,6 +127,21 @@ func NewFakeCCEService() *FakeCCEService {
 		return &cceService.LogConfigInfo{}, nil
 	}
 	f.UpdateClusterLogConfigFn = func(_ context.Context, _ string, _ int32, _ []cceService.LogConfigInput) error {
+		return nil
+	}
+	f.CreateAccessPolicyFn = func(_ context.Context, in cceService.AccessPolicyInput) (string, error) {
+		f.AccessPolicyCreate = append(f.AccessPolicyCreate, in)
+		return "access-policy-" + in.Name, nil
+	}
+	f.UpdateAccessPolicyFn = func(_ context.Context, _ string, in cceService.AccessPolicyInput) error {
+		f.AccessPolicyUpdate = append(f.AccessPolicyUpdate, in)
+		return nil
+	}
+	f.ListAccessPoliciesFn = func(_ context.Context) ([]cceService.AccessPolicyInfo, error) {
+		return f.AccessPolicies, nil
+	}
+	f.DeleteAccessPolicyFn = func(_ context.Context, policyID string) error {
+		f.AccessPolicyDelete = append(f.AccessPolicyDelete, policyID)
 		return nil
 	}
 	f.DeleteNodePoolFn = func(_ context.Context, _, _ string) error { return nil }
@@ -302,6 +325,26 @@ func (f *FakeCCEService) ListPodIdentityAssociations(ctx context.Context, cluste
 // DeletePodIdentityAssociation implements cceService.Service.
 func (f *FakeCCEService) DeletePodIdentityAssociation(ctx context.Context, clusterID, associationID string) error {
 	return f.DeletePodIdentityFn(ctx, clusterID, associationID)
+}
+
+// CreateAccessPolicy implements cceService.Service.
+func (f *FakeCCEService) CreateAccessPolicy(ctx context.Context, in cceService.AccessPolicyInput) (string, error) {
+	return f.CreateAccessPolicyFn(ctx, in)
+}
+
+// UpdateAccessPolicy implements cceService.Service.
+func (f *FakeCCEService) UpdateAccessPolicy(ctx context.Context, policyID string, in cceService.AccessPolicyInput) error {
+	return f.UpdateAccessPolicyFn(ctx, policyID, in)
+}
+
+// ListAccessPolicies implements cceService.Service.
+func (f *FakeCCEService) ListAccessPolicies(ctx context.Context) ([]cceService.AccessPolicyInfo, error) {
+	return f.ListAccessPoliciesFn(ctx)
+}
+
+// DeleteAccessPolicy implements cceService.Service.
+func (f *FakeCCEService) DeleteAccessPolicy(ctx context.Context, policyID string) error {
+	return f.DeleteAccessPolicyFn(ctx, policyID)
 }
 
 // UpgradeNodePool implements cceService.Service.

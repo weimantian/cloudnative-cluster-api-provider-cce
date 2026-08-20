@@ -9,6 +9,7 @@ package controllers
 import (
 	"context"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -234,6 +235,14 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		return ctrl.Result{}, err
 	}
 	conditions.MarkTrue(cp, conditions.LoggingConfiguredCondition, "LoggingConfigured", "CCE control-plane log config reconciled")
+
+	// CCE access policies (mirrors EKS access entries): declarative set.
+	if err := r.reconcileAccessPolicies(ctx, svc, clusterID, cp); err != nil {
+		conditions.MarkFalse(cp, conditions.AccessPoliciesConfiguredCondition,
+			conditions.ReconciliationFailedReason, err.Error())
+		return ctrl.Result{}, err
+	}
+	conditions.MarkTrue(cp, conditions.AccessPoliciesConfiguredCondition, "AccessPoliciesConfigured", "CCE access policies reconciled")
 
 	// Upgrade orchestration (FR-1.7, questionnaire Q11): first poll any
 	// in-flight upgrade task; then, when spec.version differs from the running
@@ -702,4 +711,84 @@ func logConfigEqual(a, b *cceService.LogConfigInfo) bool {
 		set[key(l)]--
 	}
 	return true
+}
+
+// reconcileAccessPolicies reconciles the declared CCE access policies against
+// the account: create missing (by name), update drift (policyType/principal/
+// namespaces), delete those no longer listed. CCE access policies are account-
+// scoped (one policy may span many clusters), so they are keyed by name and
+// scoped to the owning cluster via clusters=[clusterID].
+func (r *CCEManagedControlPlaneReconciler) reconcileAccessPolicies(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) error {
+	if len(cp.Spec.AccessPolicies) == 0 {
+		return nil
+	}
+	current, err := svc.ListAccessPolicies(ctx)
+	if err != nil {
+		return err
+	}
+	cloudByName := map[string]cceService.AccessPolicyInfo{}
+	for _, p := range current {
+		cloudByName[p.Name] = p
+	}
+	specByName := map[string]controlplanev1beta1.AccessPolicySpec{}
+	for _, p := range cp.Spec.AccessPolicies {
+		specByName[p.Name] = p
+	}
+
+	// Create missing / update drift.
+	for _, want := range cp.Spec.AccessPolicies {
+		input := toAccessPolicyInput(clusterID, want)
+		got, exists := cloudByName[want.Name]
+		switch {
+		case !exists:
+			if _, err := svc.CreateAccessPolicy(ctx, input); err != nil {
+				return err
+			}
+		case accessPolicyDrifted(got, want):
+			if err := svc.UpdateAccessPolicy(ctx, got.PolicyID, input); err != nil {
+				return err
+			}
+		}
+	}
+	// Remove policies no longer listed.
+	for _, got := range current {
+		if _, keep := specByName[got.Name]; !keep {
+			if err := svc.DeleteAccessPolicy(ctx, got.PolicyID); err != nil {
+				return err
+			}
+		}
+	}
+	return nil
+}
+
+// toAccessPolicyInput maps a spec to the service input, scoping the policy to
+// the owning cluster.
+func toAccessPolicyInput(clusterID string, p controlplanev1beta1.AccessPolicySpec) cceService.AccessPolicyInput {
+	return cceService.AccessPolicyInput{
+		Name:          p.Name,
+		ClusterID:     clusterID,
+		PolicyType:    p.PolicyType,
+		PrincipalType: p.PrincipalType,
+		PrincipalIDs:  p.PrincipalIds,
+		Namespaces:    p.Namespaces,
+	}
+}
+
+// accessPolicyDrifted reports whether a cloud access policy differs from the
+// declared spec (empty spec namespaces default to ["*"]).
+func accessPolicyDrifted(got cceService.AccessPolicyInfo, want controlplanev1beta1.AccessPolicySpec) bool {
+	if got.PolicyType != want.PolicyType || got.PrincipalType != want.PrincipalType {
+		return true
+	}
+	if !slices.Equal(got.PrincipalIDs, want.PrincipalIds) {
+		return true
+	}
+	wantNS := want.Namespaces
+	if len(wantNS) == 0 {
+		wantNS = []string{"*"}
+	}
+	if !slices.Equal(got.Namespaces, wantNS) {
+		return true
+	}
+	return false
 }

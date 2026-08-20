@@ -41,6 +41,10 @@ const (
 	// LoggingConfiguredCondition reports whether the declared control-plane log
 	// collection config is applied (mirrors CAPA EKS Logging).
 	LoggingConfiguredCondition = "LoggingConfigured"
+	// AccessPoliciesConfiguredCondition reports whether the declared CCE access
+	// policies are created/updated/removed as specified (mirrors EKS access
+	// entries).
+	AccessPoliciesConfiguredCondition = "AccessPoliciesConfigured"
 	// UpgradeReadyCondition reports the cluster upgrade state (FR-1.7,
 	// questionnaire Q11). True when spec.version matches the running version.
 	UpgradeReadyCondition = "UpgradeReady"

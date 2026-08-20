@@ -366,6 +366,100 @@ func (s *Client) ListClusters(ctx context.Context) ([]ClusterRef, error) {
 	return refs, nil
 }
 
+// CreateAccessPolicy implements Service.
+func (s *Client) CreateAccessPolicy(ctx context.Context, in AccessPolicyInput) (string, error) {
+	resp, err := s.cce.CreateAccessPolicy(&model.CreateAccessPolicyRequest{Body: toAccessPolicyModel(in)})
+	if err != nil {
+		return "", errors.Wrap(err, "CreateAccessPolicy failed")
+	}
+	if resp.PolicyId != nil {
+		return *resp.PolicyId, nil
+	}
+	return "", nil
+}
+
+// UpdateAccessPolicy implements Service.
+func (s *Client) UpdateAccessPolicy(ctx context.Context, policyID string, in AccessPolicyInput) error {
+	_, err := s.cce.UpdateAccessPolicy(&model.UpdateAccessPolicyRequest{PolicyId: policyID, Body: toAccessPolicyModel(in)})
+	if err != nil {
+		return errors.Wrap(err, "UpdateAccessPolicy failed")
+	}
+	return nil
+}
+
+// ListAccessPolicies implements Service.
+func (s *Client) ListAccessPolicies(ctx context.Context) ([]AccessPolicyInfo, error) {
+	resp, err := s.cce.ListAccessPolicy(&model.ListAccessPolicyRequest{})
+	if err != nil {
+		return nil, errors.Wrap(err, "ListAccessPolicy failed")
+	}
+	var infos []AccessPolicyInfo
+	if resp.AccessPolicyList != nil {
+		for _, p := range *resp.AccessPolicyList {
+			info := AccessPolicyInfo{}
+			if p.PolicyId != nil {
+				info.PolicyID = *p.PolicyId
+			}
+			if p.Name != nil {
+				info.Name = *p.Name
+			}
+			if p.PolicyType != nil {
+				info.PolicyType = *p.PolicyType
+			}
+			if p.Principal != nil {
+				info.PrincipalType = p.Principal.Type.Value()
+				info.PrincipalIDs = p.Principal.Ids
+			}
+			if p.AccessScope != nil {
+				info.Namespaces = p.AccessScope.Namespaces
+			}
+			infos = append(infos, info)
+		}
+	}
+	return infos, nil
+}
+
+// DeleteAccessPolicy implements Service.
+func (s *Client) DeleteAccessPolicy(ctx context.Context, policyID string) error {
+	_, err := s.cce.DeleteAccessPolicy(&model.DeleteAccessPolicyRequest{PolicyId: policyID})
+	if err != nil {
+		return errors.Wrap(err, "DeleteAccessPolicy failed")
+	}
+	return nil
+}
+
+// toAccessPolicyModel maps an AccessPolicyInput to the CCE AccessPolicy model.
+// An empty Namespaces list defaults to ["*"] (all namespaces).
+func toAccessPolicyModel(in AccessPolicyInput) *model.AccessPolicy {
+	kind := "AccessPolicy"
+	apiVersion := "v3"
+	namespaces := in.Namespaces
+	if len(namespaces) == 0 {
+		namespaces = []string{"*"}
+	}
+	principalType := model.GetPrincipalTypeEnum().USER
+	switch in.PrincipalType {
+	case "group":
+		principalType = model.GetPrincipalTypeEnum().GROUP
+	case "agency":
+		principalType = model.GetPrincipalTypeEnum().AGENCY
+	}
+	return &model.AccessPolicy{
+		Kind:       &kind,
+		ApiVersion: &apiVersion,
+		Name:       &in.Name,
+		Clusters:   []string{in.ClusterID},
+		AccessScope: &model.AccessScope{
+			Namespaces: namespaces,
+		},
+		PolicyType: in.PolicyType,
+		Principal: &model.Principal{
+			Type: principalType,
+			Ids:  in.PrincipalIDs,
+		},
+	}
+}
+
 // GetClusterKubeconfig implements Service. It downloads the cluster certificate
 // via CreateKubernetesClusterCert and assembles a standard kubeconfig
 // (mirrors the ACK provider's controller_kubeconfig.go approach).

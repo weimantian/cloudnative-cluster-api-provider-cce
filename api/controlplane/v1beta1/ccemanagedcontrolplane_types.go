@@ -80,6 +80,13 @@ type CCEManagedControlPlaneSpec struct {
 	// Logging). Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
 	// +optional
 	Logging *ControlPlaneLoggingSpec `json:"logging,omitempty"`
+
+	// AccessPolicies declare CCE access policies (the CCE equivalent of EKS
+	// access entries): which IAM principal (user/group/agency) may access the
+	// cluster with which role, scoped to which namespaces. Declarative set:
+	// create missing, update drift, remove those no longer listed.
+	// +optional
+	AccessPolicies []AccessPolicySpec `json:"accessPolicies,omitempty"`
 }
 
 // ControlPlaneLoggingSpec maps the CCE ClusterLogConfig (ttl_in_days +
@@ -111,6 +118,40 @@ type ControlPlaneLogSpec struct {
 	// Enable turns collection on/off for this item.
 	// +optional
 	Enable bool `json:"enable,omitempty"`
+}
+
+// AccessPolicySpec declares one CCE access policy (maps to the CCE
+// AccessPolicy API: principal + policyType + accessScope.namespaces). The
+// controller scopes it to the owning cluster (clusters=[clusterID]).
+type AccessPolicySpec struct {
+	// Name of the access policy. Unique within the account; lowercase start,
+	// [a-z0-9.-], max 56 chars.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MaxLength=56
+	// +kubebuilder:validation:Pattern=`^[a-z][a-z0-9.-]*$`
+	Name string `json:"name"`
+
+	// PolicyType is the permission level: CCEClusterAdminPolicy (cluster
+	// admin), CCEAdminPolicy (ops), CCEEditPolicy (developer),
+	// CCEViewPolicy (read-only).
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=CCEClusterAdminPolicy;CCEAdminPolicy;CCEEditPolicy;CCEViewPolicy
+	PolicyType string `json:"policyType"`
+
+	// PrincipalType is the IAM principal kind: user, group or agency.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:Enum=user;group;agency
+	PrincipalType string `json:"principalType"`
+
+	// PrincipalIds are the IAM user/group/agency IDs the policy applies to.
+	// +kubebuilder:validation:Required
+	// +kubebuilder:validation:MinItems=1
+	PrincipalIds []string `json:"principalIds"`
+
+	// Namespaces the policy applies to (["*"] = all namespaces). Defaults
+	// to ["*"] when empty.
+	// +optional
+	Namespaces []string `json:"namespaces,omitempty"`
 }
 
 // PodIdentityAssociationSpec declares a ServiceAccount -> agency binding.

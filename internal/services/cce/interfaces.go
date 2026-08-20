@@ -311,6 +311,26 @@ type ClusterRef struct {
 	Tags      map[string]string
 }
 
+// AccessPolicyInput declares a CCE access policy to create/update.
+type AccessPolicyInput struct {
+	Name          string
+	ClusterID     string // the owning cluster (clusters=[ClusterID])
+	PolicyType    string // CCEClusterAdminPolicy/CCEAdminPolicy/CCEEditPolicy/CCEViewPolicy
+	PrincipalType string // user/group/agency
+	PrincipalIDs  []string
+	Namespaces    []string // empty = ["*"]
+}
+
+// AccessPolicyInfo is an access policy as reported by ListAccessPolicy.
+type AccessPolicyInfo struct {
+	PolicyID      string
+	Name          string
+	PolicyType    string
+	PrincipalType string
+	PrincipalIDs  []string
+	Namespaces    []string
+}
+
 // Service is the CCE API surface consumed by the provider controllers.
 type Service interface { // ShowCluster returns the current state of a CCE cluster.
 	ShowCluster(ctx context.Context, clusterID string) (*ClusterInfo, error)
@@ -370,4 +390,12 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	UpdateClusterLogConfig(ctx context.Context, clusterID string, ttlInDays int32, logs []LogConfigInput) error
 	// ShowClusterLogConfig returns the current control-plane log config.
 	ShowClusterLogConfig(ctx context.Context, clusterID string) (*LogConfigInfo, error)
+	// CreateAccessPolicy creates a CCE access policy and returns its ID.
+	CreateAccessPolicy(ctx context.Context, in AccessPolicyInput) (string, error)
+	// UpdateAccessPolicy updates an existing access policy by ID.
+	UpdateAccessPolicy(ctx context.Context, policyID string, in AccessPolicyInput) error
+	// ListAccessPolicies lists the account's access policies.
+	ListAccessPolicies(ctx context.Context) ([]AccessPolicyInfo, error)
+	// DeleteAccessPolicy removes an access policy by ID.
+	DeleteAccessPolicy(ctx context.Context, policyID string) error
 }
