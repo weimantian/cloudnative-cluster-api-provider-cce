@@ -9,12 +9,18 @@ package controllers
 import (
 	"context"
 	"testing"
+	"time"
 
+	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
+	"k8s.io/apimachinery/pkg/runtime"
+	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capiconditions "sigs.k8s.io/cluster-api/util/conditions"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
+	"sigs.k8s.io/controller-runtime/pkg/manager"
+	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
@@ -656,5 +662,324 @@ func TestMachinePoolReconcileSyncsReplicasFromOwner(t *testing.T) {
 	// reconcile should have scaled to the owner's 5.
 	if len(fakeSvc.ScaleCalls) == 0 || fakeSvc.ScaleCalls[len(fakeSvc.ScaleCalls)-1] != 5 {
 		t.Errorf("expected a ScaleNodePool(5) call, got %v", fakeSvc.ScaleCalls)
+	}
+}
+
+// TestMachinePoolToInfraPoolMapper verifies the event mapper used by the
+// MachinePool watch: CCE infra refs map to the referenced pool in the same
+// namespace; foreign refs, empty names and non-MachinePool objects are
+// ignored.
+func TestMachinePoolToInfraPoolMapper(t *testing.T) {
+	r := &CCEManagedMachinePoolReconciler{}
+
+	mp := func(ref clusterv1.ContractVersionedObjectReference) *clusterv1.MachinePool {
+		return &clusterv1.MachinePool{
+			ObjectMeta: metav1.ObjectMeta{Name: "mp", Namespace: "ns"},
+			Spec: clusterv1.MachinePoolSpec{
+				Template: clusterv1.MachineTemplateSpec{
+					Spec: clusterv1.MachineSpec{InfrastructureRef: ref},
+				},
+			},
+		}
+	}
+
+	got := r.machinePoolToInfraPool(context.Background(), mp(clusterv1.ContractVersionedObjectReference{
+		Kind: "CCEManagedMachinePool", Name: "pool-0",
+	}))
+	if len(got) != 1 || got[0].Namespace != "ns" || got[0].Name != "pool-0" {
+		t.Errorf("unexpected mapping: %+v", got)
+	}
+
+	got = r.machinePoolToInfraPool(context.Background(), mp(clusterv1.ContractVersionedObjectReference{
+		Kind: "AWSManagedMachinePool", Name: "pool-0",
+	}))
+	if len(got) != 0 {
+		t.Errorf("expected no mapping for foreign infra ref, got %+v", got)
+	}
+
+	got = r.machinePoolToInfraPool(context.Background(), mp(clusterv1.ContractVersionedObjectReference{
+		Kind: "CCEManagedMachinePool",
+	}))
+	if len(got) != 0 {
+		t.Errorf("expected no mapping for empty ref name, got %+v", got)
+	}
+
+	got = r.machinePoolToInfraPool(context.Background(), &infrav1beta1.CCEManagedMachinePool{})
+	if len(got) != 0 {
+		t.Errorf("expected no mapping for non-MachinePool object, got %+v", got)
+	}
+}
+
+// TestMachinePoolScaleTriggeredByWatch is the regression test for the
+// scale trigger gap: the controller must watch the CAPI MachinePool so
+// that `kubectl scale machinepool` (a spec.replicas update) reconciles the
+// infrastructure pool. CAPI core does NOT sync replicas onto infra pools,
+// so without this watch the update has no trigger path. The test runs a
+// real manager and never calls Reconcile directly.
+func TestMachinePoolScaleTriggeredByWatch(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	ns := "mp-test-watch"
+	createNamespace(t, ns)
+
+	// Objects first, manager second: the informer start then emits Add
+	// events for the existing pool, which drives the initial reconcile.
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+	cp.Status.ClusterID = "cluster-1"
+	cp.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+	mp := &clusterv1.MachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: clusterv1.MachinePoolSpec{
+			ClusterName: "test-cluster",
+			Replicas:    int32Ptr(3),
+			Template: clusterv1.MachineTemplateSpec{
+				Spec: clusterv1.MachineSpec{
+					ClusterName: "test-cluster",
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+						APIGroup: infrav1beta1.GroupVersion.Group,
+						Kind:     "CCEManagedMachinePool",
+						Name:     "test-cluster-pool-0",
+					},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, mp); err != nil {
+		t.Fatalf("failed to create MachinePool: %v", err)
+	}
+	pool := &infrav1beta1.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+			ClusterName:  "test-cluster",
+			NodePoolName: "pool-0",
+			Flavor:       "c7.large.2",
+			Replicas:     3,
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create CCEManagedMachinePool: %v", err)
+	}
+
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = clusterv1.AddToScheme(scheme)
+	_ = infrav1beta1.AddToScheme(scheme)
+	_ = controlplanev1beta1.AddToScheme(scheme)
+	mgr, err := ctrl.NewManager(restCfg, manager.Options{
+		Scheme:  scheme,
+		Metrics: metricsserver.Options{BindAddress: "0"},
+	})
+	if err != nil {
+		t.Fatalf("failed to create manager: %v", err)
+	}
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedMachinePoolReconciler{
+		Client: mgr.GetClient(),
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	if err := r.SetupWithManager(ctx, mgr); err != nil {
+		t.Fatalf("SetupWithManager failed: %v", err)
+	}
+	go func() { _ = mgr.Start(ctx) }()
+	if !mgr.GetCache().WaitForCacheSync(ctx) {
+		t.Fatal("cache failed to sync")
+	}
+
+	// Initial reconcile is event-driven (For() watch on the pool itself).
+	if !waitForCondition(t, 30*time.Second, func() bool {
+		got := &infrav1beta1.CCEManagedMachinePool{}
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
+			return false
+		}
+		return got.Status.NodePoolID == "nodepool-1" && got.Status.Ready
+	}) {
+		t.Fatal("initial reconcile did not create the node pool")
+	}
+
+	// Scale the CAPI MachinePool 3 -> 5 (what kubectl scale does).
+	latest := &clusterv1.MachinePool{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(mp), latest); err != nil {
+		t.Fatalf("failed to get MachinePool: %v", err)
+	}
+	replicas := int32(5)
+	latest.Spec.Replicas = &replicas
+	if err := k8sClient.Update(ctx, latest); err != nil {
+		t.Fatalf("failed to scale MachinePool: %v", err)
+	}
+
+	// The MachinePool watch must reconcile the infra pool: spec.replicas
+	// syncs from the owner and the pool scales to 5. Without the watch this
+	// never happens (no other event touches the pool).
+	if !waitForCondition(t, 30*time.Second, func() bool {
+		got := &infrav1beta1.CCEManagedMachinePool{}
+		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
+			return false
+		}
+		return got.Spec.Replicas == 5
+	}) {
+		t.Fatal("scale was not propagated: spec.replicas never synced to 5 (MachinePool watch missing?)")
+	}
+	if len(fakeSvc.ScaleCalls) == 0 || fakeSvc.ScaleCalls[len(fakeSvc.ScaleCalls)-1] != 5 {
+		t.Errorf("expected a ScaleNodePool(5) call, got %v", fakeSvc.ScaleCalls)
+	}
+}
+
+// TestMachinePoolReconcileWithIdentity verifies that the machine pool
+// controller resolves credentials through the control plane's identityRef
+// (it previously looked up only the per-cluster Secret, so pools of
+// identity-based clusters never reconciled).
+func TestMachinePoolReconcileWithIdentity(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-identity"
+	createNamespace(t, ns)
+
+	createStaticIdentity(t, "mp-static-id")
+	cluster, _, cp := newTestCluster(t, ns)
+	// NOTE: no per-cluster credentials Secret.
+	cp.Spec.IdentityRef = &corev1.ObjectReference{Kind: "CCEClusterStaticIdentity", Name: "mp-static-id"}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set identityRef: %v", err)
+	}
+	markInfrastructureProvisioned(t, cluster)
+	cp.Status.ClusterID = "cluster-1"
+	cp.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+
+	mp := &clusterv1.MachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: clusterv1.MachinePoolSpec{
+			ClusterName: "test-cluster",
+			Replicas:    int32Ptr(3),
+			Template: clusterv1.MachineTemplateSpec{
+				Spec: clusterv1.MachineSpec{
+					ClusterName: "test-cluster",
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+						APIGroup: infrav1beta1.GroupVersion.Group,
+						Kind:     "CCEManagedMachinePool",
+						Name:     "test-cluster-pool-0",
+					},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, mp); err != nil {
+		t.Fatalf("failed to create MachinePool: %v", err)
+	}
+	pool := &infrav1beta1.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+			ClusterName:  "test-cluster",
+			NodePoolName: "pool-0",
+			Flavor:       "c7.large.2",
+			Replicas:     3,
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create CCEManagedMachinePool: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pool)}); err != nil {
+		t.Fatalf("Reconcile must resolve credentials via identityRef: %v", err)
+	}
+	if len(fakeSvc.CreatedNodePools) != 1 {
+		t.Errorf("expected node pool created via identity credentials, got %d", len(fakeSvc.CreatedNodePools))
+	}
+}
+
+// TestMachinePoolReconcileDeleteControlPlaneGone verifies that deleting
+// the infra pool after the control plane is already gone releases the
+// finalizer instead of erroring forever on the control plane NotFound
+// (the control plane finalizer guarantees the cloud cluster - and with it
+// the node pool - was deleted first).
+func TestMachinePoolReconcileDeleteControlPlaneGone(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-delete-cpgone"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	if err := k8sClient.Delete(ctx, cp); err != nil {
+		t.Fatalf("failed to delete control plane: %v", err)
+	}
+
+	pool := &infrav1beta1.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "test-cluster-pool-0",
+			Namespace:  ns,
+			Labels:     map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+			Finalizers: []string{MachinePoolFinalizer},
+		},
+		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+			ClusterName:  "test-cluster",
+			NodePoolName: "pool-0",
+			Flavor:       "c7.large.2",
+			Replicas:     3,
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create machine pool: %v", err)
+	}
+	pool.Status.NodePoolID = "nodepool-1"
+	if err := k8sClient.Status().Update(ctx, pool); err != nil {
+		t.Fatalf("failed to set pool status: %v", err)
+	}
+
+	listCalls := 0
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeSvc.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
+		listCalls++
+		return []cceService.NodePoolInfo{}, nil
+	}
+	r := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	if _, err := r.reconcileDelete(ctx, cluster, pool); err != nil {
+		t.Fatalf("reconcileDelete must release when the control plane is gone: %v", err)
+	}
+	if listCalls != 0 {
+		t.Errorf("expected no cloud calls when the control plane is gone, got %d", listCalls)
+	}
+	if pool.Status.NodePoolID != "" {
+		t.Errorf("expected NodePoolID cleared, got %q", pool.Status.NodePoolID)
+	}
+	if hasFinalizer(pool.Finalizers, MachinePoolFinalizer) {
+		t.Error("expected finalizer removed")
 	}
 }

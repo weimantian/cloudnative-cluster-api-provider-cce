@@ -19,6 +19,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
+	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
@@ -519,5 +520,120 @@ func TestControlPlaneReconcileLoggingNoDrift(t *testing.T) {
 	}
 	if len(fakeSvc.LogConfigCalls) != 0 {
 		t.Errorf("expected no UpdateClusterLogConfig when config matches, got %d calls", len(fakeSvc.LogConfigCalls))
+	}
+}
+
+// TestControlPlaneReconcileDeleteWithIdentity verifies that the delete
+// path resolves credentials through spec.identityRef (it previously looked
+// up only the per-cluster Secret, so identity-based clusters could never
+// be deleted - the missing Secret failed the reconcile forever and the
+// finalizer was never removed).
+func TestControlPlaneReconcileDeleteWithIdentity(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-delete-identity"
+	createNamespace(t, ns)
+
+	createStaticIdentity(t, "cp-static-id")
+	cluster, _, cp := newTestCluster(t, ns)
+	// NOTE: no per-cluster credentials Secret.
+	cp.Spec.IdentityRef = &corev1.ObjectReference{Kind: "CCEClusterStaticIdentity", Name: "cp-static-id"}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set identityRef: %v", err)
+	}
+	markInfrastructureProvisioned(t, cluster)
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("initial reconcile (identityRef credentials) failed: %v", err)
+	}
+
+	// Trigger deletion; the delete reconcile must resolve credentials via
+	// identityRef and reach DeleteCluster.
+	latest := &controlplanev1beta1.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), latest); err != nil {
+		t.Fatalf("failed to re-get control plane: %v", err)
+	}
+	if err := k8sClient.Delete(ctx, latest); err != nil {
+		t.Fatalf("failed to delete control plane: %v", err)
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("delete reconcile must honor identityRef credentials: %v", err)
+	}
+	if len(fakeSvc.DeletedClusters) != 1 {
+		t.Fatalf("expected 1 DeleteCluster call, got %d", len(fakeSvc.DeletedClusters))
+	}
+}
+
+// TestControlPlaneReconcileRoleIdentityAgency verifies that the agency
+// from a CCEClusterRoleIdentity reaches the CreateCluster input when
+// spec.agencyName is unset, and that an explicit spec.agencyName wins.
+func TestControlPlaneReconcileRoleIdentityAgency(t *testing.T) {
+	// RoleIdentity resolves the controller credentials from env.
+	t.Setenv("CLOUD_SDK_AK", "envAK")
+	t.Setenv("CLOUD_SDK_SK", "envSK")
+	ctx := context.Background()
+
+	roleID := &infrav1beta1.CCEClusterRoleIdentity{
+		ObjectMeta: metav1.ObjectMeta{Name: "cross-account"},
+		Spec:       infrav1beta1.CCEClusterRoleIdentitySpec{AgencyName: "delegated-agency"},
+	}
+	if err := k8sClient.Create(ctx, roleID); err != nil {
+		t.Fatalf("failed to create CCEClusterRoleIdentity: %v", err)
+	}
+
+	// Case 1: spec.agencyName unset -> the identity agency is used.
+	ns := "cp-test-agency"
+	createNamespace(t, ns)
+	cluster, _, cp := newTestCluster(t, ns)
+	markInfrastructureProvisioned(t, cluster)
+	cp.Spec.IdentityRef = &corev1.ObjectReference{Kind: "CCEClusterRoleIdentity", Name: "cross-account"}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set identityRef: %v", err)
+	}
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("initial reconcile failed: %v", err)
+	}
+	if len(fakeSvc.CreatedClusters) != 1 {
+		t.Fatalf("expected 1 created cluster, got %d", len(fakeSvc.CreatedClusters))
+	}
+	if got := fakeSvc.CreatedClusters[0].AgencyName; got != "delegated-agency" {
+		t.Errorf("expected identity agency %q in create input, got %q", "delegated-agency", got)
+	}
+
+	// Case 2: explicit spec.agencyName wins over the identity agency.
+	ns2 := "cp-test-agency-explicit"
+	createNamespace(t, ns2)
+	cluster2, _, cp2 := newTestCluster(t, ns2)
+	markInfrastructureProvisioned(t, cluster2)
+	cp2.Spec.IdentityRef = &corev1.ObjectReference{Kind: "CCEClusterRoleIdentity", Name: "cross-account"}
+	cp2.Spec.AgencyName = "explicit-agency"
+	if err := k8sClient.Update(ctx, cp2); err != nil {
+		t.Fatalf("failed to set identityRef/agencyName: %v", err)
+	}
+	fakeSvc2 := fakes.NewFakeCCEService()
+	r2 := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc2, nil
+		},
+	}
+	if _, err := r2.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp2)}); err != nil {
+		t.Fatalf("initial reconcile (case 2) failed: %v", err)
+	}
+	if got := fakeSvc2.CreatedClusters[0].AgencyName; got != "explicit-agency" {
+		t.Errorf("expected explicit spec.agencyName to win, got %q", got)
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
@@ -212,3 +213,40 @@ func hasFinalizer(finalizers []string, name string) bool {
 }
 
 func boolPtr(b bool) *bool { return &b }
+
+// createStaticIdentity creates a CCEClusterStaticIdentity plus its Secret in
+// the controller namespace (cce-provider-system), for tests that provision
+// clusters via spec.identityRef instead of the per-cluster credentials
+// Secret.
+func createStaticIdentity(t *testing.T, name string) {
+	t.Helper()
+	createNamespace(t, "cce-provider-system")
+	id := &infrav1beta1.CCEClusterStaticIdentity{
+		ObjectMeta: metav1.ObjectMeta{Name: name},
+		Spec:       infrav1beta1.CCEClusterStaticIdentitySpec{SecretRef: name + "-secret"},
+	}
+	if err := k8sClient.Create(context.Background(), id); err != nil {
+		t.Fatalf("failed to create CCEClusterStaticIdentity: %v", err)
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{Name: name + "-secret", Namespace: "cce-provider-system"},
+		Data:       map[string][]byte{"accessKey": []byte("AK"), "secretKey": []byte("SK")},
+	}
+	if err := k8sClient.Create(context.Background(), secret); err != nil {
+		t.Fatalf("failed to create identity Secret: %v", err)
+	}
+}
+
+// waitForCondition polls fn every 250ms until it returns true or the
+// timeout elapses; reports whether fn ever returned true.
+func waitForCondition(t *testing.T, timeout time.Duration, fn func() bool) bool {
+	t.Helper()
+	deadline := time.Now().Add(timeout)
+	for time.Now().Before(deadline) {
+		if fn() {
+			return true
+		}
+		time.Sleep(250 * time.Millisecond)
+	}
+	return fn()
+}

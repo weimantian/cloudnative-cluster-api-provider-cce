@@ -27,7 +27,6 @@ import (
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
-	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
 )
@@ -132,13 +131,10 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	}
 
 	// Credentials: identityRef (CCECluster*Identity) takes precedence; when
-	// absent, fall back to the per-cluster Secret, then env.
-	var creds *scope.Credentials
-	if cp.Spec.IdentityRef != nil {
-		creds, _, err = scope.ResolveIdentity(ctx, r.Client, cp.Namespace, cp.Spec.IdentityRef)
-	} else {
-		creds, err = scope.ResolveCredentials(ctx, r.Client, cp.Namespace, cp.Spec.ClusterName+"-credentials")
-	}
+	// absent, fall back to the per-cluster Secret, then env. The agency from
+	// a CCEClusterRoleIdentity is retained and passed to cluster creation
+	// (spec.agencyName, when set, still wins).
+	creds, identityAgency, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.CredentialsReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
@@ -162,7 +158,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	// Ensure the CCE cluster exists (idempotent create).
 	clusterID := cp.Status.ClusterID
 	if clusterID == "" {
-		id, err := svc.CreateCluster(ctx, toCreateClusterInput(cp, vpcID, nodeSubnetID))
+		id, err := svc.CreateCluster(ctx, toCreateClusterInput(cp, vpcID, nodeSubnetID, identityAgency))
 		if err != nil {
 			conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
@@ -472,7 +468,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	creds, err := scope.ResolveCredentials(ctx, r.Client, cp.Namespace, cp.Spec.ClusterName+"-credentials")
+	creds, _, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -557,7 +553,15 @@ func (r *CCEManagedControlPlaneReconciler) clusterNetwork(ctx context.Context, c
 	return cceCluster.Spec.Region, vpcID, subnetID, nil
 }
 
-func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane, vpcID, nodeSubnetID string) cceService.CreateClusterInput {
+// toCreateClusterInput maps the control plane spec to the CreateCluster
+// input. identityAgency (from a CCEClusterRoleIdentity, when one is
+// referenced) fills the cluster agency when the spec does not set it
+// explicitly - an explicit spec.agencyName always wins.
+func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane, vpcID, nodeSubnetID, identityAgency string) cceService.CreateClusterInput {
+	agency := cp.Spec.AgencyName
+	if agency == "" {
+		agency = identityAgency
+	}
 	return cceService.CreateClusterInput{
 		Name:                 cp.Spec.ClusterName,
 		Category:             cp.Spec.Category,
@@ -571,7 +575,7 @@ func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane, vpcID,
 		ServiceCIDR:          cp.Spec.ServiceNetwork.CIDR,
 		CustomSAN:            cp.Spec.CustomSan,
 		PublicAccess:         cp.Spec.EndpointAccess.Public,
-		AgencyName:           cp.Spec.AgencyName,
+		AgencyName:           agency,
 		BillingMode:          cp.Spec.Billing.Mode,
 	}
 }

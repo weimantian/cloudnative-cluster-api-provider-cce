@@ -17,14 +17,17 @@ import (
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
-	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 )
 
@@ -129,7 +132,11 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		}
 		return ctrl.Result{}, err
 	}
-	creds, err := scope.ResolveCredentials(ctx, r.Client, pool.Namespace, pool.Spec.ClusterName+"-credentials")
+	// Credentials come from the control plane's identity chain (identityRef
+	// -> per-cluster Secret -> env), shared with the control plane
+	// controller: machine pools must honor identityRef too, otherwise pools
+	// of identity-based clusters never reconcile.
+	creds, _, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
@@ -305,26 +312,40 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 	log := ctrl.LoggerFrom(ctx)
 
 	if pool.Status.NodePoolID != "" {
-		region, err := r.clusterRegion(ctx, cluster, pool)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		creds, err := scope.ResolveCredentials(ctx, r.Client, pool.Namespace, pool.Spec.ClusterName+"-credentials")
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
-		if err != nil {
-			return ctrl.Result{}, err
-		}
-		// The cluster ID is read from the control plane status.
+		// The node pool lives in the CCE cluster created by the control
+		// plane, so read the control plane for the cluster ID AND the
+		// credential chain. The delete path must honor identityRef exactly
+		// like reconcileNormal - resolving only the per-cluster Secret left
+		// identity-based clusters stuck in a delete-error loop forever.
 		cp := &controlplanev1beta1.CCEManagedControlPlane{}
+		cpFound := false
 		if cluster.Spec.ControlPlaneRef.Name != "" {
-			if err := r.Get(ctx, types.NamespacedName{Namespace: pool.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err != nil {
-				return ctrl.Result{}, err
+			err := r.Get(ctx, types.NamespacedName{Namespace: pool.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp)
+			switch {
+			case apierrors.IsNotFound(err):
+				// Control plane gone => the cloud cluster was deleted before
+				// it (the control plane finalizer guarantees that), so the
+				// node pool is gone too. Release without cloud calls instead
+				// of erroring forever on NotFound.
+			case err != nil:
+				return ctrl.Result{}, errors.Wrap(err, "failed to get control plane")
+			default:
+				cpFound = true
 			}
 		}
-		if cp.Status.ClusterID != "" {
+		if cpFound && cp.Status.ClusterID != "" {
+			region, err := r.clusterRegion(ctx, cluster, pool)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			creds, _, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
 			// Idempotent delete + wait: keep requesting deletion until the
 			// node pool is actually gone from the cloud, then clear the ID so
 			// the finalizer can be removed (fix: the ID was never cleared,
@@ -347,12 +368,14 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 				log.Info("Node pool deletion requested, waiting", "nodePoolID", pool.Status.NodePoolID)
 				return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 			}
-			pool.Status.NodePoolID = ""
-			// Persist the cleared ID (status subresource) so a surviving object
-			// does not keep trying to delete a pool that is already gone.
-			if err := r.Status().Update(ctx, pool); err != nil {
-				return ctrl.Result{}, err
-			}
+		}
+		// Cloud node pool gone (or the cluster was never created): clear the
+		// ID so the finalizer can release, and persist it (status subresource)
+		// so a surviving object does not retry deleting a pool that no
+		// longer exists.
+		pool.Status.NodePoolID = ""
+		if err := r.Status().Update(ctx, pool); err != nil {
+			return ctrl.Result{}, err
 		}
 	}
 
@@ -367,8 +390,36 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 func (r *CCEManagedMachinePoolReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&infrav1beta1.CCEManagedMachinePool{}).
+		// Watch the owning CAPI MachinePool so replica changes (kubectl scale
+		// machinepool) trigger reconciliation of the infrastructure pool:
+		// CAPI core does NOT sync spec.replicas onto infrastructure machine
+		// pools, so without this watch a scale change would sit unprocessed
+		// until an unrelated event reconciles the pool. GenerationChanged-
+		// Predicate skips status-only MachinePool updates.
+		Watches(
+			&clusterv1.MachinePool{},
+			handler.EnqueueRequestsFromMapFunc(r.machinePoolToInfraPool),
+			builder.WithPredicates(predicate.GenerationChangedPredicate{}),
+		).
 		Named("ccemanagedmachinepool").
 		Complete(r)
+}
+
+// machinePoolToInfraPool maps a CAPI MachinePool event to the
+// CCEManagedMachinePool it references via spec.template.spec.
+// infrastructureRef (same namespace). Non-CCE infra refs are ignored.
+func (r *CCEManagedMachinePoolReconciler) machinePoolToInfraPool(_ context.Context, obj client.Object) []reconcile.Request {
+	mp, ok := obj.(*clusterv1.MachinePool)
+	if !ok {
+		return nil
+	}
+	ref := mp.Spec.Template.Spec.InfrastructureRef
+	if ref.Kind != "CCEManagedMachinePool" || ref.Name == "" {
+		return nil
+	}
+	return []reconcile.Request{{
+		NamespacedName: types.NamespacedName{Namespace: mp.Namespace, Name: ref.Name},
+	}}
 }
 
 // ---- helpers ----
