@@ -258,15 +258,17 @@ func TestMachinePoolReconcileSuccess(t *testing.T) {
 	}
 
 	// The node pool was created with the absolute target count (replicas),
-	// not a delta (questionnaire Q3 absolute semantics).
+	// not a delta (questionnaire Q3 absolute semantics), so no redundant
+	// ScaleNodePool should follow — the platform rejects it with
+	// "No scale task needed" (verified live).
 	if len(fakeSvc.CreatedNodePools) != 1 {
 		t.Fatalf("expected 1 created node pool, got %d", len(fakeSvc.CreatedNodePools))
 	}
 	if fakeSvc.CreatedNodePools[0].ClusterID != "cluster-1" || fakeSvc.CreatedNodePools[0].InitialNodeCount != 3 {
 		t.Errorf("unexpected create node pool input: %+v", fakeSvc.CreatedNodePools[0])
 	}
-	if len(fakeSvc.ScaleCalls) != 1 || fakeSvc.ScaleCalls[0] != 3 {
-		t.Errorf("expected ScaleNodePool with absolute target 3, got %v", fakeSvc.ScaleCalls)
+	if len(fakeSvc.ScaleCalls) != 0 {
+		t.Errorf("expected no ScaleNodePool right after create (initialNodeCount already set the target), got %v", fakeSvc.ScaleCalls)
 	}
 }
 

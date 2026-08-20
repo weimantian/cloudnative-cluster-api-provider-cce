@@ -42,7 +42,11 @@ need() { command -v "$1" >/dev/null 2>&1 || { echo "ERROR: '$1' not found. Insta
 need docker; need kind; need kubectl; need clusterctl; need openssl
 
 echo "== [1/6] Building provider image: $IMG =="
-(cd "$REPO_ROOT" && docker build -t "$IMG" .)
+if docker image inspect "$IMG" >/dev/null 2>&1; then
+  echo "  image $IMG already exists locally; skipping build"
+else
+  (cd "$REPO_ROOT" && docker build -t "$IMG" .)
+fi
 kind load docker-image "$IMG" --name "$KIND_CLUSTER" 2>/dev/null || {
   echo "kind cluster '$KIND_CLUSTER' not running; creating it..."
   # Strip proxy env vars: kind passes them into the node, and a dead local
@@ -126,15 +130,21 @@ providers:
 EOF
 
 echo "== [5/6] clusterctl init (cert-manager + CAPI core + bootstrap/control-plane + cce) =="
-clusterctl init --infrastructure cce --wait-providers
+# Do NOT use --wait-providers here: our provider's manager mounts the
+# webhook-service-cert Secret, which does not exist yet (created in the next
+# step), so the deployment would sit in ContainerCreating and --wait-providers
+# would block until its timeout. Apply first, then create the cert and wait.
+clusterctl init --infrastructure cce
 
-echo "== [6/6] Creating webhook certificate Secret (if missing) =="
+echo "== [6/6] Creating webhook certificate Secret and waiting for the provider =="
 kubectl -n cce-provider-system get secret webhook-service-cert >/dev/null 2>&1 || \
   kubectl -n cce-provider-system create secret tls webhook-service-cert \
     --cert="$ARTIFACTS/server.crt" --key="$ARTIFACTS/server.key"
 
 kubectl -n cce-provider-system rollout restart deployment/cce-provider-controller-manager
-kubectl -n cce-provider-system wait --for=condition=Available deployment/cce-provider-controller-manager --timeout=120s
+kubectl -n cce-provider-system wait --for=condition=Available deployment/cce-provider-controller-manager --timeout=180s
+kubectl wait --for=condition=Available -n cert-manager --all --timeout=180s deployment 2>/dev/null || true
+kubectl wait --for=condition=Available -n capi-system --all --timeout=180s deployment 2>/dev/null || true
 
 echo
 echo "Done. The provider is installed on kind cluster '$KIND_CLUSTER'."

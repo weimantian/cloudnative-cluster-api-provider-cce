@@ -31,6 +31,8 @@ kind: CCECluster
 metadata:
   name: my-cce-cluster
   namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster # required: the provider resolves the Cluster via this label
 spec:
   region: cn-north-4
   network:
@@ -45,6 +47,8 @@ kind: CCEManagedControlPlane
 metadata:
   name: my-cce-cluster-control-plane
   namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster
 spec:
   clusterName: my-cce-cluster
   # CCE (Standard, vpc-router) or Turbo (eni). Standard is the cheapest and
@@ -90,6 +94,8 @@ kind: CCEManagedMachinePool
 metadata:
   name: my-cce-cluster-pool-0
   namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster
 spec:
   clusterName: my-cce-cluster
   nodePoolName: pool-0
@@ -106,6 +112,11 @@ spec:
   rootVolume:
     size: 40
     type: GPSSD
+  # Non-local-disk flavors (e.g. c6.large.2) require a data volume
+  # (verified: CCE_CM.0004 "Data volume needed for non-local-disk flavor").
+  dataVolumes:
+    - size: 100
+      type: GPSSD
   sshKey: VERIFY-KEYPAIR-NAME # SSH keypair name in the region (ECS -> Key Pairs)
   availabilityZone: cn-north-4a
   replicas: 1

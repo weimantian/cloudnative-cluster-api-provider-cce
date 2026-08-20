@@ -161,6 +161,12 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			return ctrl.Result{}, err
 		}
 		pool.Status.NodePoolID = id
+		// The pool was just created with initialNodeCount == spec.replicas, so
+		// record the desired count as the observed count too. Otherwise the
+		// scale check below sees 0 != replicas and issues a redundant
+		// ScaleNodePool that the platform rejects with "No scale task needed
+		// with desired node count N" (verified live).
+		pool.Status.Replicas = pool.Spec.Replicas
 		// The create call already bound the security groups (and autoscaling
 		// when the gate is on), so record them as applied to avoid a redundant
 		// UpdateNodePool on the next reconcile.
