@@ -132,14 +132,3 @@ spec:
   # Optional: rolling-update batch size for attribute drift (CCE 同步节点池).
   # updateConfig:
   #   maxUnavailable: 1
-  # (verified: CCE_CM.0004 "Data volume needed for non-local-disk flavor").
-  dataVolumes:
-    - size: 100
-      type: GPSSD
-  sshKey: VERIFY-KEYPAIR-NAME # SSH keypair name in the region (ECS -> Key Pairs)
-  availabilityZone: cn-north-4a
-  replicas: 1
-  billingMode: 0
-  # Optional: rolling-update batch size for attribute drift (CCE 同步节点池).
-  # updateConfig:
-  #   maxUnavailable: 1
