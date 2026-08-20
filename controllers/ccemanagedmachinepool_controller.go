@@ -11,8 +11,10 @@ import (
 	"slices"
 
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
@@ -38,6 +40,9 @@ const MachinePoolFinalizer = "ccemanagedmachinepool.infrastructure.cluster.x-k8s
 // (InfrastructureMachinePool). It drives the CCE node pool lifecycle.
 type CCEManagedMachinePoolReconciler struct {
 	client.Client
+	// Recorder emits Kubernetes events for this reconciler (wired via
+	// mgr.GetEventRecorderFor in SetupControllers). Nil in tests.
+	Recorder record.EventRecorder
 
 	// ServiceFactory builds the CCE API service for a region/credential pair.
 	// Overridden in tests with a fake; defaults to cceService.NewClient.
@@ -168,6 +173,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			return ctrl.Result{}, err
 		}
 		pool.Status.NodePoolID = id
+		recordEvent(r.Recorder, pool, corev1.EventTypeNormal, "NodePoolCreated", "created CCE node pool %s", id)
 		// The pool was just created with initialNodeCount == spec.replicas, so
 		// record the desired count as the observed count too. Otherwise the
 		// scale check below sees 0 != replicas and issues a redundant
@@ -203,6 +209,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			return ctrl.Result{}, err
 		}
 		conditions.MarkTrue(pool, conditions.NodePoolScalingCondition, "ScalingCompleted", "node pool scaled")
+		recordEvent(r.Recorder, pool, corev1.EventTypeNormal, "NodePoolScaled", "scaled node pool to %d nodes", pool.Spec.Replicas)
 	}
 
 	// Reconcile mutable attributes (currently: security groups, Q5; and
@@ -299,6 +306,8 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	}
 
 	conditions.MarkTrue(pool, conditions.NodePoolReadyCondition, "NodePoolReady", "node pool is ready")
+	recordEvent(r.Recorder, pool, corev1.EventTypeNormal, "NodePoolReady", "node pool is ready")
+	pool.Status.Ready = true
 	pool.Status.Ready = true
 	log.Info("CCE node pool reconciled", "nodePoolID", pool.Status.NodePoolID)
 	// Persist status explicitly (status subresource ignores r.Update).
@@ -366,6 +375,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 					return ctrl.Result{}, err
 				}
 				log.Info("Node pool deletion requested, waiting", "nodePoolID", pool.Status.NodePoolID)
+				recordEvent(r.Recorder, pool, corev1.EventTypeNormal, "NodePoolDeletionRequested", "deletion requested for CCE node pool %s", pool.Status.NodePoolID)
 				return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 			}
 		}

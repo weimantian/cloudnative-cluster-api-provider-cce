@@ -12,8 +12,10 @@ import (
 	"time"
 
 	"github.com/pkg/errors"
+	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
@@ -35,9 +37,11 @@ const CCEClusterFinalizer = "ccecluster.infrastructure.cluster.x-k8s.io"
 // defaultRequeue is the requeue interval for in-progress operations.
 const defaultRequeue = 30 * time.Second
 
-// CCEClusterReconciler reconciles CCECluster objects (InfrastructureCluster).
 type CCEClusterReconciler struct {
 	client.Client
+	// Recorder emits Kubernetes events for this reconciler (wired via
+	// mgr.GetEventRecorderFor in SetupControllers). Nil in tests.
+	Recorder record.EventRecorder
 
 	// NetworkValidatorFactory builds the network validator for a
 	// region/credential pair. Overridden in tests with a fake; defaults to
@@ -106,6 +110,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 			conditions.ReconciliationFailedReason,
 			"spec.region is required")
+		recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "NetworkValidationFailed", "spec.region is required")
 		if err := r.Status().Update(ctx, cceCluster); err != nil {
 			return ctrl.Result{}, err
 		}
@@ -176,6 +181,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		if len(hardMsgs) > 0 {
 			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 				conditions.ReconciliationFailedReason, strings.Join(hardMsgs, "; "))
+			recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "NetworkValidationFailed", "%s", strings.Join(hardMsgs, "; "))
 			// Persist the failure condition (status subresource ignores
 			// r.Update).
 			if err := r.Status().Update(ctx, cceCluster); err != nil {
@@ -185,6 +191,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		}
 	}
 	conditions.MarkTrue(cceCluster, conditions.NetworkReadyCondition, "NetworkValidated", "network references validated")
+	recordEvent(r.Recorder, cceCluster, corev1.EventTypeNormal, "NetworkValidated", "network references validated")
 
 	// Ready condition + contract provisioned flag (CAPI v1beta2 contract):
 	// the CAPI Cluster controller gates

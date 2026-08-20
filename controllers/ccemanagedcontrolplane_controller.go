@@ -17,6 +17,7 @@ import (
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/client-go/tools/record"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
@@ -42,6 +43,9 @@ const kubeconfigValidityDays = 365
 // (ControlPlane). It drives the CCE cluster lifecycle and kubeconfig Secret.
 type CCEManagedControlPlaneReconciler struct {
 	client.Client
+	// Recorder emits Kubernetes events for this reconciler (wired via
+	// mgr.GetEventRecorderFor in SetupControllers). Nil in tests.
+	Recorder record.EventRecorder
 
 	// ServiceFactory builds the CCE API service for a region/credential pair.
 	// Overridden in tests with a fake; defaults to cceService.NewClient
@@ -138,6 +142,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.CredentialsReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
+		recordEvent(r.Recorder, cp, corev1.EventTypeWarning, "CredentialsFailed", "%v", err)
 		if uerr := r.Status().Update(ctx, cp); uerr != nil {
 			return ctrl.Result{}, uerr
 		}
@@ -169,6 +174,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		}
 		clusterID = id
 		cp.Status.ClusterID = id
+		recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "ClusterCreated", "created CCE cluster %s", id)
 	}
 
 	// Wait for the cluster to become Available, then backfill the endpoint.
@@ -216,6 +222,8 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		}
 	}
 	cp.Status.Version = info.Version
+	conditions.MarkTrue(cp, conditions.CCEClusterReadyCondition, "ClusterAvailable", "CCE cluster is available")
+	recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "ClusterAvailable", "CCE cluster %s is available", clusterID)
 	conditions.MarkTrue(cp, conditions.CCEClusterReadyCondition, "ClusterAvailable", "CCE cluster is available")
 
 	// Addons reconciliation (declarative set, mirrors CAPA EKS addons): install
@@ -343,6 +351,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		cp.Status.KubeconfigSecretName = secretName
 	}
 	conditions.MarkTrue(cp, conditions.KubeconfigReadyCondition, "KubeconfigGenerated", "kubeconfig Secret generated")
+	recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "KubeconfigGenerated", "kubeconfig Secret generated")
 
 	cp.Status.Ready = true
 	cp.Status.Initialized = true
@@ -373,6 +382,7 @@ func (r *CCEManagedControlPlaneReconciler) pollUpgradeTask(ctx context.Context, 
 		cp.Status.UpgradeTaskID = ""
 		cp.Status.Version = cp.Spec.Version
 		conditions.MarkTrue(cp, conditions.UpgradeReadyCondition, "UpgradeCompleted", "cluster upgraded to "+cp.Spec.Version)
+		recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "UpgradeCompleted", "cluster upgraded to %s", cp.Spec.Version)
 		log.Info("Cluster upgrade completed", "clusterID", clusterID, "version", cp.Spec.Version)
 		// Persist and requeue so the NEXT reconcile observes the new version
 		// (reconcile's info.Version is stale here and would otherwise re-trigger
@@ -446,6 +456,7 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 	cp.Status.UpgradeTaskID = taskID
 	conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 		conditions.UpgradeInProgressReason, "upgrading to "+cp.Spec.Version)
+	recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "UpgradeStarted", "upgrading to %s", cp.Spec.Version)
 	log.Info("Cluster upgrade started", "clusterID", clusterID, "target", cp.Spec.Version, "taskID", taskID)
 	return r.persistUpgradeStatus(ctx, cp)
 }
@@ -499,6 +510,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 				return ctrl.Result{}, errors.Wrap(err, "failed to delete CCE cluster")
 			}
 			log.Info("CCE cluster deletion requested, waiting", "clusterID", cp.Status.ClusterID)
+			recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "ClusterDeletionRequested", "deletion requested for CCE cluster %s", cp.Status.ClusterID)
 			return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 		}
 	}

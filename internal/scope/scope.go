@@ -75,6 +75,16 @@ func ResolveIdentity(ctx context.Context, c client.Client, namespace string, ide
 	}
 	switch identityRef.Kind {
 	case "CCEClusterControllerIdentity":
+		id := &infrav1beta1.CCEClusterControllerIdentity{}
+		if err := c.Get(ctx, types.NamespacedName{Name: identityRef.Name}, id); err != nil {
+			return nil, "", errors.Wrapf(err, "failed to get CCEClusterControllerIdentity %s", identityRef.Name)
+		}
+		// Enforce allowedNamespaces exactly like the other identities (the
+		// controller identity previously skipped this check, so its
+		// allowedNamespaces was silently ignored).
+		if err := checkAllowedNamespace(ctx, c, id.Spec.AllowedNamespaces, namespace, identityRef.Name); err != nil {
+			return nil, "", err
+		}
 		creds, err := credentialsFromEnv()
 		return creds, "", err
 	case "CCEClusterStaticIdentity":

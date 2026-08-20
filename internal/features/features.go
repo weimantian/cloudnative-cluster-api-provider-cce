@@ -20,12 +20,18 @@ const (
 	// scaling is driven solely by CAPI MachinePool replicas (see
 	// docs/requirements-design.md FR-2.6, verification item Q3).
 	NodePoolAutoscaling featuregate.Feature = "NodePoolAutoscaling"
+
+	// AutoControllerIdentityCreator enables automatic creation of the
+	// CCEClusterControllerIdentity singleton named "default" (mirrors CAPA
+	// AutoControllerIdentityCreator). Off by default.
+	AutoControllerIdentityCreator featuregate.Feature = "AutoControllerIdentityCreator"
 )
 
 var (
 	// featureGates is the set of feature gates for the provider.
 	featureGates = map[featuregate.Feature]featuregate.FeatureSpec{
-		NodePoolAutoscaling: {Default: false, PreRelease: featuregate.Alpha},
+		NodePoolAutoscaling:           {Default: false, PreRelease: featuregate.Alpha},
+		AutoControllerIdentityCreator: {Default: false, PreRelease: featuregate.Alpha},
 	}
 
 	// featureGatesMutable is the mutable registry used by the manager.

@@ -26,6 +26,10 @@ type AllowedNamespaces struct {
 	Selector metav1.LabelSelector `json:"selector,omitempty"`
 }
 
+// CCEClusterControllerIdentityName is the name of the default controller
+// identity singleton (mirrors CAPA AWSClusterControllerIdentityName).
+const CCEClusterControllerIdentityName = "default"
+
 // CCEClusterControllerIdentitySpec defines the controller's own credentials
 // (CLOUD_SDK_AK/SK environment). A single instance named "default" is used
 // when no identityRef is set on a control plane.

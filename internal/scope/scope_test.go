@@ -155,3 +155,36 @@ func TestResolveIdentityNilRef(t *testing.T) {
 		t.Errorf("unexpected: %+v agency=%q", creds, agency)
 	}
 }
+func TestResolveIdentityControllerEnforcesAllowedNamespaces(t *testing.T) {
+	t.Setenv("CLOUD_SDK_AK", "envAK")
+	t.Setenv("CLOUD_SDK_SK", "envSK")
+	defer os.Unsetenv("CLOUD_SDK_AK")
+	defer os.Unsetenv("CLOUD_SDK_SK")
+
+	scheme := runtime.NewScheme()
+	_ = clientgoscheme.AddToScheme(scheme)
+	_ = infrav1beta1.AddToScheme(scheme)
+	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
+		&infrav1beta1.CCEClusterControllerIdentity{
+			ObjectMeta: metav1.ObjectMeta{Name: "default"},
+			Spec: infrav1beta1.CCEClusterControllerIdentitySpec{
+				AllowedNamespaces: &infrav1beta1.AllowedNamespaces{NamespaceList: []string{"allowed-ns"}},
+			},
+		},
+	).Build()
+
+	// Disallowed namespace is rejected.
+	if _, _, err := ResolveIdentity(context.Background(), c, "other-ns",
+		&corev1.ObjectReference{Kind: "CCEClusterControllerIdentity", Name: "default"}); err == nil {
+		t.Error("expected allowedNamespaces rejection for other-ns")
+	}
+	// Allowed namespace passes with env creds.
+	creds, _, err := ResolveIdentity(context.Background(), c, "allowed-ns",
+		&corev1.ObjectReference{Kind: "CCEClusterControllerIdentity", Name: "default"})
+	if err != nil {
+		t.Fatalf("expected allowed namespace to pass, got %v", err)
+	}
+	if creds.AccessKey != "envAK" {
+		t.Errorf("expected env creds, got %+v", creds)
+	}
+}
