@@ -65,6 +65,9 @@ flowchart LR
 - **MachinePool ↔ 节点池**——通过 `MachinePool.spec.replicas` 扩缩容;托管节点池无需 bootstrap provider。
 - **兼容 `clusterctl`**——`metadata.yaml` + `infrastructure-components.yaml` 打包(进行中),支持 `clusterctl describe cluster` / `get kubeconfig`。
 - **GitOps 就绪**——通过 ArgoCD/Flux 从 Git 全流程驱动。
+- **CCE 访问策略(对标 EKS access entries)**——在控制面用声明式 `spec.accessPolicies[]` 将 IAM 用户/组/委托映射到 CCE 权限角色(`CCEClusterAdminPolicy` / `CCEAdminPolicy` / `CCEEditPolicy` / `CCEViewPolicy`),并可限定到命名空间。
+- **身份管理**——按集群 `CCEClusterIdentity`(AK/SK Secret 或 `SecretKey` 对象引用)与控制器默认身份,对标 CAPA 的三身份模型。
+- **孤儿资源 GC**——可选的定期清扫器删除 `Cluster` CR 已不存在的 CCE 集群(对标 CAPA `ExternalResourceGC`)。
 
 ## 涉及云服务与费用
 
@@ -197,7 +200,7 @@ kubectl get ccemanagedcontrolplane --watch
    kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -w
    ```
 
-   预期条件(全部 `True`):`CredentialsReady`、`CCEClusterReady`(`ClusterAvailable`)、`KubeconfigReady`、`AddonsConfigured`、`PodIdentityAssociationsConfigured`、`LoggingConfigured`、`UpgradeReady`。
+   预期条件(全部 `True`):`CredentialsReady`、`CCEClusterReady`(`ClusterAvailable`)、`KubeconfigReady`、`AddonsConfigured`、`PodIdentityAssociationsConfigured`、`LoggingConfigured`、`AccessPoliciesConfigured`、`UpgradeReady`。
 
 6. **验证与清理:**
 
@@ -243,6 +246,40 @@ manager --feature-gates=NodePoolAutoscaling=true
 
 ```bash
 manager --valid-flavors=c6.large.2,c7.large.2
+```
+
+### 访问策略(对标 EKS access entries)
+
+`CCEManagedControlPlane.spec.accessPolicies` 将 IAM 主体映射到 CCE 角色:
+
+```yaml
+spec:
+  accessPolicies:
+    - name: dev-view
+      policyType: CCEViewPolicy
+      principalType: group
+      principalIds: ["<iam-group-id>"]
+      namespaces: ["*"]
+```
+
+由 `AccessPoliciesConfigured` 条件报告。
+
+### 集群身份(功能开关)
+
+`AutoControllerIdentityCreator` 自动创建名为 `default` 的 `CCEClusterControllerIdentity`
+单例(对标 CAPA `AutoControllerIdentityCreator`)。默认关闭:
+
+```bash
+manager --feature-gates=AutoControllerIdentityCreator=true
+```
+
+### 外部资源 GC(功能开关)
+
+`ExternalResourceGC` 启用定期孤儿集群清扫器:删除携带 owned 标签且其 `Cluster` CR
+已不存在的 CCE 集群(对标 CAPA `ExternalResourceGC`)。默认关闭;需指定 region:
+
+```bash
+manager --feature-gates=ExternalResourceGC=true --gc-region=cn-north-4 [--gc-interval=1h]
 ```
 
 ## 清理资源

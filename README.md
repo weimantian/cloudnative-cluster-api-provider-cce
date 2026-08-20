@@ -73,6 +73,9 @@ Design details: see [docs/architecture-design.md](docs/architecture-design.md) (
 - **MachinePool ↔ node pool** — scale via `MachinePool.spec.replicas`; no bootstrap provider required for managed node pools.
 - **`clusterctl` compatible** — `metadata.yaml` + `infrastructure-components.yaml` packaging (in progress), `clusterctl describe cluster` / `get kubeconfig` support.
 - **GitOps ready** — drive everything from Git via ArgoCD/Flux.
+- **CCE access policies (EKS access-entries parity)** — declarative `spec.accessPolicies[]` on the control plane maps IAM users/groups/agencies to CCE permission roles (`CCEClusterAdminPolicy` / `CCEAdminPolicy` / `CCEEditPolicy` / `CCEViewPolicy`) scoped to namespaces.
+- **Identity management** — per-cluster `CCEClusterIdentity` (AK/SK Secret or `SecretKey` object reference) and controller-default identity, mirroring CAPA's three identities.
+- **Orphaned-resource garbage collection** — opt-in periodic sweeper deletes CCE clusters whose `Cluster` CR no longer exists (mirrors CAPA `ExternalResourceGC`).
 
 ## Involved Cloud Services & Costs
 
@@ -219,7 +222,8 @@ kubectl get ccemanagedcontrolplane --watch
 
    Expected conditions (all `True`): `CredentialsReady`, `CCEClusterReady`
    (`ClusterAvailable`), `KubeconfigReady`, `AddonsConfigured`,
-   `PodIdentityAssociationsConfigured`, `LoggingConfigured`, `UpgradeReady`.
+   `PodIdentityAssociationsConfigured`, `LoggingConfigured`,
+   `AccessPoliciesConfigured`, `UpgradeReady`.
 
 6. **Verify and clean up:**
 
@@ -276,6 +280,42 @@ pattern; an optional allowlist can be enforced per deployment (region-specific):
 
 ```bash
 manager --valid-flavors=c6.large.2,c7.large.2
+```
+
+### Access policies (EKS access-entries parity)
+
+`CCEManagedControlPlane.spec.accessPolicies` maps IAM principals to CCE roles:
+
+```yaml
+spec:
+  accessPolicies:
+    - name: dev-view
+      policyType: CCEViewPolicy
+      principalType: group
+      principalIds: ["<iam-group-id>"]
+      namespaces: ["*"]
+```
+
+Reported by the `AccessPoliciesConfigured` condition.
+
+### Cluster identity (feature gate)
+
+`AutoControllerIdentityCreator` creates the `CCEClusterControllerIdentity`
+singleton named `default` (mirrors CAPA `AutoControllerIdentityCreator`). Off
+by default:
+
+```bash
+manager --feature-gates=AutoControllerIdentityCreator=true
+```
+
+### External resource GC (feature gate)
+
+`ExternalResourceGC` enables the periodic orphaned-cluster sweeper: CCE clusters
+carrying the owned tag whose `Cluster` CR no longer exists are deleted
+(mirrors CAPA `ExternalResourceGC`). Off by default; requires a region:
+
+```bash
+manager --feature-gates=ExternalResourceGC=true --gc-region=cn-north-4 [--gc-interval=1h]
 ```
 
 ## Clean Up Resources
