@@ -9,6 +9,7 @@ package cce
 import (
 	"context"
 	"encoding/base64"
+	"sync"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
@@ -27,9 +28,21 @@ type Client struct {
 	cce *ccev3.CceClient
 }
 
-// NewClient builds a CCE client from AK/SK and region.
+// clientCache caches built CCE SDK clients by (region, ak, sk). The SDK
+// client is stateless (it only holds an http.Client + endpoint config), so
+// it is safe to share across concurrent reconciles. Credentials are stable
+// per cluster; rotating them requires a controller restart to drop the cache
+// (CAPA rebuilds a session per scope, i.e. per reconcile — this cache avoids
+// even that per-reconcile HTTP-client construction).
+var clientCache sync.Map
+
+// NewClient builds (or returns a cached) CCE client from AK/SK and region.
 // Pattern follows CAPHW pkg/scope/clients.go (SafeValueOf + Builder pattern).
 func NewClient(regionID, ak, sk string) (*Client, error) {
+	key := regionID + "\x00" + ak + "\x00" + sk
+	if v, ok := clientCache.Load(key); ok {
+		return v.(*Client), nil
+	}
 	region, err := cceRegion.SafeValueOf(regionID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to resolve CCE region %q", regionID)
@@ -49,7 +62,9 @@ func NewClient(regionID, ak, sk string) (*Client, error) {
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build CCE HTTP client")
 	}
-	return &Client{cce: ccev3.NewCceClient(hcClient)}, nil
+	c := &Client{cce: ccev3.NewCceClient(hcClient)}
+	clientCache.Store(key, c)
+	return c, nil
 }
 
 // ShowCluster implements Service.

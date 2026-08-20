@@ -15,6 +15,22 @@ import (
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/model"
 )
 
+func TestNewClientCaches(t *testing.T) {
+	// NewClient resolves the project ID via a network call on the first
+	// build, so a cache hit must short-circuit BEFORE that (no credentials
+	// validation / no network). Pre-populate the cache and assert the
+	// cached pointer is returned unchanged.
+	fake := &Client{}
+	clientCache.Store("cn-north-4\x00test-ak-cache\x00test-sk-cache", fake)
+	c, err := NewClient("cn-north-4", "test-ak-cache", "test-sk-cache")
+	if err != nil {
+		t.Fatalf("NewClient (cached) failed: %v", err)
+	}
+	if c != fake {
+		t.Error("expected the cached client pointer for a cache hit")
+	}
+}
+
 func TestParseTaint(t *testing.T) {
 	tests := []struct {
 		in         string

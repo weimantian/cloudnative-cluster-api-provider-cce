@@ -159,7 +159,7 @@ kubectl get ccemanagedcontrolplane --watch
      (`registry/org/repo:tag`) or `clusterctl init` fails with *"repository name
      must be canonical"*. Override it with a kustomize `images:` transform — see
      `scripts/deploy-kind.sh` for a ready example.
-   - **Webhook `caBundle`.** The 11 admission webhooks need
+   - **Webhook `caBundle`.** The 14 admission webhooks need
      `clientConfig.caBundle = base64(CA cert)`. With cert-manager this is
      injected automatically; without it you must fill it in (see step 3).
 

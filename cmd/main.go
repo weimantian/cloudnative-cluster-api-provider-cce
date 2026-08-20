@@ -143,6 +143,18 @@ func main() {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEManagedMachinePoolTemplate")
 			os.Exit(1)
 		}
+		if err := (&infrav1beta1.CCEClusterControllerIdentity{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "CCEClusterControllerIdentity")
+			os.Exit(1)
+		}
+		if err := (&infrav1beta1.CCEClusterStaticIdentity{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "CCEClusterStaticIdentity")
+			os.Exit(1)
+		}
+		if err := (&infrav1beta1.CCEClusterRoleIdentity{}).SetupWebhookWithManager(mgr); err != nil {
+			setupLog.Error(err, "unable to create webhook", "webhook", "CCEClusterRoleIdentity")
+			os.Exit(1)
+		}
 	}
 
 	// +kubebuilder:scaffold:builder

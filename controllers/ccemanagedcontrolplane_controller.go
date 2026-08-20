@@ -21,6 +21,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
+	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -71,7 +72,7 @@ func (r *CCEManagedControlPlaneReconciler) newCCEService(regionID, ak, sk string
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 
 // Reconcile implements the reconcile loop of CCEManagedControlPlane.
-func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	cp := &controlplanev1beta1.CCEManagedControlPlane{}
@@ -81,6 +82,16 @@ func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ct
 		}
 		return ctrl.Result{}, err
 	}
+
+	patchHelper, err := patch.NewHelper(cp, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	defer func() {
+		if err := patchHelper.Patch(ctx, cp); err != nil && reterr == nil {
+			reterr = err
+		}
+	}()
 
 	cluster, err := util.GetOwnerCluster(ctx, r.Client, cp.ObjectMeta)
 	if err != nil {
@@ -113,25 +124,15 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		log.Info("Cluster infrastructure is not ready yet")
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 			conditions.WaitingForClusterInfrastructureReason, "")
-		if err := r.Status().Update(ctx, cp); err != nil {
-			return ctrl.Result{}, err
-		}
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
-	if controllerutil.AddFinalizer(cp, ControlPlaneFinalizer) {
-		if err := r.Update(ctx, cp); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
+	controllerutil.AddFinalizer(cp, ControlPlaneFinalizer)
 
 	region, vpcID, nodeSubnetID, err := r.clusterNetwork(ctx, cluster, cp)
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, cp); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return ctrl.Result{}, err
 	}
 
@@ -144,9 +145,6 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		conditions.MarkFalse(cp, conditions.CredentialsReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
 		recordEvent(r.Recorder, cp, corev1.EventTypeWarning, "CredentialsFailed", "%v", err)
-		if uerr := r.Status().Update(ctx, cp); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return ctrl.Result{}, err
 	}
 	conditions.MarkTrue(cp, conditions.CredentialsReadyCondition, "CredentialsResolved", "CCE credentials resolved")
@@ -155,9 +153,6 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.CredentialsReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, cp); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return ctrl.Result{}, err
 	}
 
@@ -168,9 +163,6 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		if err != nil {
 			conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
-			if uerr := r.Status().Update(ctx, cp); uerr != nil {
-				return ctrl.Result{}, uerr
-			}
 			return resultAfterError(err)
 		}
 		clusterID = id
@@ -188,24 +180,15 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 			cp.Status.ClusterID = ""
 			conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 				conditions.ReconciliationFailedReason, "CCE cluster not found, recreating")
-			if uerr := r.Status().Update(ctx, cp); uerr != nil {
-				return ctrl.Result{}, uerr
-			}
 			return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 		}
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, cp); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return resultAfterError(err)
 	}
 	if info.Phase != "Available" {
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 			conditions.ReconciliationInProgressReason, "CCE cluster phase: "+info.Phase)
-		if uerr := r.Status().Update(ctx, cp); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
@@ -232,9 +215,6 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	if err := r.reconcileAddons(ctx, svc, clusterID, cp); err != nil {
 		conditions.MarkFalse(cp, conditions.AddonsConfiguredCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, cp); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return ctrl.Result{}, err
 	}
 	conditions.MarkTrue(cp, conditions.AddonsConfiguredCondition, "AddonsConfigured", "CCE addons reconciled")
@@ -243,9 +223,6 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	if err := r.reconcilePodIdentityAssociations(ctx, svc, clusterID, cp); err != nil {
 		conditions.MarkFalse(cp, conditions.PodIdentityAssociationsConfiguredCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, cp); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return ctrl.Result{}, err
 	}
 	conditions.MarkTrue(cp, conditions.PodIdentityAssociationsConfiguredCondition, "PodIdentityAssociationsConfigured", "CCE pod-identity associations reconciled")
@@ -254,9 +231,6 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	if err := r.reconcileLogging(ctx, svc, clusterID, cp); err != nil {
 		conditions.MarkFalse(cp, conditions.LoggingConfiguredCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, cp); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return ctrl.Result{}, err
 	}
 	conditions.MarkTrue(cp, conditions.LoggingConfiguredCondition, "LoggingConfigured", "CCE control-plane log config reconciled")
@@ -287,9 +261,6 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		if err != nil {
 			conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
-			if uerr := r.Status().Update(ctx, cp); uerr != nil {
-				return ctrl.Result{}, uerr
-			}
 			return ctrl.Result{}, err
 		}
 		secretName := cp.Spec.ClusterName + "-kubeconfig"
@@ -313,9 +284,6 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 			if !apierrors.IsAlreadyExists(err) {
 				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
 					conditions.ReconciliationFailedReason, err.Error())
-				if uerr := r.Status().Update(ctx, cp); uerr != nil {
-					return ctrl.Result{}, uerr
-				}
 				return ctrl.Result{}, err
 			}
 			// Update the existing Secret in place (rotation) — but only if it
@@ -325,27 +293,18 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 			if err := r.Get(ctx, types.NamespacedName{Namespace: cp.Namespace, Name: secretName}, existing); err != nil {
 				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
 					conditions.ReconciliationFailedReason, err.Error())
-				if uerr := r.Status().Update(ctx, cp); uerr != nil {
-					return ctrl.Result{}, uerr
-				}
 				return ctrl.Result{}, err
 			}
 			if !metav1.IsControlledBy(existing, cp) && existing.Labels[clusterv1.ClusterNameLabel] != cluster.Name {
 				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
 					conditions.ReconciliationFailedReason,
 					"Secret "+secretName+" exists and is not owned by this provider; refusing to overwrite")
-				if uerr := r.Status().Update(ctx, cp); uerr != nil {
-					return ctrl.Result{}, uerr
-				}
 				return ctrl.Result{}, errors.New("refusing to overwrite non-owned kubeconfig Secret " + secretName)
 			}
 			existing.Data = secret.Data
 			if err := r.Update(ctx, existing); err != nil {
 				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
 					conditions.ReconciliationFailedReason, err.Error())
-				if uerr := r.Status().Update(ctx, cp); uerr != nil {
-					return ctrl.Result{}, uerr
-				}
 				return ctrl.Result{}, err
 			}
 		}
@@ -357,10 +316,6 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	cp.Status.Ready = true
 	cp.Status.Initialized = true
 	log.Info("CCE control plane is ready", "clusterID", clusterID)
-	// Persist status explicitly (status subresource ignores r.Update).
-	if err := r.Status().Update(ctx, cp); err != nil {
-		return ctrl.Result{}, err
-	}
 	return ctrl.Result{}, nil
 }
 
@@ -373,9 +328,6 @@ func (r *CCEManagedControlPlaneReconciler) pollUpgradeTask(ctx context.Context, 
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, cp); uerr != nil {
-			return ctrl.Result{}, true
-		}
 		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, true
 	}
 	switch phase {
@@ -388,7 +340,7 @@ func (r *CCEManagedControlPlaneReconciler) pollUpgradeTask(ctx context.Context, 
 		// Persist and requeue so the NEXT reconcile observes the new version
 		// (reconcile's info.Version is stale here and would otherwise re-trigger
 		// an upgrade in this same pass).
-		return r.persistUpgradeStatus(ctx, cp)
+		return ctrl.Result{RequeueAfter: defaultRequeue}, true
 	case cceService.UpgradeTaskPhaseFailed:
 		// Clear the task ID: the previous behavior kept it forever and only a
 		// manual status edit could unblock; with it cleared, the next reconcile
@@ -397,11 +349,11 @@ func (r *CCEManagedControlPlaneReconciler) pollUpgradeTask(ctx context.Context, 
 		cp.Status.UpgradeTaskID = ""
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.ReconciliationFailedReason, "upgrade task failed")
-		return r.persistUpgradeStatus(ctx, cp)
+		return ctrl.Result{RequeueAfter: defaultRequeue}, true
 	default: // Init/Queuing/Running/Pause
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.UpgradeInProgressReason, "upgrade task phase: "+phase)
-		return r.persistUpgradeStatus(ctx, cp)
+		return ctrl.Result{RequeueAfter: defaultRequeue}, true
 	}
 }
 
@@ -414,9 +366,6 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, cp); uerr != nil {
-			return ctrl.Result{}, true
-		}
 		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, true
 	}
 	if len(info.TargetVersions) == 0 {
@@ -432,7 +381,7 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 		}
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.UpgradeNotOfferedReason, msg)
-		return r.persistUpgradeStatus(ctx, cp)
+		return ctrl.Result{RequeueAfter: defaultRequeue}, true
 	}
 	// The platform returns full target versions (e.g. v1.34.8-r2) while a
 	// user may specify a major version (e.g. v1.34) — the official API accepts
@@ -442,16 +391,13 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.UpgradeTargetUnavailableReason,
 			"target version "+cp.Spec.Version+" not offered; available: "+strings.Join(info.TargetVersions, ", "))
-		return r.persistUpgradeStatus(ctx, cp)
+		return ctrl.Result{RequeueAfter: defaultRequeue}, true
 	}
 
 	taskID, err := svc.StartUpgrade(ctx, clusterID, cp.Spec.Version)
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, cp); uerr != nil {
-			return ctrl.Result{}, true
-		}
 		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, true
 	}
 	cp.Status.UpgradeTaskID = taskID
@@ -459,17 +405,6 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 		conditions.UpgradeInProgressReason, "upgrading to "+cp.Spec.Version)
 	recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "UpgradeStarted", "upgrading to %s", cp.Spec.Version)
 	log.Info("Cluster upgrade started", "clusterID", clusterID, "target", cp.Spec.Version, "taskID", taskID)
-	return r.persistUpgradeStatus(ctx, cp)
-}
-
-// persistUpgradeStatus stores the control plane status after an upgrade step
-// and requests a requeue so the in-flight task keeps being polled. A status
-// update failure is logged and requeued (the reconcile loop will retry).
-func (r *CCEManagedControlPlaneReconciler) persistUpgradeStatus(ctx context.Context, cp *controlplanev1beta1.CCEManagedControlPlane) (ctrl.Result, bool) {
-	if err := r.Status().Update(ctx, cp); err != nil {
-		ctrl.LoggerFrom(ctx).Error(err, "failed to persist upgrade status")
-		return ctrl.Result{RequeueAfter: defaultRequeue}, true
-	}
 	return ctrl.Result{RequeueAfter: defaultRequeue}, true
 }
 
@@ -528,9 +463,6 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 	}
 
 	controllerutil.RemoveFinalizer(cp, ControlPlaneFinalizer)
-	if err := r.Update(ctx, cp); err != nil {
-		return ctrl.Result{}, err
-	}
 	return ctrl.Result{}, nil
 }
 

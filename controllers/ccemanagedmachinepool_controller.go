@@ -18,6 +18,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
+	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -68,7 +69,7 @@ func (r *CCEManagedMachinePoolReconciler) newCCEService(regionID, ak, sk string)
 // +kubebuilder:rbac:groups=controlplane.cluster.x-k8s.io,resources=ccemanagedcontrolplanes,verbs=get;list;watch
 
 // Reconcile implements the reconcile loop of CCEManagedMachinePool.
-func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	pool := &infrav1beta1.CCEManagedMachinePool{}
@@ -78,6 +79,16 @@ func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctr
 		}
 		return ctrl.Result{}, err
 	}
+
+	patchHelper, err := patch.NewHelper(pool, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	defer func() {
+		if err := patchHelper.Patch(ctx, pool); err != nil && reterr == nil {
+			reterr = err
+		}
+	}()
 
 	cluster, err := util.GetClusterFromMetadata(ctx, r.Client, pool.ObjectMeta)
 	if err != nil {
@@ -117,25 +128,15 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		log.Info("Control plane is not ready yet, waiting")
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.WaitingForControlPlaneReason, "")
-		if err := r.Status().Update(ctx, pool); err != nil {
-			return ctrl.Result{}, err
-		}
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
-	if controllerutil.AddFinalizer(pool, MachinePoolFinalizer) {
-		if err := r.Update(ctx, pool); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
+	controllerutil.AddFinalizer(pool, MachinePoolFinalizer)
 
 	region, err := r.clusterRegion(ctx, cluster, pool)
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, pool); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return ctrl.Result{}, err
 	}
 	// Credentials come from the control plane's identity chain (identityRef
@@ -146,18 +147,12 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, pool); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return ctrl.Result{}, err
 	}
 	svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, pool); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return ctrl.Result{}, err
 	}
 
@@ -168,9 +163,6 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		if err != nil {
 			conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
-			if uerr := r.Status().Update(ctx, pool); uerr != nil {
-				return ctrl.Result{}, uerr
-			}
 			return ctrl.Result{}, err
 		}
 		pool.Status.NodePoolID = id
@@ -204,9 +196,6 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		if err := svc.ScaleNodePool(ctx, clusterID, pool.Status.NodePoolID, pool.Spec.Replicas); err != nil {
 			conditions.MarkFalse(pool, conditions.NodePoolScalingCondition,
 				conditions.ReconciliationFailedReason, err.Error())
-			if uerr := r.Status().Update(ctx, pool); uerr != nil {
-				return ctrl.Result{}, uerr
-			}
 			return ctrl.Result{}, err
 		}
 		conditions.MarkTrue(pool, conditions.NodePoolScalingCondition, "ScalingCompleted", "node pool scaled")
@@ -245,9 +234,6 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		if err := svc.UpdateNodePool(ctx, update); err != nil {
 			conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
-			if uerr := r.Status().Update(ctx, pool); uerr != nil {
-				return ctrl.Result{}, uerr
-			}
 			return ctrl.Result{}, err
 		}
 		// Roll the updated attributes onto existing nodes (CCE 同步节点池 /
@@ -262,9 +248,6 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		if err := svc.UpgradeNodePool(ctx, clusterID, pool.Status.NodePoolID, maxUnavailable); err != nil {
 			conditions.MarkFalse(pool, conditions.NodePoolScalingCondition,
 				conditions.ReconciliationFailedReason, err.Error())
-			if uerr := r.Status().Update(ctx, pool); uerr != nil {
-				return ctrl.Result{}, uerr
-			}
 			return ctrl.Result{}, err
 		}
 		pool.Status.LastAppliedSecurityGroups = append([]string(nil), pool.Spec.SecurityGroups...)
@@ -278,9 +261,6 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		if uerr := r.Status().Update(ctx, pool); uerr != nil {
-			return ctrl.Result{}, uerr
-		}
 		return ctrl.Result{}, err
 	}
 	// Replicas should reflect the ACTUAL node count, not the desired target
@@ -300,9 +280,6 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, "node pool not found in cloud, recreating")
 		pool.Status.NodePoolID = ""
-		if err := r.Status().Update(ctx, pool); err != nil {
-			return ctrl.Result{}, err
-		}
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
@@ -311,10 +288,6 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	pool.Status.Ready = true
 	pool.Status.Ready = true
 	log.Info("CCE node pool reconciled", "nodePoolID", pool.Status.NodePoolID)
-	// Persist status explicitly (status subresource ignores r.Update).
-	if err := r.Status().Update(ctx, pool); err != nil {
-		return ctrl.Result{}, err
-	}
 	return ctrl.Result{}, nil
 }
 
@@ -385,15 +358,9 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 		// so a surviving object does not retry deleting a pool that no
 		// longer exists.
 		pool.Status.NodePoolID = ""
-		if err := r.Status().Update(ctx, pool); err != nil {
-			return ctrl.Result{}, err
-		}
 	}
 
 	controllerutil.RemoveFinalizer(pool, MachinePoolFinalizer)
-	if err := r.Update(ctx, pool); err != nil {
-		return ctrl.Result{}, err
-	}
 	return ctrl.Result{}, nil
 }
 
@@ -515,7 +482,6 @@ func (r *CCEManagedMachinePoolReconciler) syncReplicasFromOwner(ctx context.Cont
 		if mp.Spec.Template.Spec.InfrastructureRef.Name == pool.Name {
 			if mp.Spec.Replicas != nil && *mp.Spec.Replicas != pool.Spec.Replicas {
 				pool.Spec.Replicas = *mp.Spec.Replicas
-				return r.Update(ctx, pool)
 			}
 			return nil
 		}

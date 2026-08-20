@@ -19,6 +19,7 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
+	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -66,7 +67,7 @@ func (r *CCEClusterReconciler) newNetworkValidator(regionID, ak, sk string) (net
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters/status,verbs=get
 
 // Reconcile implements the reconcile loop of CCECluster.
-func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
+func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	cceCluster := &infrav1beta1.CCECluster{}
@@ -76,6 +77,16 @@ func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		}
 		return ctrl.Result{}, err
 	}
+
+	patchHelper, err := patch.NewHelper(cceCluster, r.Client)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	defer func() {
+		if err := patchHelper.Patch(ctx, cceCluster); err != nil && reterr == nil {
+			reterr = err
+		}
+	}()
 
 	cluster, err := util.GetOwnerCluster(ctx, r.Client, cceCluster.ObjectMeta)
 	if err != nil {
@@ -101,20 +112,13 @@ func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, cceCluster *infrav1beta1.CCECluster) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	if controllerutil.AddFinalizer(cceCluster, CCEClusterFinalizer) {
-		if err := r.Update(ctx, cceCluster); err != nil {
-			return ctrl.Result{}, err
-		}
-	}
+	controllerutil.AddFinalizer(cceCluster, CCEClusterFinalizer)
 
 	if cceCluster.Spec.Region == "" {
 		conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 			conditions.ReconciliationFailedReason,
 			"spec.region is required")
 		recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "NetworkValidationFailed", "spec.region is required")
-		if err := r.Status().Update(ctx, cceCluster); err != nil {
-			return ctrl.Result{}, err
-		}
 		return ctrl.Result{}, errors.New("spec.region is required")
 	}
 
@@ -129,9 +133,6 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 	if credErr != nil {
 		conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 			conditions.ReconciliationFailedReason, credErr.Error())
-		if err := r.Status().Update(ctx, cceCluster); err != nil {
-			return ctrl.Result{}, err
-		}
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 	if creds != nil {
@@ -139,9 +140,6 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		if verr != nil {
 			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 				conditions.ReconciliationFailedReason, verr.Error())
-			if err := r.Status().Update(ctx, cceCluster); err != nil {
-				return ctrl.Result{}, err
-			}
 			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, nil
 		}
 		// Read the container/service CIDR from the control plane spec.
@@ -166,9 +164,6 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		if verr != nil {
 			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
 				conditions.ReconciliationFailedReason, verr.Error())
-			if err := r.Status().Update(ctx, cceCluster); err != nil {
-				return ctrl.Result{}, err
-			}
 			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, nil
 		}
 		var hardMsgs []string
@@ -185,9 +180,6 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 			recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "NetworkValidationFailed", "%s", strings.Join(hardMsgs, "; "))
 			// Persist the failure condition (status subresource ignores
 			// r.Update).
-			if err := r.Status().Update(ctx, cceCluster); err != nil {
-				return ctrl.Result{}, err
-			}
 			return ctrl.Result{RequeueAfter: 2 * time.Minute}, nil
 		}
 	}
@@ -211,10 +203,6 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 
 	cceCluster.Status.Ready = true
 	log.Info("CCECluster infrastructure is ready")
-	// Persist status explicitly (status subresource ignores r.Update).
-	if err := r.Status().Update(ctx, cceCluster); err != nil {
-		return ctrl.Result{}, err
-	}
 	return ctrl.Result{}, nil
 }
 
@@ -248,9 +236,6 @@ func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clu
 		}
 	}
 	controllerutil.RemoveFinalizer(cceCluster, CCEClusterFinalizer)
-	if err := r.Update(ctx, cceCluster); err != nil {
-		return ctrl.Result{}, err
-	}
 	return ctrl.Result{}, nil
 }
 
