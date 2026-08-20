@@ -94,7 +94,24 @@ func (m *CCEManagedMachinePool) validate() error {
 	if len(m.Spec.SecurityGroups) > 5 {
 		allErrs = append(allErrs, field.TooMany(field.NewPath("spec", "securityGroups"), len(m.Spec.SecurityGroups), 5))
 	}
-	// Required nodeTemplate fields per the official CreateNodePool API:
+	// Spot (竞价) instances are only supported with on-demand billing.
+	if m.Spec.Spot && m.Spec.BillingMode == 1 {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "spot"),
+			"spot instances require billingMode=0 (on-demand)"))
+	}
+	// Extension scale group flavor/AZ validation (multi-AZ).
+	for i, g := range m.Spec.ExtensionScaleGroups {
+		p := field.NewPath("spec", "extensionScaleGroups").Index(i)
+		if g.Flavor == "" {
+			allErrs = append(allErrs, field.Required(p.Child("flavor"), "flavor is required"))
+		} else if !flavorPattern.MatchString(g.Flavor) {
+			allErrs = append(allErrs, field.Invalid(p.Child("flavor"), g.Flavor,
+				"flavor must match the ECS flavor naming pattern, e.g. c6.large.2"))
+		}
+		if g.AvailabilityZone == "" {
+			allErrs = append(allErrs, field.Required(p.Child("availabilityZone"), "availabilityZone is required"))
+		}
+	}
 	// Required nodeTemplate fields per the official CreateNodePool API:
 	// az ("通过api创建节点不支持随机可用区"), os (required unless a private
 	// image is used), rootVolume (size 40-1024 GiB). Fail fast at the API

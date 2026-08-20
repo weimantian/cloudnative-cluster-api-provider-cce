@@ -62,6 +62,24 @@ type CCEManagedMachinePoolSpec struct {
 	// +optional
 	BillingMode int32 `json:"billingMode,omitempty"`
 
+	// Spot requests spot (竞价) instances for the node pool. Only effective
+	// when billingMode=0 (on-demand); maps to nodeTemplate.extendParam.
+	// marketType=spot.
+	// +optional
+	Spot bool `json:"spot,omitempty"`
+
+	// SpotPrice is the maximum hourly price the user is willing to pay for
+	// spot instances. Empty = the on-demand price is used as the spot price.
+	// Only effective when spot is set and billingMode=0.
+	// +optional
+	SpotPrice string `json:"spotPrice,omitempty"`
+
+	// ExtensionScaleGroups extends the node pool into additional availability
+	// zones (CCE 扩展伸缩组). Each entry carries its own flavor and AZ; the
+	// base nodeTemplate.az remains the primary AZ.
+	// +optional
+	ExtensionScaleGroups []ExtensionScaleGroupSpec `json:"extensionScaleGroups,omitempty"`
+
 	// Taints applied to the nodes (max 20 per official constraint).
 	// +kubebuilder:validation:MaxItems=20
 	// +optional
@@ -101,6 +119,22 @@ type UpdateConfigSpec struct {
 	// +kubebuilder:validation:Maximum=20
 	// +optional
 	MaxUnavailable int32 `json:"maxUnavailable,omitempty"`
+}
+
+// ExtensionScaleGroupSpec describes one CCE extension scale group — an
+// additional flavor/AZ set in a multi-AZ node pool.
+type ExtensionScaleGroupSpec struct {
+	// Name of the extension scale group.
+	// +kubebuilder:validation:Required
+	Name string `json:"name"`
+
+	// Flavor is the ECS flavor for this group.
+	// +kubebuilder:validation:Required
+	Flavor string `json:"flavor"`
+
+	// AvailabilityZone for this group.
+	// +kubebuilder:validation:Required
+	AvailabilityZone string `json:"availabilityZone"`
 }
 
 // AutoscalingSpec maps the CCE node pool autoscaling configuration

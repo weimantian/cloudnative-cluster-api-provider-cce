@@ -110,3 +110,49 @@ func TestMachinePoolUpdateConfigValidation(t *testing.T) {
 		t.Errorf("expected MaxUnavailable=20 to pass, got %v", err)
 	}
 }
+
+// TestMachinePoolSpotValidation verifies spot (竞价) requires on-demand billing.
+func TestMachinePoolSpotValidation(t *testing.T) {
+	// spot + billingMode=1 (subscription) must be rejected.
+	bad := validPool()
+	bad.Spec.Spot = true
+	bad.Spec.BillingMode = 1
+	if err := bad.validate(); err == nil {
+		t.Error("expected spot+billingMode=1 to be rejected")
+	}
+	// spot + billingMode=0 (on-demand) is allowed.
+	ok := validPool()
+	ok.Spec.Spot = true
+	ok.Spec.SpotPrice = "0.5"
+	if err := ok.validate(); err != nil {
+		t.Errorf("expected spot+billingMode=0 to pass, got %v", err)
+	}
+}
+
+// TestMachinePoolExtensionScaleGroupValidation verifies multi-AZ extension scale
+// groups validate their required flavor/AZ fields.
+func TestMachinePoolExtensionScaleGroupValidation(t *testing.T) {
+	bad := validPool()
+	bad.Spec.ExtensionScaleGroups = []ExtensionScaleGroupSpec{
+		{Name: "az-b", Flavor: "c7.large.2"}, // missing AZ
+	}
+	if err := bad.validate(); err == nil {
+		t.Error("expected missing-AZ group to be rejected")
+	}
+
+	badFlavor := validPool()
+	badFlavor.Spec.ExtensionScaleGroups = []ExtensionScaleGroupSpec{
+		{Name: "az-b", Flavor: "invalid", AvailabilityZone: "cn-north-4b"},
+	}
+	if err := badFlavor.validate(); err == nil {
+		t.Error("expected bad-flavor group to be rejected")
+	}
+
+	ok := validPool()
+	ok.Spec.ExtensionScaleGroups = []ExtensionScaleGroupSpec{
+		{Name: "az-b", Flavor: "c7.large.2", AvailabilityZone: "cn-north-4b"},
+	}
+	if err := ok.validate(); err != nil {
+		t.Errorf("expected valid group to pass, got %v", err)
+	}
+}

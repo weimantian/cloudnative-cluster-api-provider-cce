@@ -390,6 +390,18 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 		template.K8sTags = in.Labels
 	}
 	template.UserTags = toUserTags(in.ClusterName, in.Tags)
+	if in.Spot {
+		// Spot (竞价) instances: marketType=spot, only effective with
+		// billingMode=0 (on-demand). spotPrice defaults to the on-demand price
+		// when empty (official NodeExtendParam).
+		extend := &model.NodeExtendParam{}
+		marketType := model.GetNodeExtendParamMarketTypeEnum().SPOT
+		extend.MarketType = &marketType
+		if in.SpotPrice != "" {
+			extend.SpotPrice = stringPtr(in.SpotPrice)
+		}
+		template.ExtendParam = extend
+	}
 	spec := &model.NodePoolSpec{
 		NodeTemplate:     template,
 		InitialNodeCount: int32Ptr(in.InitialNodeCount),
@@ -403,6 +415,19 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 	}
 	if in.Autoscaling != nil {
 		spec.Autoscaling = toNodePoolAutoscaling(in.Autoscaling)
+	}
+	if len(in.ExtensionScaleGroups) > 0 {
+		groups := make([]model.ExtensionScaleGroup, 0, len(in.ExtensionScaleGroups))
+		for _, g := range in.ExtensionScaleGroups {
+			groups = append(groups, model.ExtensionScaleGroup{
+				Metadata: &model.ExtensionScaleGroupMetadata{Name: stringPtr(g.Name)},
+				Spec: &model.ExtensionScaleGroupSpec{
+					Flavor: stringPtr(g.Flavor),
+					Az:     stringPtr(g.AvailabilityZone),
+				},
+			})
+		}
+		spec.ExtensionScaleGroups = &groups
 	}
 	pool := &model.NodePool{
 		Kind:       "NodePool",

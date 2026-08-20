@@ -457,6 +457,8 @@ func toCreateNodePoolInput(clusterID string, pool *infrav1beta1.CCEManagedMachin
 		AvailabilityZone: pool.Spec.AvailabilityZone,
 		InitialNodeCount: pool.Spec.Replicas,
 		BillingMode:      pool.Spec.BillingMode,
+		Spot:             pool.Spec.Spot,
+		SpotPrice:        pool.Spec.SpotPrice,
 		Taints:           pool.Spec.Taints,
 		Labels:           pool.Spec.Labels,
 		SecurityGroups:   pool.Spec.SecurityGroups,
@@ -472,6 +474,16 @@ func toCreateNodePoolInput(clusterID string, pool *infrav1beta1.CCEManagedMachin
 		in.DataVolumes = make([]cceService.NodeVolumeInput, 0, len(pool.Spec.DataVolumes))
 		for _, v := range pool.Spec.DataVolumes {
 			in.DataVolumes = append(in.DataVolumes, cceService.NodeVolumeInput{Size: v.Size, Type: v.Type})
+		}
+	}
+	if len(pool.Spec.ExtensionScaleGroups) > 0 {
+		in.ExtensionScaleGroups = make([]cceService.ExtensionScaleGroupInput, 0, len(pool.Spec.ExtensionScaleGroups))
+		for _, g := range pool.Spec.ExtensionScaleGroups {
+			in.ExtensionScaleGroups = append(in.ExtensionScaleGroups, cceService.ExtensionScaleGroupInput{
+				Name:             g.Name,
+				Flavor:           g.Flavor,
+				AvailabilityZone: g.AvailabilityZone,
+			})
 		}
 	}
 	return in

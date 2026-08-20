@@ -118,6 +118,31 @@ spec:
                           - size
                           type: object
                         type: array
+                      extensionScaleGroups:
+                        description: |-
+                          ExtensionScaleGroups extends the node pool into additional availability
+                          zones (CCE 扩展伸缩组). Each entry carries its own flavor and AZ; the
+                          base nodeTemplate.az remains the primary AZ.
+                        items:
+                          description: |-
+                            ExtensionScaleGroupSpec describes one CCE extension scale group — an
+                            additional flavor/AZ set in a multi-AZ node pool.
+                          properties:
+                            availabilityZone:
+                              description: AvailabilityZone for this group.
+                              type: string
+                            flavor:
+                              description: Flavor is the ECS flavor for this group.
+                              type: string
+                            name:
+                              description: Name of the extension scale group.
+                              type: string
+                          required:
+                          - availabilityZone
+                          - flavor
+                          - name
+                          type: object
+                        type: array
                       flavor:
                         description: Flavor is the ECS instance flavor of the nodes
                           (nodeTemplate.flavor).
@@ -166,6 +191,18 @@ spec:
                           type: string
                         maxItems: 5
                         type: array
+                      spot:
+                        description: |-
+                          Spot requests spot (竞价) instances for the node pool. Only effective
+                          when billingMode=0 (on-demand); maps to nodeTemplate.extendParam.
+                          marketType=spot.
+                        type: boolean
+                      spotPrice:
+                        description: |-
+                          SpotPrice is the maximum hourly price the user is willing to pay for
+                          spot instances. Empty = the on-demand price is used as the spot price.
+                          Only effective when spot is set and billingMode=0.
+                        type: string
                       sshKey:
                         description: SSHKey used to access the nodes (nodeTemplate.sshKey).
                         type: string

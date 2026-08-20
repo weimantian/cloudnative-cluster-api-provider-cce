@@ -14,6 +14,31 @@ import (
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 )
 
+// TestToCreateNodePoolInputSpotAndMultiAZ verifies spot (竞价) and extension
+// scale group (multi-AZ) fields are forwarded to the service layer.
+func TestToCreateNodePoolInputSpotAndMultiAZ(t *testing.T) {
+	pool := &infrav1beta1.CCEManagedMachinePool{
+		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+			Spot:      true,
+			SpotPrice: "0.5",
+			ExtensionScaleGroups: []infrav1beta1.ExtensionScaleGroupSpec{
+				{Name: "az-b", Flavor: "c7.large.2", AvailabilityZone: "cn-north-4b"},
+				{Name: "az-c", Flavor: "c7.large.2", AvailabilityZone: "cn-north-4c"},
+			},
+		},
+	}
+	in := toCreateNodePoolInput("cluster-1", pool)
+	if !in.Spot || in.SpotPrice != "0.5" {
+		t.Errorf("expected spot=true price=0.5, got spot=%v price=%s", in.Spot, in.SpotPrice)
+	}
+	if len(in.ExtensionScaleGroups) != 2 {
+		t.Fatalf("expected 2 extension scale groups, got %d", len(in.ExtensionScaleGroups))
+	}
+	if in.ExtensionScaleGroups[0].Name != "az-b" || in.ExtensionScaleGroups[0].AvailabilityZone != "cn-north-4b" {
+		t.Errorf("unexpected first group: %+v", in.ExtensionScaleGroups[0])
+	}
+}
+
 // TestToCreateNodePoolInputMultipleDataVolumes verifies all declared data
 // volumes are forwarded to the service layer (previously only the first was
 // mapped and the webhook rejected more than one).

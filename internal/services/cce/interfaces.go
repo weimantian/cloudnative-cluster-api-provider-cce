@@ -89,9 +89,18 @@ type CreateNodePoolInput struct {
 	AvailabilityZone string
 	InitialNodeCount int32
 	BillingMode      int32
-	Taints           []string // "key=value:effect"
-	Labels           map[string]string
-	SecurityGroups   []string
+	// Spot requests spot (竞价) instances (nodeTemplate.extendParam.
+	// marketType=spot). Only effective with BillingMode=0.
+	Spot bool
+	// SpotPrice is the max hourly price for spot instances; empty = the
+	// on-demand price is used as the spot price.
+	SpotPrice string
+	// ExtensionScaleGroups extends the pool into additional AZs (CCE
+	// 扩展伸缩组); each carries its own flavor/AZ.
+	ExtensionScaleGroups []ExtensionScaleGroupInput
+	Taints               []string // "key=value:effect"
+	Labels               map[string]string
+	SecurityGroups       []string
 	// CustomSecurityGroups to bind to newly scaled nodes (Q5).
 	CustomSecurityGroups []string
 	// Autoscaling maps to NodePoolNodeAutoscaling (feature gate
@@ -116,6 +125,13 @@ type NodePoolAutoscaling struct {
 type NodeVolumeInput struct {
 	Size int32
 	Type string
+}
+
+// ExtensionScaleGroupInput describes one CCE extension scale group.
+type ExtensionScaleGroupInput struct {
+	Name             string
+	Flavor           string
+	AvailabilityZone string
 }
 
 // NodePoolInfo is the provider-side representation of a CCE node pool.
