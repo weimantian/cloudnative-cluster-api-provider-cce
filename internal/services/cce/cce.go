@@ -465,6 +465,14 @@ func (s *Client) ScaleNodePool(_ context.Context, clusterID, nodePoolID string, 
 			},
 		},
 	}); err != nil {
+		// Idempotent scale: the platform rejects a scale to the count the pool
+		// already has ("No scale task needed with desired node count N") — e.g.
+		// right after creation (initialNodeCount == desired) or when a transient
+		// 0 count races the scale. Treat it as success, not an error (verified
+		// live).
+		if clouderrors.IsScaleNoOp(err) {
+			return nil
+		}
 		return errors.Wrapf(err, "ScaleNodePool %s failed", nodePoolID)
 	}
 	return nil

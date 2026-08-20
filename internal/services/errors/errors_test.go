@@ -112,3 +112,19 @@ func TestServiceResponseError(t *testing.T) {
 		t.Errorf("expected empty for non-SDK error, got %q %q", c, m)
 	}
 }
+
+func TestIsScaleNoOp(t *testing.T) {
+	noop := errors.Wrap(&sdkerr.ServiceResponseError{
+		StatusCode: 400, ErrorCode: "CCE_CM.0004",
+		ErrorMessage: "Request is invalid, No scale task needed with desired node count 1",
+	}, "wrapped")
+	if !IsScaleNoOp(noop) {
+		t.Error("expected IsScaleNoOp=true for 'No scale task needed'")
+	}
+	other := errors.Wrap(&sdkerr.ServiceResponseError{
+		StatusCode: 400, ErrorCode: "CCE_CM.0004", ErrorMessage: "some other error",
+	}, "wrapped")
+	if IsScaleNoOp(other) {
+		t.Error("expected IsScaleNoOp=false for unrelated error")
+	}
+}

@@ -332,7 +332,13 @@ func currentNodeCount(ctx context.Context, svc Service, clusterID, nodePoolID st
 	}
 	for _, p := range pools {
 		if p.NodePoolID == nodePoolID {
-			return p.DesiredNodeCount, nil
+			// NodeCount is the ACTUAL current node count (Status.CurrentNode).
+			// DesiredNodeCount is only the spec's initialNodeCount and is
+			// always the target — returning it here made "nodes reached N"
+			// pass instantly without any node ever becoming Active (bug found
+			// in the live drill; nodes were stuck "Installing" but the check
+			// reported success).
+			return p.NodeCount, nil
 		}
 	}
 	return 0, fmt.Errorf("node pool %s not found", nodePoolID)

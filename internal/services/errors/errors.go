@@ -11,6 +11,8 @@ Licensed under the MIT No Attribution (MIT-0) License.
 package errors
 
 import (
+	"strings"
+
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
 	"github.com/pkg/errors"
 )
@@ -165,4 +167,14 @@ func ServiceResponseError(err error) (code string, message string) {
 		return sdkErr.ErrorCode, sdkErr.ErrorMessage
 	}
 	return "", ""
+}
+
+// IsScaleNoOp reports whether err is the CCE "No scale task needed with desired
+// node count N" rejection (CCE_CM.0004). The platform returns this when the
+// pool is already at the requested count — e.g. right after creation with
+// initialNodeCount == desired, or when a transient 0 node count races a scale.
+// It means the scale is already satisfied, not a real failure (verified live).
+func IsScaleNoOp(err error) bool {
+	_, message := ServiceResponseError(err)
+	return strings.Contains(message, "No scale task needed")
 }
