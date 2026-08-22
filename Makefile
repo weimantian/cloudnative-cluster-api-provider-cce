@@ -79,7 +79,7 @@ lint: vet ## Run linters (extend with golangci-lint in CI)
 
 .PHONY: e2e
 e2e: ## Run e2e tests (requires a management cluster and CCE credentials)
-	$(GO) test ./test/e2e/... -timeout 60m
+	$(GO) test -tags e2e ./test/e2e/... -timeout 60m
 
 .PHONY: help
 help: ## Show this help

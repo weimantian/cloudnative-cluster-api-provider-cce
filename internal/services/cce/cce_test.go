@@ -133,6 +133,73 @@ func TestAssembleKubeconfig(t *testing.T) {
 	}
 }
 
+func TestAssembleKubeconfigInsecureSkipTLSVerify(t *testing.T) {
+	kind := "Config"
+	userName := "external"
+	ctxName := "external"
+	current := "external"
+
+	cases := []struct {
+		name     string
+		insecure *bool
+		want     bool
+	}{
+		{name: "externalCluster", insecure: boolPtr(true), want: true},
+		{name: "externalClusterTLSVerify", insecure: boolPtr(false), want: false},
+		{name: "internalCluster", insecure: nil, want: false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			clusterName := tc.name
+			server := "https://120.46.211.3:5443"
+			cert := "Y2xpZW50LWNlcnQ="
+			key := "Y2xpZW50LWtleQ=="
+			resp := &model.CreateKubernetesClusterCertResponse{
+				Kind: &kind,
+				Clusters: &[]model.Clusters{{
+					Name: &clusterName,
+					Cluster: &model.ClusterCert{
+						Server:                &server,
+						InsecureSkipTlsVerify: tc.insecure,
+					},
+				}},
+				Users: &[]model.Users{{
+					Name: &userName,
+					User: &model.User{
+						ClientCertificateData: &cert,
+						ClientKeyData:         &key,
+					},
+				}},
+				Contexts: &[]model.Contexts{{
+					Name: &ctxName,
+					Context: &model.Context{
+						Cluster: &clusterName,
+						User:    &userName,
+					},
+				}},
+				CurrentContext: &current,
+			}
+
+			out, err := assembleKubeconfig(resp)
+			if err != nil {
+				t.Fatalf("assembleKubeconfig failed: %v", err)
+			}
+			cfg, err := clientcmd.Load([]byte(out))
+			if err != nil {
+				t.Fatalf("serialized kubeconfig unparseable: %v", err)
+			}
+			c := cfg.Clusters[tc.name]
+			if c == nil {
+				t.Fatalf("cluster %q missing", tc.name)
+			}
+			if c.InsecureSkipTLSVerify != tc.want {
+				t.Errorf("InsecureSkipTLSVerify = %v, want %v", c.InsecureSkipTLSVerify, tc.want)
+			}
+		})
+	}
+}
+
 func TestUpgradeNodePoolBounds(t *testing.T) {
 	// Bounds are validated before any SDK call, so a nil SDK client is safe
 	// for the invalid range (which returns before touching the SDK).

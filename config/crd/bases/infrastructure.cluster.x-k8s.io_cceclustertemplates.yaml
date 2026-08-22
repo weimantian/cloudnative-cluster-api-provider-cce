@@ -66,9 +66,30 @@ spec:
                           Network references the VPC/subnets the CCE cluster consumes.
                           CCE requires a VPC to exist before cluster creation.
                         properties:
+                          natGateway:
+                            description: |-
+                              NatGateway enables managed node egress (managed mode only): a NAT
+                              gateway + EIP + SNAT rule per managed subnet. Ignored in BYO mode.
+                            properties:
+                              eipResourceID:
+                                description: EIPResourceID records the created NAT
+                                  EIP ID (provider-managed).
+                                type: string
+                              resourceID:
+                                description: ResourceID records the created NAT gateway
+                                  ID (provider-managed).
+                                type: string
+                              spec:
+                                default: "1"
+                                description: 'Spec of the NAT gateway: "1" (small,
+                                  default), "2", "3", "4".'
+                                type: string
+                            type: object
                           subnets:
-                            description: Subnets referenced by the cluster (node subnets
-                              / ENI subnets for Turbo).
+                            description: |-
+                              Subnets referenced (BYO) or created (managed) by the cluster. When
+                              empty in managed mode, a default node subnet is derived from the VPC
+                              CIDR.
                             items:
                               description: Subnet references an existing or to-be-created
                                 subnet.
@@ -89,9 +110,20 @@ spec:
                                   description: Name of the subnet to create (only
                                     used when ID is empty).
                                   type: string
+                                neutronSubnetId:
+                                  description: |-
+                                    NeutronSubnetID records the neutron subnet ID (provider-managed; the
+                                    CCE eniNetwork API requires the neutron ID, not the network ID).
+                                  type: string
                                 resourceID:
                                   description: ResourceID records the created subnet
                                     resource ID (provider-managed).
+                                  type: string
+                                type:
+                                  description: |-
+                                    Type of the subnet: node (default) or eni (Turbo container subnet).
+                                    Managed Turbo clusters derive the ENI neutron_subnet_id from
+                                    subnets of Type eni.
                                   type: string
                                 vpcId:
                                   description: VPCID of the VPC the subnet belongs
@@ -100,7 +132,8 @@ spec:
                               type: object
                             type: array
                           vpc:
-                            description: VPC referenced by the cluster.
+                            description: VPC referenced (BYO) or created (managed)
+                              for the cluster.
                             properties:
                               cidr:
                                 description: CIDR of the VPC to create (only used
@@ -121,6 +154,15 @@ spec:
                                 description: ResourceID records the created VPC resource
                                   ID (provider-managed).
                                 type: string
+                              tags:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  Tags attached to the VPC. The provider owned tag
+                                  (cluster-api-provider-cce.cluster.<name>=owned) marks an existing VPC
+                                  as ADOPTED (managed, including deletion) - the CAPA three-state model:
+                                  vpc.id empty = create, vpc.id + owned tag = adopt, vpc.id + no tag = BYO.
+                                type: object
                             type: object
                         type: object
                       region:
@@ -187,9 +229,30 @@ spec:
                           Network references the VPC/subnets the CCE cluster consumes.
                           CCE requires a VPC to exist before cluster creation.
                         properties:
+                          natGateway:
+                            description: |-
+                              NatGateway enables managed node egress (managed mode only): a NAT
+                              gateway + EIP + SNAT rule per managed subnet. Ignored in BYO mode.
+                            properties:
+                              eipResourceID:
+                                description: EIPResourceID records the created NAT
+                                  EIP ID (provider-managed).
+                                type: string
+                              resourceID:
+                                description: ResourceID records the created NAT gateway
+                                  ID (provider-managed).
+                                type: string
+                              spec:
+                                default: "1"
+                                description: 'Spec of the NAT gateway: "1" (small,
+                                  default), "2", "3", "4".'
+                                type: string
+                            type: object
                           subnets:
-                            description: Subnets referenced by the cluster (node subnets
-                              / ENI subnets for Turbo).
+                            description: |-
+                              Subnets referenced (BYO) or created (managed) by the cluster. When
+                              empty in managed mode, a default node subnet is derived from the VPC
+                              CIDR.
                             items:
                               description: Subnet references an existing or to-be-created
                                 subnet.
@@ -210,9 +273,20 @@ spec:
                                   description: Name of the subnet to create (only
                                     used when ID is empty).
                                   type: string
+                                neutronSubnetId:
+                                  description: |-
+                                    NeutronSubnetID records the neutron subnet ID (provider-managed; the
+                                    CCE eniNetwork API requires the neutron ID, not the network ID).
+                                  type: string
                                 resourceID:
                                   description: ResourceID records the created subnet
                                     resource ID (provider-managed).
+                                  type: string
+                                type:
+                                  description: |-
+                                    Type of the subnet: node (default) or eni (Turbo container subnet).
+                                    Managed Turbo clusters derive the ENI neutron_subnet_id from
+                                    subnets of Type eni.
                                   type: string
                                 vpcId:
                                   description: VPCID of the VPC the subnet belongs
@@ -221,7 +295,8 @@ spec:
                               type: object
                             type: array
                           vpc:
-                            description: VPC referenced by the cluster.
+                            description: VPC referenced (BYO) or created (managed)
+                              for the cluster.
                             properties:
                               cidr:
                                 description: CIDR of the VPC to create (only used
@@ -242,6 +317,15 @@ spec:
                                 description: ResourceID records the created VPC resource
                                   ID (provider-managed).
                                 type: string
+                              tags:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  Tags attached to the VPC. The provider owned tag
+                                  (cluster-api-provider-cce.cluster.<name>=owned) marks an existing VPC
+                                  as ADOPTED (managed, including deletion) - the CAPA three-state model:
+                                  vpc.id empty = create, vpc.id + owned tag = adopt, vpc.id + no tag = BYO.
+                                type: object
                             type: object
                         type: object
                       region:

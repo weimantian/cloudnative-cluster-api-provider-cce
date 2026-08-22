@@ -138,7 +138,7 @@ https://chat.deepseek.com/share/nndkkwyu1gg8seypbj (内容:从 Terraform 入门 
 
 ## 4. 需要对接华为云 CCE 验证的事项清单(全部标注在正式文档中)
 
-> **可直接发送的正式问卷(中英双语,含填写说明与汇总表):[华为云 CCE 对齐问卷](cce-verification-questionnaire.md) / [English](cce-verification-questionnaire.en.md)。** 以下 14 项与该问卷一一对应,在全部确认/实测前不进入 PoC 编码。
+> **可直接发送的正式问卷(中英双语,含填写说明与汇总表):[华为云 CCE 对齐问卷](archive/cce-verification-questionnaire.md) / [English](archive/cce-verification-questionnaire.en.md)。** 以下 14 项与该问卷一一对应,在全部确认/实测前不进入 PoC 编码。
 
 1. **[需验证]** CCE 创建集群 API 是否允许"0 节点空集群"(文档显示创建集群请求体不含节点,但需实测确认空集群可创建、可后续单独建节点池;以及空集群是否计费/是否受配额限制)。
 2. **[需验证]** 下载证书接口 `CreateKubernetesClusterCert` 返回的 kubeconfig 中,`current-context` 为 external/internal 的切换逻辑、证书有效期(ClusterCertDuration)最大值;私网集群(无公网 IP)时 kubeconfig 的 server 地址是否可达管理集群。

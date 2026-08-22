@@ -9,13 +9,27 @@ package cce
 import (
 	"context"
 	"encoding/base64"
+	"strings"
 	"sync"
 
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
 	ccev3 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/model"
 	cceRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/region"
+	eipv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2"
+	eipmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2/model"
+	eipregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2/region"
+	evsv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/evs/v2"
+	evsmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/evs/v2/model"
+	evsregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/evs/v2/region"
+	natv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/nat/v2"
+	natmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/nat/v2/model"
+	natregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/nat/v2/region"
+	vpcv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2"
+	vpcmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
+	vpcregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/region"
 	"github.com/pkg/errors"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
@@ -26,6 +40,10 @@ import (
 // Client is the default CCE SDK-backed implementation of Service.
 type Client struct {
 	cce *ccev3.CceClient
+	eip *eipv2.EipClient
+	evs *evsv2.EvsClient
+	vpc *vpcv2.VpcClient
+	nat *natv2.NatClient
 }
 
 // clientCache caches built CCE SDK clients by (region, ak, sk). The SDK
@@ -63,8 +81,54 @@ func NewClient(regionID, ak, sk string) (*Client, error) {
 		return nil, errors.Wrap(err, "failed to build CCE HTTP client")
 	}
 	c := &Client{cce: ccev3.NewCceClient(hcClient)}
+	if err := buildAuxClients(c, regionID, cred); err != nil {
+		return nil, err
+	}
 	clientCache.Store(key, c)
 	return c, nil
+}
+
+// buildAuxClients attaches the EIP and EVS clients to c (used by the GC
+// orphan sweeper). A build failure is fatal: the client cache would
+// otherwise store a partially-initialized client.
+func buildAuxClients(c *Client, regionID string, cred auth.ICredential) error {
+	eipRegion, err := eipregion.SafeValueOf(regionID)
+	if err != nil {
+		return errors.Wrapf(err, "failed to resolve EIP region %q", regionID)
+	}
+	eipHC, err := eipv2.EipClientBuilder().WithRegion(eipRegion).WithCredential(cred).WithHttpConfig(config.DefaultHttpConfig()).SafeBuild()
+	if err != nil {
+		return errors.Wrap(err, "failed to build EIP client")
+	}
+	c.eip = eipv2.NewEipClient(eipHC)
+	evsRegion, err := evsregion.SafeValueOf(regionID)
+	if err != nil {
+		return errors.Wrapf(err, "failed to resolve EVS region %q", regionID)
+	}
+	evsHC, err := evsv2.EvsClientBuilder().WithRegion(evsRegion).WithCredential(cred).WithHttpConfig(config.DefaultHttpConfig()).SafeBuild()
+	if err != nil {
+		return errors.Wrap(err, "failed to build EVS client")
+	}
+	c.evs = evsv2.NewEvsClient(evsHC)
+	vpcRegion, err := vpcregion.SafeValueOf(regionID)
+	if err != nil {
+		return errors.Wrapf(err, "failed to resolve VPC region %q", regionID)
+	}
+	vpcHC, err := vpcv2.VpcClientBuilder().WithRegion(vpcRegion).WithCredential(cred).WithHttpConfig(config.DefaultHttpConfig()).SafeBuild()
+	if err != nil {
+		return errors.Wrap(err, "failed to build VPC client")
+	}
+	c.vpc = vpcv2.NewVpcClient(vpcHC)
+	natRegion, err := natregion.SafeValueOf(regionID)
+	if err != nil {
+		return errors.Wrapf(err, "failed to resolve NAT region %q", regionID)
+	}
+	natHC, err := natv2.NatClientBuilder().WithRegion(natRegion).WithCredential(cred).WithHttpConfig(config.DefaultHttpConfig()).SafeBuild()
+	if err != nil {
+		return errors.Wrap(err, "failed to build NAT client")
+	}
+	c.nat = natv2.NewNatClient(natHC)
+	return nil
 }
 
 // ShowCluster implements Service.
@@ -140,8 +204,28 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 	if in.ContainerNetworkCIDR != "" {
 		spec.ContainerNetwork.Cidr = stringPtr(in.ContainerNetworkCIDR)
 	}
-	if in.ServiceCIDR != "" {
-		spec.ServiceNetwork = &model.ServiceNetwork{IPv4CIDR: stringPtr(in.ServiceCIDR)}
+	if len(in.ContainerNetworkCIDRs) > 0 {
+		cidrs := make([]model.ContainerCidr, 0, len(in.ContainerNetworkCIDRs))
+		for _, c := range in.ContainerNetworkCIDRs {
+			cidrs = append(cidrs, model.ContainerCidr{Cidr: c})
+		}
+		spec.ContainerNetwork.Cidrs = &cidrs
+	}
+	if in.ServiceCIDR != "" || in.ServiceIPv6CIDR != "" {
+		sn := &model.ServiceNetwork{}
+		if in.ServiceCIDR != "" {
+			sn.IPv4CIDR = stringPtr(in.ServiceCIDR)
+		}
+		if in.ServiceIPv6CIDR != "" {
+			sn.IPv6CIDR = stringPtr(in.ServiceIPv6CIDR)
+		}
+		spec.ServiceNetwork = sn
+	}
+	if in.Ipv6Enable != nil {
+		spec.Ipv6enable = in.Ipv6Enable
+	}
+	if in.EnableAutopilot != nil {
+		spec.EnableAutopilot = in.EnableAutopilot
 	}
 	if len(in.CustomSAN) > 0 {
 		spec.CustomSan = &in.CustomSAN
@@ -165,6 +249,23 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 	spec.HostNetwork = &model.HostNetwork{Vpc: in.HostNetworkVpcID, Subnet: in.HostNetworkSubnetID}
 	// Ownership + user tags -> CCE clusterTags (official ResourceTag array).
 	spec.ClusterTags = toClusterTags(in.Name, in.Tags)
+	if in.EncryptionConfig != nil && in.EncryptionConfig.Mode != "" {
+		spec.EncryptionConfig = &model.EncryptionConfig{
+			Mode: encryptionModeEnum(in.EncryptionConfig.Mode),
+		}
+	}
+	if in.Authentication != nil && in.Authentication.Mode != "" {
+		auth := &model.Authentication{Mode: stringPtr(in.Authentication.Mode)}
+		if in.Authentication.AuthenticatingProxy != nil {
+			p := in.Authentication.AuthenticatingProxy
+			auth.AuthenticatingProxy = &model.AuthenticatingProxy{
+				Ca:         base64StrPtr(p.CA),
+				Cert:       base64StrPtr(p.Cert),
+				PrivateKey: base64StrPtr(p.PrivateKey),
+			}
+		}
+		spec.Authentication = auth
+	}
 	if in.BillingMode == 1 {
 		// Subscription clusters require periodType/periodNum (official
 		// ClusterExtendParam: "billingMode为1(包周期)时生效,且为必选").
@@ -367,6 +468,155 @@ func (s *Client) ListClusters(ctx context.Context) ([]ClusterRef, error) {
 }
 
 // CreateAccessPolicy implements Service.
+// ListEips implements Service.
+func (s *Client) ListEips(ctx context.Context) ([]EipRef, error) {
+	resp, err := s.eip.ListPublicips(&eipmodel.ListPublicipsRequest{})
+	if err != nil {
+		return nil, errors.Wrap(err, "ListPublicips failed")
+	}
+	var refs []EipRef
+	if resp.Publicips != nil {
+		for _, p := range *resp.Publicips {
+			ref := EipRef{Tags: map[string]string{}}
+			if p.Id != nil {
+				ref.ID = *p.Id
+			}
+			if p.PublicIpAddress != nil {
+				ref.Address = *p.PublicIpAddress
+			}
+			ref.Tags = parseKVTags(p.Tags)
+			refs = append(refs, ref)
+		}
+	}
+	return refs, nil
+}
+
+// DeleteEip implements Service.
+func (s *Client) DeleteEip(ctx context.Context, eipID string) error {
+	_, err := s.eip.DeletePublicip(&eipmodel.DeletePublicipRequest{PublicipId: eipID})
+	if err != nil && !clouderrors.IsNotFound(err) {
+		return errors.Wrapf(err, "DeletePublicip %s failed", eipID)
+	}
+	return nil
+}
+
+// ListVolumes implements Service.
+func (s *Client) ListVolumes(ctx context.Context) ([]VolumeRef, error) {
+	resp, err := s.evs.ListVolumes(&evsmodel.ListVolumesRequest{})
+	if err != nil {
+		return nil, errors.Wrap(err, "ListVolumes failed")
+	}
+	var refs []VolumeRef
+	if resp.Volumes != nil {
+		for _, v := range *resp.Volumes {
+			refs = append(refs, VolumeRef{ID: v.Id, Name: v.Name, Tags: v.Tags})
+		}
+	}
+	return refs, nil
+}
+
+// DeleteVolume implements Service.
+func (s *Client) DeleteVolume(ctx context.Context, volumeID string) error {
+	_, err := s.evs.DeleteVolume(&evsmodel.DeleteVolumeRequest{VolumeId: volumeID})
+	if err != nil && !clouderrors.IsNotFound(err) {
+		return errors.Wrapf(err, "DeleteVolume %s failed", volumeID)
+	}
+	return nil
+}
+
+// ListVpcs implements Service. VPC tags are not returned by ListVpcs, so this
+// does an N+1 ShowVpcTags per VPC (VPC counts are small).
+func (s *Client) ListVpcs(ctx context.Context) ([]VpcRef, error) {
+	resp, err := s.vpc.ListVpcs(&vpcmodel.ListVpcsRequest{})
+	if err != nil {
+		return nil, errors.Wrap(err, "ListVpcs failed")
+	}
+	var refs []VpcRef
+	if resp.Vpcs != nil {
+		for _, v := range *resp.Vpcs {
+			ref := VpcRef{ID: v.Id, Name: v.Name, Tags: map[string]string{}}
+			if tags, terr := s.vpc.ShowVpcTags(&vpcmodel.ShowVpcTagsRequest{VpcId: v.Id}); terr == nil && tags.Tags != nil {
+				for _, t := range *tags.Tags {
+					ref.Tags[t.Key] = t.Value
+				}
+			}
+			refs = append(refs, ref)
+		}
+	}
+	return refs, nil
+}
+
+// DeleteVpc implements Service.
+func (s *Client) DeleteVpc(ctx context.Context, vpcID string) error {
+	_, err := s.vpc.DeleteVpc(&vpcmodel.DeleteVpcRequest{VpcId: vpcID})
+	if err != nil && !clouderrors.IsNotFound(err) {
+		return errors.Wrapf(err, "DeleteVpc %s failed", vpcID)
+	}
+	return nil
+}
+
+// ListNatGateways implements Service. NAT tags are not returned by
+// ListNatGateways, so this does an N+1 ShowNatGatewayTag per gateway.
+func (s *Client) ListNatGateways(ctx context.Context) ([]NatGatewayRef, error) {
+	resp, err := s.nat.ListNatGateways(&natmodel.ListNatGatewaysRequest{})
+	if err != nil {
+		return nil, errors.Wrap(err, "ListNatGateways failed")
+	}
+	var refs []NatGatewayRef
+	if resp.NatGateways != nil {
+		for _, gw := range *resp.NatGateways {
+			if gw.Id == nil {
+				continue
+			}
+			ref := NatGatewayRef{ID: *gw.Id, Tags: map[string]string{}}
+			if gw.Name != nil {
+				ref.Name = *gw.Name
+			}
+			if tags, terr := s.nat.ShowNatGatewayTag(&natmodel.ShowNatGatewayTagRequest{NatGatewayId: *gw.Id}); terr == nil && tags.Tags != nil {
+				for _, t := range *tags.Tags {
+					ref.Tags[t.Key] = t.Value
+				}
+			}
+			refs = append(refs, ref)
+		}
+	}
+	return refs, nil
+}
+
+// DeleteNatGateway implements Service: SNAT rules first, then the gateway
+// (the platform rejects deleting a gateway that still has SNAT rules).
+func (s *Client) DeleteNatGateway(ctx context.Context, gatewayID string) error {
+	ids := []string{gatewayID}
+	if rules, err := s.nat.ListNatGatewaySnatRules(&natmodel.ListNatGatewaySnatRulesRequest{NatGatewayId: &ids}); err == nil && rules.SnatRules != nil {
+		for _, r := range *rules.SnatRules {
+			if _, derr := s.nat.DeleteNatGatewaySnatRule(&natmodel.DeleteNatGatewaySnatRuleRequest{
+				NatGatewayId: gatewayID,
+				SnatRuleId:   r.Id,
+			}); derr != nil && !clouderrors.IsNotFound(derr) {
+				return errors.Wrapf(derr, "DeleteNatGatewaySnatRule %s failed", r.Id)
+			}
+		}
+	}
+	_, err := s.nat.DeleteNatGateway(&natmodel.DeleteNatGatewayRequest{NatGatewayId: gatewayID})
+	if err != nil && !clouderrors.IsNotFound(err) {
+		return errors.Wrapf(err, "DeleteNatGateway %s failed", gatewayID)
+	}
+	return nil
+}
+
+// parseKVTags converts EIP "k=v" tag strings into a map.
+func parseKVTags(tags *[]string) map[string]string {
+	out := map[string]string{}
+	if tags == nil {
+		return out
+	}
+	for _, t := range *tags {
+		if k, v, ok := strings.Cut(t, "="); ok {
+			out[k] = v
+		}
+	}
+	return out
+}
 func (s *Client) CreateAccessPolicy(ctx context.Context, in AccessPolicyInput) (string, error) {
 	resp, err := s.cce.CreateAccessPolicy(&model.CreateAccessPolicyRequest{Body: toAccessPolicyModel(in)})
 	if err != nil {
@@ -520,6 +770,15 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 	if in.SSHKey != "" {
 		template.Login = &model.Login{SshKey: stringPtr(in.SSHKey)}
 	}
+	if in.EcsGroupId != "" {
+		template.EcsGroupId = stringPtr(in.EcsGroupId)
+	}
+	if in.FaultDomain != "" {
+		template.FaultDomain = stringPtr(in.FaultDomain)
+	}
+	if in.DedicatedHostId != "" {
+		template.DedicatedHostId = stringPtr(in.DedicatedHostId)
+	}
 	if len(in.Taints) > 0 {
 		taints, terr := parseTaints(in.Taints)
 		if terr != nil {
@@ -531,17 +790,39 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 		template.K8sTags = in.Labels
 	}
 	template.UserTags = toUserTags(in.ClusterName, in.Tags)
+	var extend *model.NodeExtendParam
 	if in.Spot {
 		// Spot (竞价) instances: marketType=spot, only effective with
 		// billingMode=0 (on-demand). spotPrice defaults to the on-demand price
 		// when empty (official NodeExtendParam).
-		extend := &model.NodeExtendParam{}
+		extend = &model.NodeExtendParam{}
 		marketType := model.GetNodeExtendParamMarketTypeEnum().SPOT
 		extend.MarketType = &marketType
 		if in.SpotPrice != "" {
 			extend.SpotPrice = stringPtr(in.SpotPrice)
 		}
+	}
+	if in.PreInstall != "" || in.PostInstall != "" {
+		// Node lifecycle hooks (preInstall/postInstall) are carried in
+		// nodeTemplate.extendParam["alpha.cce/preInstall"|"alpha.cce/postInstall"];
+		// values must already be base64-encoded (CCE requirement).
+		if extend == nil {
+			extend = &model.NodeExtendParam{}
+		}
+		if in.PreInstall != "" {
+			extend.AlphaCcePreInstall = stringPtr(in.PreInstall)
+		}
+		if in.PostInstall != "" {
+			extend.AlphaCcePostInstall = stringPtr(in.PostInstall)
+		}
+	}
+	if extend != nil {
 		template.ExtendParam = extend
+	}
+	if in.WaitPostInstallFinish != nil {
+		// Wait for the postInstall script to finish before scheduling pods
+		// onto the node (nodeTemplate.waitPostInstallFinish).
+		template.WaitPostInstallFinish = in.WaitPostInstallFinish
 	}
 	spec := &model.NodePoolSpec{
 		NodeTemplate:     template,
@@ -752,6 +1033,76 @@ func (s *Client) ListNodePools(_ context.Context, clusterID string) ([]NodePoolI
 		}
 	}
 	return out, nil
+}
+
+// ListNodes implements Service. It returns the provider IDs (node UIDs) of
+// all nodes in the cluster. Each UID matches the spec.providerID of the
+// corresponding workload node, which Cluster API uses to fill
+// MachinePool.status.nodeRefs.
+func (s *Client) ListNodes(_ context.Context, clusterID string) ([]string, error) {
+	resp, err := s.cce.ListNodes(&model.ListNodesRequest{ClusterId: clusterID})
+	if err != nil {
+		return nil, errors.Wrap(err, "ListNodes failed")
+	}
+	var out []string
+	if resp.Items != nil {
+		for _, n := range *resp.Items {
+			// ProviderID must match the huaweicloud cloud-provider contract:
+			// `huaweicloud:///<serverId>` where serverId is the underlying ECS
+			// instance ID (mirrors CAPA's aws:///az/instance-id, which uses the
+			// underlying instance ID too). Verified against
+			// kubernetes-sigs/cloud-provider-huaweicloud instances.go:
+			// ProviderName="huaweicloud" + regexp ^huaweicloud:///([^/]+)$ +
+			// InstanceID() = ecsClient.GetByNodeName().Id.
+			if n.Status != nil && n.Status.ServerId != nil {
+				out = append(out, "huaweicloud:///"+*n.Status.ServerId)
+			}
+		}
+	}
+	return out, nil
+}
+
+// ListNodesWithStatus implements Service.
+func (s *Client) ListNodesWithStatus(_ context.Context, clusterID string) ([]NodeInfo, error) {
+	resp, err := s.cce.ListNodes(&model.ListNodesRequest{ClusterId: clusterID})
+	if err != nil {
+		return nil, errors.Wrap(err, "ListNodes failed")
+	}
+	var out []NodeInfo
+	if resp.Items != nil {
+		for _, n := range *resp.Items {
+			info := NodeInfo{}
+			if n.Metadata != nil && n.Metadata.Uid != nil {
+				info.UID = *n.Metadata.Uid
+			}
+			if n.Metadata != nil && n.Metadata.OwnerReferences != nil && n.Metadata.OwnerReferences.NodepoolID != nil {
+				info.NodePoolID = *n.Metadata.OwnerReferences.NodepoolID
+			}
+			if n.Status != nil && n.Status.Phase != nil {
+				info.Phase = n.Status.Phase.Value()
+			}
+			out = append(out, info)
+		}
+	}
+	return out, nil
+}
+
+// ResetNode implements Service. For node-pool nodes the spec is omitted so
+// the platform revalidates and reinstalls with the node-pool configuration
+// (official: "节点池内节点重置时不支持外部指定配置，将以节点池配置进行校验并重装").
+func (s *Client) ResetNode(_ context.Context, clusterID string, nodeIDs []string) error {
+	nodeList := make([]model.ResetNode, 0, len(nodeIDs))
+	for _, id := range nodeIDs {
+		nodeList = append(nodeList, model.ResetNode{NodeID: id})
+	}
+	_, err := s.cce.ResetNode(&model.ResetNodeRequest{
+		ClusterId: clusterID,
+		Body:      &model.ResetNodeList{ApiVersion: "v3", Kind: "List", NodeList: nodeList},
+	})
+	if err != nil {
+		return errors.Wrapf(err, "ResetNode for %d node(s) failed", len(nodeIDs))
+	}
+	return nil
 }
 
 // GetUpgradeInfo implements Service. Queries ShowClusterUpgradeInfo and maps
@@ -1015,7 +1366,11 @@ func assembleKubeconfig(resp *model.CreateKubernetesClusterCertResponse) (string
 		if c.Cluster.CertificateAuthorityData != nil {
 			ca = decodeCertData(*c.Cluster.CertificateAuthorityData)
 		}
-		cfg.Clusters[*c.Name] = &clientcmdapi.Cluster{Server: server, CertificateAuthorityData: ca}
+		cfg.Clusters[*c.Name] = &clientcmdapi.Cluster{
+			Server:                   server,
+			CertificateAuthorityData: ca,
+			InsecureSkipTLSVerify:    derefBool(c.Cluster.InsecureSkipTlsVerify),
+		}
 	}
 	for _, u := range derefUsers(resp.Users) {
 		if u.Name == nil || u.User == nil {
@@ -1084,11 +1439,39 @@ func derefString(p *string) string {
 	return *p
 }
 
+func derefBool(p *bool) bool {
+	if p == nil {
+		return false
+	}
+	return *p
+}
+
 func stringPtr(s string) *string { return &s }
 
 func boolPtr(b bool) *bool { return &b }
 
 func int32Ptr(i int32) *int32 { return &i }
+
+// base64StrPtr base64-encodes a PEM string and returns a pointer; nil-safe
+// (empty input -> nil so the CCE API omits the field).
+func base64StrPtr(s string) *string {
+	if s == "" {
+		return nil
+	}
+	return stringPtr(base64.StdEncoding.EncodeToString([]byte(s)))
+}
+
+// encryptionModeEnum maps the spec string to the SDK enum.
+func encryptionModeEnum(mode string) *model.EncryptionConfigMode {
+	switch mode {
+	case "KMS":
+		m := model.GetEncryptionConfigModeEnum().KMS
+		return &m
+	default:
+		m := model.GetEncryptionConfigModeEnum().DEFAULT
+		return &m
+	}
+}
 
 func defaultString(v, def string) string {
 	if v == "" {

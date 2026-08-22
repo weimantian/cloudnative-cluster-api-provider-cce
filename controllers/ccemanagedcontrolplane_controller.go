@@ -28,6 +28,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
@@ -71,6 +72,7 @@ func (r *CCEManagedControlPlaneReconciler) newCCEService(regionID, ak, sk string
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters/status,verbs=get
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 // Reconcile implements the reconcile loop of CCEManagedControlPlane.
 func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
@@ -130,7 +132,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 
 	controllerutil.AddFinalizer(cp, ControlPlaneFinalizer)
 
-	region, vpcID, nodeSubnetID, err := r.clusterNetwork(ctx, cluster, cp)
+	region, vpcID, nodeSubnetID, eniSubnets, err := r.clusterNetwork(ctx, cluster, cp)
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
@@ -160,7 +162,14 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	// Ensure the CCE cluster exists (idempotent create).
 	clusterID := cp.Status.ClusterID
 	if clusterID == "" {
-		id, err := svc.CreateCluster(ctx, toCreateClusterInput(cp, vpcID, nodeSubnetID, identityAgency))
+		// ENI (Turbo) container subnets: the control-plane spec wins; when
+		// empty, fall back to the managed ENI subnets recorded on the
+		// CCECluster network spec (neutron_subnet_id).
+		eni := cp.Spec.ContainerNetwork.ENISubnets
+		if len(eni) == 0 {
+			eni = eniSubnets
+		}
+		id, err := svc.CreateCluster(ctx, toCreateClusterInput(cp, vpcID, nodeSubnetID, identityAgency, eni))
 		if err != nil {
 			conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
 				conditions.ReconciliationFailedReason, err.Error())
@@ -204,6 +213,10 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		endpoint := &clusterv1.APIEndpoint{Host: host, Port: port}
 		if ep.Type == "External" || (ep.Type == "Internal" && (cp.Status.ControlPlaneEndpoint == nil || cp.Status.ControlPlaneEndpoint.IsZero())) {
 			cp.Status.ControlPlaneEndpoint = endpoint
+			// Backfill the spec endpoint too: CAPI's control-plane contract reads
+			// spec.controlPlaneEndpoint (not status) to populate
+			// Cluster.spec.controlPlaneEndpoint, which gates the Provisioned phase.
+			cp.Spec.ControlPlaneEndpoint = endpoint
 		}
 	}
 	cp.Status.Version = info.Version
@@ -262,68 +275,29 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		conditions.MarkTrue(cp, conditions.UpgradeReadyCondition, "VersionCurrent", "cluster version matches spec")
 	}
 
-	// kubeconfig Secret (mirrors the ACK provider kubeconfig contract, so
-	// `clusterctl get kubeconfig` works). Refreshed before certificate expiry
-	// (questionnaire Q2: duration -1/[1,1827], default 365 days).
-	if cp.Status.KubeconfigSecretName == "" || kubeconfigNeedsRefresh(ctx, r.Client, cp.Namespace, cp.Status.KubeconfigSecretName, kubeconfigRefreshThresholdDays) {
-		kubeconfig, err := svc.GetClusterKubeconfig(ctx, clusterID, kubeconfigValidityDays)
-		if err != nil {
-			conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
-				conditions.ReconciliationFailedReason, err.Error())
-			return ctrl.Result{}, err
-		}
-		secretName := cp.Spec.ClusterName + "-kubeconfig"
-		secret := &corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{
-				Name:      secretName,
-				Namespace: cp.Namespace,
-				Labels: map[string]string{
-					clusterv1.ClusterNameLabel: cluster.Name,
-				},
-			},
-			Data: map[string][]byte{"value": []byte(kubeconfig)},
-		}
-		// Own the Secret so lifecycle is tied to the control plane (and the
-		// delete path can find it). A non-owned pre-existing Secret must not be
-		// overwritten silently.
-		if err := controllerutil.SetControllerReference(cp, secret, r.Client.Scheme()); err != nil {
-			return ctrl.Result{}, err
-		}
-		if err := r.Client.Create(ctx, secret); err != nil {
-			if !apierrors.IsAlreadyExists(err) {
-				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
-					conditions.ReconciliationFailedReason, err.Error())
-				return ctrl.Result{}, err
-			}
-			// Update the existing Secret in place (rotation) — but only if it
-			// is the provider's own Secret (owned by this control plane or
-			// carrying the cluster label); otherwise refuse to overwrite.
-			existing := &corev1.Secret{}
-			if err := r.Get(ctx, types.NamespacedName{Namespace: cp.Namespace, Name: secretName}, existing); err != nil {
-				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
-					conditions.ReconciliationFailedReason, err.Error())
-				return ctrl.Result{}, err
-			}
-			if !metav1.IsControlledBy(existing, cp) && existing.Labels[clusterv1.ClusterNameLabel] != cluster.Name {
-				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
-					conditions.ReconciliationFailedReason,
-					"Secret "+secretName+" exists and is not owned by this provider; refusing to overwrite")
-				return ctrl.Result{}, errors.New("refusing to overwrite non-owned kubeconfig Secret " + secretName)
-			}
-			existing.Data = secret.Data
-			if err := r.Update(ctx, existing); err != nil {
-				conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
-					conditions.ReconciliationFailedReason, err.Error())
-				return ctrl.Result{}, err
-			}
-		}
-		cp.Status.KubeconfigSecretName = secretName
+	// kubeconfig Secrets (mirrors the ACK provider kubeconfig contract, so
+	// `clusterctl get kubeconfig` works). The CAPI secret is refreshed before
+	// certificate expiry; a second user secret (mirrors CAPA's
+	// <cluster>-user-kubeconfig, pkg/cloud/services/eks/config.go) gives users
+	// an independent credential. Both are owned by the control plane so they
+	// are cleaned up on delete.
+	if err := r.ensureKubeconfigSecret(ctx, cp, cluster, svc, clusterID, cp.Spec.ClusterName+"-kubeconfig", kubeconfigValidityDays); err != nil {
+		conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
+			conditions.ReconciliationFailedReason, err.Error())
+		return ctrl.Result{}, err
 	}
-	conditions.MarkTrue(cp, conditions.KubeconfigReadyCondition, "KubeconfigGenerated", "kubeconfig Secret generated")
-	recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "KubeconfigGenerated", "kubeconfig Secret generated")
+	cp.Status.KubeconfigSecretName = cp.Spec.ClusterName + "-kubeconfig"
+	if err := r.ensureKubeconfigSecret(ctx, cp, cluster, svc, clusterID, cp.Spec.ClusterName+"-user-kubeconfig", kubeconfigValidityDays); err != nil {
+		conditions.MarkFalse(cp, conditions.KubeconfigReadyCondition,
+			conditions.ReconciliationFailedReason, err.Error())
+		return ctrl.Result{}, err
+	}
+	conditions.MarkTrue(cp, conditions.KubeconfigReadyCondition, "KubeconfigGenerated", "kubeconfig Secrets generated")
+	recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "KubeconfigGenerated", "kubeconfig Secrets generated")
 
 	cp.Status.Ready = true
 	cp.Status.Initialized = true
+	cp.Status.Initialization.ControlPlaneInitialized = true
 	log.Info("CCE control plane is ready", "clusterID", clusterID)
 	return ctrl.Result{}, nil
 }
@@ -420,7 +394,7 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta1.CCEManagedControlPlane) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	region, _, _, err := r.clusterNetwork(ctx, cluster, cp)
+	region, _, _, _, err := r.clusterNetwork(ctx, cluster, cp)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
@@ -460,10 +434,15 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 		}
 	}
 
-	// Delete the kubeconfig Secret.
-	if cp.Status.KubeconfigSecretName != "" {
+	// Delete the kubeconfig Secrets (CAPI + user). Both are owned by the
+	// control plane, so ownership would also GC them - this explicit delete
+	// keeps the behavior symmetric with the create path.
+	for _, name := range []string{cp.Status.KubeconfigSecretName, cp.Spec.ClusterName + "-user-kubeconfig"} {
+		if name == "" {
+			continue
+		}
 		secret := &corev1.Secret{}
-		key := types.NamespacedName{Namespace: cp.Namespace, Name: cp.Status.KubeconfigSecretName}
+		key := types.NamespacedName{Namespace: cp.Namespace, Name: name}
 		if err := r.Get(ctx, key, secret); err == nil {
 			if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, err
@@ -486,54 +465,152 @@ func (r *CCEManagedControlPlaneReconciler) SetupWithManager(ctx context.Context,
 
 // ---- helpers ----
 
-// clusterNetwork reads the region and host network (VPC + node subnet) from
-// the CCECluster shell (infrastructureRef) — official hostNetwork is required
-// at cluster creation (A2, verified by the real CCE smoke test).
-func (r *CCEManagedControlPlaneReconciler) clusterNetwork(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta1.CCEManagedControlPlane) (region, vpcID, subnetID string, err error) {
+// ensureKubeconfigSecret creates or rotates a kubeconfig Secret for the
+// control plane. It fetches a fresh certificate-backed kubeconfig when the
+// stored one is missing or its client certificate expires within the refresh
+// threshold, and refuses to overwrite a pre-existing Secret the provider
+// does not own (mirrors the ownership guard on the CAPI kubeconfig).
+func (r *CCEManagedControlPlaneReconciler) ensureKubeconfigSecret(ctx context.Context, cp *controlplanev1beta1.CCEManagedControlPlane, cluster *clusterv1.Cluster, svc cceService.Service, clusterID, secretName string, validityDays int32) error {
+	if !kubeconfigNeedsRefresh(ctx, r.Client, cp.Namespace, secretName, kubeconfigRefreshThresholdDays) {
+		return nil
+	}
+	kubeconfig, err := svc.GetClusterKubeconfig(ctx, clusterID, validityDays)
+	if err != nil {
+		return err
+	}
+	secret := &corev1.Secret{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      secretName,
+			Namespace: cp.Namespace,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: cluster.Name},
+		},
+		Data: map[string][]byte{"value": []byte(kubeconfig)},
+	}
+	// Own the Secret so lifecycle is tied to the control plane.
+	if err := controllerutil.SetControllerReference(cp, secret, r.Client.Scheme()); err != nil {
+		return err
+	}
+	if err := r.Client.Create(ctx, secret); err != nil {
+		if !apierrors.IsAlreadyExists(err) {
+			return err
+		}
+		existing := &corev1.Secret{}
+		if err := r.Get(ctx, types.NamespacedName{Namespace: cp.Namespace, Name: secretName}, existing); err != nil {
+			return err
+		}
+		if !metav1.IsControlledBy(existing, cp) && existing.Labels[clusterv1.ClusterNameLabel] != cluster.Name {
+			return errors.Errorf("Secret %s exists and is not owned by this provider; refusing to overwrite", secretName)
+		}
+		existing.Data = secret.Data
+		if err := r.Update(ctx, existing); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// clusterNetwork reads the region and host network (VPC + node subnet +
+// ENI container subnets) from the CCECluster shell (infrastructureRef) -
+// official hostNetwork is required at cluster creation (A2, verified by
+// the real CCE smoke test). Managed subnets report their ResourceID; the
+// ENI subnets carry the neutron_subnet_id the eniNetwork API requires.
+func (r *CCEManagedControlPlaneReconciler) clusterNetwork(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta1.CCEManagedControlPlane) (region, vpcID, subnetID string, eniSubnets []string, err error) {
 	if cluster.Spec.InfrastructureRef.Name == "" {
-		return "", "", "", errors.New("cluster has no infrastructureRef")
+		return "", "", "", nil, errors.New("cluster has no infrastructureRef")
 	}
 	cceCluster := &infrav1beta1.CCECluster{}
 	key := types.NamespacedName{Namespace: cp.Namespace, Name: cluster.Spec.InfrastructureRef.Name}
 	if err := r.Get(ctx, key, cceCluster); err != nil {
-		return "", "", "", errors.Wrapf(err, "failed to get CCECluster %s", key)
+		return "", "", "", nil, errors.Wrapf(err, "failed to get CCECluster %s", key)
 	}
 	if cceCluster.Spec.Region == "" {
-		return "", "", "", errors.New("CCECluster spec.region is empty")
+		return "", "", "", nil, errors.New("CCECluster spec.region is empty")
 	}
 	vpcID = cceCluster.Spec.Network.VPC.ID
-	if len(cceCluster.Spec.Network.Subnets) > 0 {
-		subnetID = cceCluster.Spec.Network.Subnets[0].ID
+	if vpcID == "" {
+		vpcID = cceCluster.Spec.Network.VPC.ResourceID
 	}
-	return cceCluster.Spec.Region, vpcID, subnetID, nil
+	for _, s := range cceCluster.Spec.Network.Subnets {
+		id := s.ID
+		if id == "" {
+			id = s.ResourceID
+		}
+		if s.Type == common.SubnetTypeENI {
+			// The eniNetwork API consumes the neutron_subnet_id.
+			neutron := s.NeutronSubnetID
+			if neutron == "" {
+				neutron = id
+			}
+			if neutron != "" {
+				eniSubnets = append(eniSubnets, neutron)
+			}
+			continue
+		}
+		if subnetID == "" && id != "" {
+			subnetID = id
+		}
+	}
+	return cceCluster.Spec.Region, vpcID, subnetID, eniSubnets, nil
 }
 
 // toCreateClusterInput maps the control plane spec to the CreateCluster
 // input. identityAgency (from a CCEClusterRoleIdentity, when one is
 // referenced) fills the cluster agency when the spec does not set it
 // explicitly - an explicit spec.agencyName always wins.
-func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane, vpcID, nodeSubnetID, identityAgency string) cceService.CreateClusterInput {
+func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane, vpcID, nodeSubnetID, identityAgency string, eniSubnets []string) cceService.CreateClusterInput {
 	agency := cp.Spec.AgencyName
 	if agency == "" {
 		agency = identityAgency
 	}
 	return cceService.CreateClusterInput{
-		Name:                 cp.Spec.ClusterName,
-		Category:             cp.Spec.Category,
-		Flavor:               cp.Spec.Flavor,
-		Version:              cp.Spec.Version,
-		ContainerNetworkMode: cp.Spec.ContainerNetwork.Mode,
-		ContainerNetworkCIDR: cp.Spec.ContainerNetwork.CIDR,
-		ENISubnets:           cp.Spec.ContainerNetwork.ENISubnets,
-		HostNetworkVpcID:     vpcID,
-		HostNetworkSubnetID:  nodeSubnetID,
-		ServiceCIDR:          cp.Spec.ServiceNetwork.CIDR,
-		CustomSAN:            cp.Spec.CustomSan,
-		PublicAccess:         cp.Spec.EndpointAccess.Public,
-		PublicAccessCIDRs:    cp.Spec.EndpointAccess.CIDRs,
-		AgencyName:           agency,
-		BillingMode:          cp.Spec.Billing.Mode,
+		Name:                  cp.Spec.ClusterName,
+		Category:              cp.Spec.Category,
+		Flavor:                cp.Spec.Flavor,
+		Version:               cp.Spec.Version,
+		ContainerNetworkMode:  cp.Spec.ContainerNetwork.Mode,
+		ContainerNetworkCIDR:  cp.Spec.ContainerNetwork.CIDR,
+		ContainerNetworkCIDRs: cp.Spec.ContainerNetwork.CIDRs,
+		ENISubnets:            eniSubnets,
+		HostNetworkVpcID:      vpcID,
+		HostNetworkSubnetID:   nodeSubnetID,
+		ServiceCIDR:           cp.Spec.ServiceNetwork.CIDR,
+		ServiceIPv6CIDR:       cp.Spec.ServiceNetwork.IPv6CIDR,
+		Ipv6Enable:            cp.Spec.Ipv6Enable,
+		EnableAutopilot:       cp.Spec.EnableAutopilot,
+		CustomSAN:             cp.Spec.CustomSan,
+		PublicAccess:          cp.Spec.EndpointAccess.Public,
+		PublicAccessCIDRs:     cp.Spec.EndpointAccess.CIDRs,
+		AgencyName:            agency,
+		BillingMode:           cp.Spec.Billing.Mode,
+		EncryptionConfig:      toEncryptionConfigInput(cp.Spec.EncryptionConfig),
+		Authentication:        toAuthenticationInput(cp.Spec.Authentication),
 	}
+}
+
+// toEncryptionConfigInput maps the spec to the service-layer input; nil
+// when the spec is unset (the CCE API then applies its Default).
+func toEncryptionConfigInput(spec *controlplanev1beta1.EncryptionConfigSpec) *cceService.EncryptionConfigInput {
+	if spec == nil {
+		return nil
+	}
+	return &cceService.EncryptionConfigInput{Mode: spec.Mode}
+}
+
+// toAuthenticationInput maps the spec to the service-layer input; nil when
+// the spec is unset (the CCE API then applies rbac).
+func toAuthenticationInput(spec *controlplanev1beta1.AuthenticationSpec) *cceService.AuthenticationInput {
+	if spec == nil {
+		return nil
+	}
+	in := &cceService.AuthenticationInput{Mode: spec.Mode}
+	if spec.AuthenticatingProxy != nil {
+		in.AuthenticatingProxy = &cceService.AuthenticatingProxyInput{
+			CA:         spec.AuthenticatingProxy.CA,
+			Cert:       spec.AuthenticatingProxy.Cert,
+			PrivateKey: spec.AuthenticatingProxy.PrivateKey,
+		}
+	}
+	return in
 }
 
 // containsVersion reports whether targets contains a version matching the

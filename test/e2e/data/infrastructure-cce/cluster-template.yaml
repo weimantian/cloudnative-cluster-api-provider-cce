@@ -1,0 +1,134 @@
+# Example workload cluster manifest for cloudnative-cluster-api-provider-cce.
+#
+# Prereqs: a management cluster with CAPI + this provider installed, plus a
+# credentials Secret named "<clusterName>-credentials" with keys accessKey /
+# secretKey (see README Step-by-Step Deployment).
+#
+# Fill in every "VERIFY-..." placeholder before applying. Values below were
+# verified against a real Huawei Cloud CCE account (cn-north-4).
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: my-cce-cluster
+  namespace: default
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks: ["10.244.0.0/16"] # must not overlap other clusters in the same VPC
+    services:
+      cidrBlocks: ["10.247.0.0/16"]
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    kind: CCECluster
+    name: my-cce-cluster
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    kind: CCEManagedControlPlane
+    name: my-cce-cluster-control-plane
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: CCECluster
+metadata:
+  name: my-cce-cluster
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster # required: the provider resolves the Cluster via this label
+spec:
+  region: cn-north-4
+  network:
+    vpc:
+      id: VERIFY-VPC-ID # an existing VPC is required before cluster creation
+    subnets:
+      - id: VERIFY-SUBNET-ID # node subnet, same VPC as above
+        availabilityZone: cn-north-4a
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+kind: CCEManagedControlPlane
+metadata:
+  name: my-cce-cluster-control-plane
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster
+spec:
+  clusterName: my-cce-cluster
+  # CCE (Standard, vpc-router) or Turbo (eni). Standard is the cheapest and
+  # most widely available; Turbo requires an ENI subnet and an ENI-capable
+  # node flavor.
+  category: CCE
+  version: "v1.33" # CCE version string (no patch suffix), e.g. v1.33
+  flavor: cce.s2.medium # control-plane (cluster) flavor
+  containerNetwork:
+    mode: vpc-router # overlay_l2 | vpc-router | eni (eni implies Turbo)
+    cidr: 10.244.0.0/16
+  serviceNetwork:
+    cidr: 10.247.0.0/16
+  endpointAccess:
+    public: false # true binds an EIP to the API server (billed)
+  billing:
+    mode: 0 # 0=on-demand, 1=subscription (not supported yet)
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachinePool
+metadata:
+  name: my-cce-cluster-pool-0
+  namespace: default
+spec:
+  clusterName: my-cce-cluster
+  replicas: 1
+  template:
+    spec:
+      clusterName: my-cce-cluster
+      version: v1.33.0 # CAPI requires a full semantic version here
+      bootstrap:
+        # Managed node pools need no bootstrap data. The reference exists only
+        # to satisfy the CAPI MachinePool bootstrap contract (required in
+        # CAPI v1.14+). Point it at a (possibly empty) Secret.
+        dataSecretName: my-cce-cluster-bootstrap
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        kind: CCEManagedMachinePool
+        name: my-cce-cluster-pool-0
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+kind: CCEManagedMachinePool
+metadata:
+  name: my-cce-cluster-pool-0
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster
+spec:
+  clusterName: my-cce-cluster
+  nodePoolName: pool-0
+  flavor: c6.large.2 # ECS node flavor; must exist in the region
+  # Node OS image. One of the values CCE supports for this cluster version
+  # (official API reference 附录 表 8-5; exact string matters):
+  #   Huawei Cloud EulerOS 2.0   (verified example; also available for ARM)
+  #   Huawei Cloud EulerOS 1.1
+  #   EulerOS release 2.9        (also available for ARM)
+  #   Ubuntu 22.04               (cgroup v1 / v2; VPC-network model only)
+  #   CentOS Linux release 7.6   (停止维护 / deprecated)
+  # Omit it to let CCE auto-select an OS for the cluster version.
+  os: Huawei Cloud EulerOS 2.0
+  rootVolume:
+    size: 40
+    type: GPSSD
+  # Non-local-disk flavors (e.g. c6.large.2) require a data volume
+  # (verified: CCE_CM.0004 "Data volume needed for non-local-disk flavor").
+  dataVolumes:
+    - size: 100
+      type: GPSSD
+  sshKey: VERIFY-KEYPAIR-NAME # SSH keypair name in the region (ECS -> Key Pairs)
+  availabilityZone: cn-north-4a
+  replicas: 1
+  billingMode: 0
+  # Optional: spot (竞价) instances — only with billingMode: 0 (on-demand).
+  # spot: true
+  # spotPrice: "0.5" # max hourly price; empty = on-demand price
+  # Optional: multi-AZ via extension scale groups (additional AZs/flavors).
+  # extensionScaleGroups:
+  #   - name: az-b
+  #     flavor: c7.large.2
+  #     availabilityZone: cn-north-4b
+  # Optional: rolling-update batch size for attribute drift (CCE 同步节点池).
+  # updateConfig:
+  #   maxUnavailable: 1

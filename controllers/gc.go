@@ -8,6 +8,7 @@ package controllers
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -43,6 +44,10 @@ type GarbageCollector struct {
 
 	// Interval between sweeps.
 	Interval time.Duration
+
+	// ResourceTypes lists the extra resource types the sweeper enumerates
+	// beyond clusters: "eip", "evs". Empty = clusters only.
+	ResourceTypes []string
 
 	Log logr.Logger
 }
@@ -123,6 +128,121 @@ func (g *GarbageCollector) sweep(ctx context.Context) {
 		}); err != nil {
 			log.Error(err, "garbage collector: failed to delete orphaned CCE cluster",
 				"clusterID", c.ClusterID, "name", name)
+		}
+	}
+
+	// Phase 2: orphaned owned-tagged standalone resources (EIP/EVS). These
+	// are NOT covered by DeleteCluster's cascade options - e.g. a managed NAT
+	// EIP whose Cluster CR was force-deleted - and would keep billing. Only
+	// resources carrying the provider owned tag whose Cluster CR is gone are
+	// removed (whitelist-by-tag; mirrors CAPA ExternalResourceGC).
+	g.sweepEips(ctx, svc, wanted)
+	g.sweepVolumes(ctx, svc, wanted)
+	g.sweepVpcs(ctx, svc, wanted)
+	g.sweepNatGateways(ctx, svc, wanted)
+}
+
+// sweepEips enumerates owned-tagged EIPs whose Cluster CR is gone and
+// releases them. Only EIPs carrying the provider owned tag are touched.
+func (g *GarbageCollector) sweepEips(ctx context.Context, svc cceService.Service, wanted map[string]struct{}) {
+	if !slices.Contains(g.ResourceTypes, "eip") {
+		return
+	}
+	eips, err := svc.ListEips(ctx)
+	if err != nil {
+		g.Log.Error(err, "garbage collector: failed to list EIPs")
+		return
+	}
+	for _, e := range eips {
+		name := ownedClusterName(e.Tags)
+		if name == "" {
+			continue
+		}
+		if _, ok := wanted[name]; ok {
+			continue
+		}
+		g.Log.Info("garbage collector: deleting orphaned EIP", "eipID", e.ID, "address", e.Address, "name", name)
+		if err := svc.DeleteEip(ctx, e.ID); err != nil {
+			g.Log.Error(err, "garbage collector: failed to delete orphaned EIP", "eipID", e.ID)
+		}
+	}
+}
+
+// sweepVolumes enumerates owned-tagged EVS volumes whose Cluster CR is gone
+// and deletes them. Only volumes carrying the provider owned tag are touched.
+func (g *GarbageCollector) sweepVolumes(ctx context.Context, svc cceService.Service, wanted map[string]struct{}) {
+	if !slices.Contains(g.ResourceTypes, "evs") {
+		return
+	}
+	vols, err := svc.ListVolumes(ctx)
+	if err != nil {
+		g.Log.Error(err, "garbage collector: failed to list volumes")
+		return
+	}
+	for _, v := range vols {
+		name := ownedClusterName(v.Tags)
+		if name == "" {
+			continue
+		}
+		if _, ok := wanted[name]; ok {
+			continue
+		}
+		g.Log.Info("garbage collector: deleting orphaned EVS volume", "volumeID", v.ID, "name", name)
+		if err := svc.DeleteVolume(ctx, v.ID); err != nil {
+			g.Log.Error(err, "garbage collector: failed to delete orphaned EVS volume", "volumeID", v.ID)
+		}
+	}
+}
+
+// sweepVpcs enumerates owned-tagged VPCs whose Cluster CR is gone and deletes
+// them. VPCs are free, so this is about resource hygiene rather than billing;
+// only owned-tagged VPCs are touched.
+func (g *GarbageCollector) sweepVpcs(ctx context.Context, svc cceService.Service, wanted map[string]struct{}) {
+	if !slices.Contains(g.ResourceTypes, "vpc") {
+		return
+	}
+	vpcs, err := svc.ListVpcs(ctx)
+	if err != nil {
+		g.Log.Error(err, "garbage collector: failed to list VPCs")
+		return
+	}
+	for _, v := range vpcs {
+		name := ownedClusterName(v.Tags)
+		if name == "" {
+			continue
+		}
+		if _, ok := wanted[name]; ok {
+			continue
+		}
+		g.Log.Info("garbage collector: deleting orphaned VPC", "vpcID", v.ID, "name", name)
+		if err := svc.DeleteVpc(ctx, v.ID); err != nil {
+			g.Log.Error(err, "garbage collector: failed to delete orphaned VPC", "vpcID", v.ID)
+		}
+	}
+}
+
+// sweepNatGateways enumerates owned-tagged NAT gateways whose Cluster CR is
+// gone and deletes them (SNAT rules first, then the gateway).
+func (g *GarbageCollector) sweepNatGateways(ctx context.Context, svc cceService.Service, wanted map[string]struct{}) {
+	if !slices.Contains(g.ResourceTypes, "nat") {
+		return
+	}
+	gateways, err := svc.ListNatGateways(ctx)
+	if err != nil {
+		g.Log.Error(err, "garbage collector: failed to list NAT gateways")
+		return
+	}
+	for _, gw := range gateways {
+		name := ownedClusterName(gw.Tags)
+		if name == "" {
+			continue
+		}
+		if _, ok := wanted[name]; ok {
+			continue
+		}
+		g.Log.Info("garbage collector: deleting orphaned NAT gateway", "gatewayID", gw.ID, "name", name)
+		if err := svc.DeleteNatGateway(ctx, gw.ID); err != nil {
+			g.Log.Error(err, "garbage collector: failed to delete orphaned NAT gateway", "gatewayID", gw.ID)
 		}
 	}
 }

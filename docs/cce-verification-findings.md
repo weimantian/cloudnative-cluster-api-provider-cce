@@ -1,7 +1,7 @@
 # 华为云 CCE 对齐问卷 — 官方文档检索确认结果
 
 > 状态:**全部 14 项已完成官方来源核对**(4 个子代理 + 主代理一手抓取;来源:官方 API 文档 / 用户指南 / FAQ / 计费文档 / 官方 Go SDK)。
-> 关联文档:[问卷](cce-verification-questionnaire.md)(问题原文)、[调研依据](research-sources.md)、[落地跟踪](poc-implementation-tracker.md)。
+> 关联文档:[问卷](archive/cce-verification-questionnaire.md)(问题原文)、[调研依据](research-sources.md)、[落地跟踪](archive/poc-implementation-tracker.md)。
 > 依据类型标记:**[官方文档]** / **[官方SDK]** / **[需实测或咨询]**(官方未公开或文档冲突)。
 > 标注 **[需实测/咨询]** 的剩余项,是官方文档无法回答、必须对接真实华为云 CCE 才能关闭的。
 

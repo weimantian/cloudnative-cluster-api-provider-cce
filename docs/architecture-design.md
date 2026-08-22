@@ -2,7 +2,7 @@
 
 - 版本:v0.2(设计+PoC 验证版)
 - 状态:设计定稿(实现已按本设计落地,并经真实 CCE 冒烟与 clusterctl 部署验证)
-- 配套文档:[调研依据与事实清单](research-sources.md)、[需求设计文档](requirements-design.md)、[华为云 CCE 对齐问卷](cce-verification-questionnaire.md)、[验证结论记录](cce-verification-findings.md)、[clusterctl 部署演练记录](clusterctl-deployment-validation.md)、[CAPA 架构分析报告](CAPA架构分析报告.md)、[CAPHW 架构分析报告](CAPHW架构分析报告.md)、[ACKProvider 架构分析报告](ACKProvider架构分析报告.md)
+- 配套文档:[调研依据与事实清单](research-sources.md)、[需求设计文档](requirements-design.md)、[华为云 CCE 对齐问卷](archive/cce-verification-questionnaire.md)、[验证结论记录](cce-verification-findings.md)、[clusterctl 部署演练记录](clusterctl-deployment-validation.md)、[CAPA 架构分析报告](archive/CAPA架构分析报告.md)、[CAPHW 架构分析报告](archive/CAPHW架构分析报告.md)、[ACKProvider 架构分析报告](archive/ACKProvider架构分析报告.md)
 
 > **事实基准声明**:本文所有设计结论均基于《调研依据与事实清单》中列出的真实来源(华为云官方 Go SDK 模型、华为云官方 API/用户指南文档、CAPA / alibabacloud-provider-for-Cluster-API / cluster-api-provider-huawei 源码)。
 > 凡是标注 **[需验证]** 的条目,均为无法从现有公开资料完全确认、**需要对接真实华为云 CCE 实测或咨询华为云确认**后才能在实现中定稿的点,清单见 [附录 A](#附录-a需对接华为云-cce-验证的事项清单)。

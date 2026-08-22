@@ -20,8 +20,17 @@ type Setter = capiconditions.Setter
 // CCECluster (InfraCluster) conditions.
 const (
 	// NetworkReadyCondition reports whether the referenced VPC/subnets are
-	// validated.
+	// validated (BYO mode) or the managed network is reconciled (managed mode).
 	NetworkReadyCondition = "NetworkReady"
+	// VpcReadyCondition reports successful reconciliation of the managed VPC
+	// (mirrors CAPA VpcReadyCondition).
+	VpcReadyCondition = "VpcReady"
+	// SubnetsReadyCondition reports successful reconciliation of managed
+	// subnets (mirrors CAPA SubnetsReadyCondition).
+	SubnetsReadyCondition = "SubnetsReady"
+	// NatGatewaysReadyCondition reports successful reconciliation of the
+	// managed NAT gateway + SNAT rules (mirrors CAPA NatGatewaysReadyCondition).
+	NatGatewaysReadyCondition = "NatGatewaysReady"
 )
 
 // CCEManagedControlPlane (ControlPlane) conditions.

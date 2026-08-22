@@ -145,6 +145,37 @@ spec:
                         description: AgencyName used by the cluster (1.27+; empty
                           uses the system agency).
                         type: string
+                      authentication:
+                        description: |-
+                          Authentication controls the API server authentication mode (mirrors
+                          CAPA EKS AccessConfig.AuthenticationMode). Default rbac;
+                          authenticating_proxy delegates auth to an external proxy (requires a
+                          CA + client cert + key). Immutable after creation.
+                        properties:
+                          authenticatingProxy:
+                            description: AuthenticatingProxy config (required when
+                              Mode=authenticating_proxy).
+                            properties:
+                              ca:
+                                description: CA certificate (PEM) of the proxy.
+                                type: string
+                              cert:
+                                description: Client certificate (PEM) signed by the
+                                  CA.
+                                type: string
+                              privateKey:
+                                description: Private key (PEM, unencrypted) matching
+                                  the client certificate.
+                                type: string
+                            type: object
+                          mode:
+                            default: rbac
+                            description: 'Mode: "rbac" (default) or "authenticating_proxy".'
+                            enum:
+                            - rbac
+                            - authenticating_proxy
+                            type: string
+                        type: object
                       billing:
                         description: 'Billing controls billing mode: 0=on-demand,
                           1=subscription.'
@@ -176,6 +207,14 @@ spec:
                             description: CIDR of the container network (immutable
                               after creation for tunnel mode).
                             type: string
+                          cidrs:
+                            description: |-
+                              CIDRs lists additional container network segments (secondary CIDR).
+                              Maps to model.ContainerNetwork.Cidrs; each entry becomes a
+                              model.ContainerCidr. Empty = single-CIDR cluster.
+                            items:
+                              type: string
+                            type: array
                           eniSubnets:
                             description: ENISubnets for eni mode (Turbo).
                             items:
@@ -191,11 +230,57 @@ spec:
                             - eni
                             type: string
                         type: object
+                      controlPlaneEndpoint:
+                        description: |-
+                          ControlPlaneEndpoint is the API server endpoint (host:port) of the
+                          managed control plane. It is backfilled by the controller once the CCE
+                          cluster is available and is read by CAPI to populate
+                          Cluster.spec.controlPlaneEndpoint — the CAPI control-plane contract
+                          reads spec.controlPlaneEndpoint, not status.
+                        minProperties: 1
+                        properties:
+                          host:
+                            description: host is the hostname on which the API server
+                              is serving.
+                            maxLength: 512
+                            minLength: 1
+                            type: string
+                          port:
+                            description: port is the port on which the API server
+                              is serving.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
+                        type: object
                       customSan:
                         description: CustomSan entries for the API server certificate.
                         items:
                           type: string
                         type: array
+                      enableAutopilot:
+                        description: |-
+                          EnableAutopilot creates an Autopilot (Serverless) cluster instead of a
+                          standard CCE/Turbo cluster (maps to CCE spec.enableAutopilot). Autopilot
+                          requires category Turbo and a compatible flavor (cce.autopilot.cluster).
+                        type: boolean
+                      encryptionConfig:
+                        description: |-
+                          EncryptionConfig controls etcd secret encryption (mirrors CAPA EKS
+                          EncryptionConfig). Mode Default leaves etcd unencrypted; KMS enables
+                          envelope encryption with a KMS key configured at the account level.
+                          Immutable after creation.
+                        properties:
+                          mode:
+                            default: Default
+                            description: |-
+                              Mode: "Default" (no encryption) or "KMS" (envelope encryption with a
+                              KMS key configured at the account level).
+                            enum:
+                            - Default
+                            - KMS
+                            type: string
+                        type: object
                       endpointAccess:
                         description: EndpointAccess controls public API server access.
                         properties:
@@ -261,6 +346,12 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                      ipv6enable:
+                        description: |-
+                          Ipv6Enable enables IPv6 dual-stack for the cluster (maps to CCE
+                          spec.ipv6enable). Requires a VPC with IPv6 enabled; the service
+                          network IPv6CIDR must be set as well.
+                        type: boolean
                       logging:
                         description: |-
                           Logging configures control-plane log collection (mirrors CAPA EKS
@@ -333,6 +424,11 @@ spec:
                         properties:
                           cidr:
                             description: CIDR of the service network.
+                            type: string
+                          ipv6CIDR:
+                            description: |-
+                              IPv6CIDR of the service network (required when Ipv6Enable is true).
+                              Maps to model.ServiceNetwork.IPv6CIDR.
                             type: string
                         type: object
                       version:
@@ -471,6 +567,37 @@ spec:
                         description: AgencyName used by the cluster (1.27+; empty
                           uses the system agency).
                         type: string
+                      authentication:
+                        description: |-
+                          Authentication controls the API server authentication mode (mirrors
+                          CAPA EKS AccessConfig.AuthenticationMode). Default rbac;
+                          authenticating_proxy delegates auth to an external proxy (requires a
+                          CA + client cert + key). Immutable after creation.
+                        properties:
+                          authenticatingProxy:
+                            description: AuthenticatingProxy config (required when
+                              Mode=authenticating_proxy).
+                            properties:
+                              ca:
+                                description: CA certificate (PEM) of the proxy.
+                                type: string
+                              cert:
+                                description: Client certificate (PEM) signed by the
+                                  CA.
+                                type: string
+                              privateKey:
+                                description: Private key (PEM, unencrypted) matching
+                                  the client certificate.
+                                type: string
+                            type: object
+                          mode:
+                            default: rbac
+                            description: 'Mode: "rbac" (default) or "authenticating_proxy".'
+                            enum:
+                            - rbac
+                            - authenticating_proxy
+                            type: string
+                        type: object
                       billing:
                         description: 'Billing controls billing mode: 0=on-demand,
                           1=subscription.'
@@ -502,6 +629,14 @@ spec:
                             description: CIDR of the container network (immutable
                               after creation for tunnel mode).
                             type: string
+                          cidrs:
+                            description: |-
+                              CIDRs lists additional container network segments (secondary CIDR).
+                              Maps to model.ContainerNetwork.Cidrs; each entry becomes a
+                              model.ContainerCidr. Empty = single-CIDR cluster.
+                            items:
+                              type: string
+                            type: array
                           eniSubnets:
                             description: ENISubnets for eni mode (Turbo).
                             items:
@@ -517,11 +652,57 @@ spec:
                             - eni
                             type: string
                         type: object
+                      controlPlaneEndpoint:
+                        description: |-
+                          ControlPlaneEndpoint is the API server endpoint (host:port) of the
+                          managed control plane. It is backfilled by the controller once the CCE
+                          cluster is available and is read by CAPI to populate
+                          Cluster.spec.controlPlaneEndpoint — the CAPI control-plane contract
+                          reads spec.controlPlaneEndpoint, not status.
+                        minProperties: 1
+                        properties:
+                          host:
+                            description: host is the hostname on which the API server
+                              is serving.
+                            maxLength: 512
+                            minLength: 1
+                            type: string
+                          port:
+                            description: port is the port on which the API server
+                              is serving.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
+                        type: object
                       customSan:
                         description: CustomSan entries for the API server certificate.
                         items:
                           type: string
                         type: array
+                      enableAutopilot:
+                        description: |-
+                          EnableAutopilot creates an Autopilot (Serverless) cluster instead of a
+                          standard CCE/Turbo cluster (maps to CCE spec.enableAutopilot). Autopilot
+                          requires category Turbo and a compatible flavor (cce.autopilot.cluster).
+                        type: boolean
+                      encryptionConfig:
+                        description: |-
+                          EncryptionConfig controls etcd secret encryption (mirrors CAPA EKS
+                          EncryptionConfig). Mode Default leaves etcd unencrypted; KMS enables
+                          envelope encryption with a KMS key configured at the account level.
+                          Immutable after creation.
+                        properties:
+                          mode:
+                            default: Default
+                            description: |-
+                              Mode: "Default" (no encryption) or "KMS" (envelope encryption with a
+                              KMS key configured at the account level).
+                            enum:
+                            - Default
+                            - KMS
+                            type: string
+                        type: object
                       endpointAccess:
                         description: EndpointAccess controls public API server access.
                         properties:
@@ -587,6 +768,12 @@ spec:
                             type: string
                         type: object
                         x-kubernetes-map-type: atomic
+                      ipv6enable:
+                        description: |-
+                          Ipv6Enable enables IPv6 dual-stack for the cluster (maps to CCE
+                          spec.ipv6enable). Requires a VPC with IPv6 enabled; the service
+                          network IPv6CIDR must be set as well.
+                        type: boolean
                       logging:
                         description: |-
                           Logging configures control-plane log collection (mirrors CAPA EKS
@@ -659,6 +846,11 @@ spec:
                         properties:
                           cidr:
                             description: CIDR of the service network.
+                            type: string
+                          ipv6CIDR:
+                            description: |-
+                              IPv6CIDR of the service network (required when Ipv6Enable is true).
+                              Maps to model.ServiceNetwork.IPv6CIDR.
                             type: string
                         type: object
                       version:

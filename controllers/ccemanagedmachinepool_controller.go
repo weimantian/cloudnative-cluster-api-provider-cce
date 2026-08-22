@@ -67,6 +67,7 @@ func (r *CCEManagedMachinePoolReconciler) newCCEService(regionID, ak, sk string)
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters/status,verbs=get
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=cceclusters,verbs=get;list;watch
 // +kubebuilder:rbac:groups=controlplane.cluster.x-k8s.io,resources=ccemanagedcontrolplanes,verbs=get;list;watch
+// +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 // Reconcile implements the reconcile loop of CCEManagedMachinePool.
 func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
@@ -181,16 +182,30 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	}
 
 	// Replicas are driven by the owning CAPI MachinePool (kubectl scale
-	// machinepool). Sync spec.replicas from the owner before reconciling scale.
-	if err := r.syncReplicasFromOwner(ctx, pool); err != nil {
+	// machinepool). When the owner carries the external-autoscaler annotation
+	// (cluster.x-k8s.io/replicas-managed-by), the provider does NOT drive the
+	// count - it reverse-syncs the CAPI MachinePool.spec.replicas from the
+	// cloud-side desired count instead (mirrors CAPA eks/nodegroup.go).
+	mp, err := r.findOwnerMachinePool(ctx, pool)
+	if err != nil {
 		return ctrl.Result{}, err
+	}
+	externallyManaged := mp != nil && annotations.ReplicasManagedByExternalAutoscaler(mp)
+	if externallyManaged {
+		recordEvent(r.Recorder, pool, corev1.EventTypeNormal, "ReplicasManagedExternally", "replicas are managed by an external autoscaler; reverse-syncing from the cloud")
+	} else {
+		if err := r.syncReplicasFromOwner(ctx, pool); err != nil {
+			return ctrl.Result{}, err
+		}
 	}
 
 	// Reconcile scale: align the pool's expected count with the MachinePool
 	// replicas. desiredNodeCount is the ABSOLUTE expected total (official docs;
 	// final live-test confirmation is questionnaire Q3), so pass replicas
-	// directly. status.replicas is refreshed from the cloud below.
-	if pool.Status.Replicas != pool.Spec.Replicas {
+	// directly. status.replicas is refreshed from the cloud below. Externally
+	// managed pools never receive a ScaleNodePool - their spec.replicas is
+	// reverse-synced from the cloud after the status refresh.
+	if !externallyManaged && pool.Status.Replicas != pool.Spec.Replicas {
 		conditions.MarkFalse(pool, conditions.NodePoolScalingCondition,
 			conditions.ReconciliationInProgressReason, "scaling node pool")
 		if err := svc.ScaleNodePool(ctx, clusterID, pool.Status.NodePoolID, pool.Spec.Replicas); err != nil {
@@ -274,6 +289,20 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			found = true
 			pool.Status.Replicas = p.NodeCount
 			pool.Status.AvailableReplicas = p.ActiveNodeCount
+			// Externally managed replicas: reverse-sync the CAPI MachinePool.
+			// spec.replicas from the cloud-side node count (mirrors CAPA: the
+			// external autoscaler is the source of truth, and MachinePool.spec
+			// must reflect the cloud's desired count so it does not drift).
+			if externallyManaged && mp != nil {
+				desired := p.NodeCount
+				if mp.Spec.Replicas == nil || *mp.Spec.Replicas != desired {
+					original := mp.DeepCopy()
+					mp.Spec.Replicas = &desired
+					if err := r.Patch(ctx, mp, client.MergeFrom(original)); err != nil {
+						return ctrl.Result{}, errors.Wrap(err, "failed to patch MachinePool replicas")
+					}
+				}
+			}
 		}
 	}
 	if !found {
@@ -283,11 +312,42 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 
+	// Populate spec.providerIDList so Cluster API can fill
+	// MachinePool.status.nodeRefs (and the deprecated readyReplicas). The
+	// controller owns this field, mirroring the CCE node UIDs. Sorting keeps
+	// the slice stable across reconciles to avoid spurious spec churn.
+	nodeUIDs, err := svc.ListNodes(ctx, clusterID)
+	if err != nil {
+		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
+			conditions.ReconciliationFailedReason, err.Error())
+		return ctrl.Result{}, err
+	}
+	slices.Sort(nodeUIDs)
+	pool.Spec.ProviderIDList = nodeUIDs
+
+	// Node auto-repair (mirrors CAPA NodeRepairConfig.Enabled). CCE has no
+	// EKS-style auto-repair switch, so the provider drives repair directly:
+	// detect Abnormal/Error nodes and reset them via CCE ResetNode.
+	if pool.Spec.NodeRepair != nil && pool.Spec.NodeRepair.Enabled {
+		if err := r.reconcileNodeRepair(ctx, svc, clusterID, pool); err != nil {
+			conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
+				conditions.ReconciliationFailedReason, err.Error())
+			return ctrl.Result{}, err
+		}
+	}
+
 	conditions.MarkTrue(pool, conditions.NodePoolReadyCondition, "NodePoolReady", "node pool is ready")
 	recordEvent(r.Recorder, pool, corev1.EventTypeNormal, "NodePoolReady", "node pool is ready")
 	pool.Status.Ready = true
-	pool.Status.Ready = true
 	log.Info("CCE node pool reconciled", "nodePoolID", pool.Status.NodePoolID)
+	// Nodes may still be provisioning after the pool is marked ready: the
+	// cloud status (currentNode/activeNode) lags the create call, so a
+	// one-shot reconcile can observe 0 and then never refresh. Requeue until
+	// the observed count converges to the desired count so status.replicas
+	// and status.availableReplicas reflect reality.
+	if pool.Status.Replicas != pool.Spec.Replicas || pool.Status.AvailableReplicas != pool.Spec.Replicas {
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	}
 	return ctrl.Result{}, nil
 }
 
@@ -417,20 +477,26 @@ func (r *CCEManagedMachinePoolReconciler) clusterRegion(ctx context.Context, clu
 
 func toCreateNodePoolInput(clusterID string, pool *infrav1beta1.CCEManagedMachinePool) cceService.CreateNodePoolInput {
 	in := cceService.CreateNodePoolInput{
-		ClusterID:        clusterID,
-		ClusterName:      pool.Spec.ClusterName,
-		Name:             pool.Spec.NodePoolName,
-		Flavor:           pool.Spec.Flavor,
-		OS:               pool.Spec.OS,
-		SSHKey:           pool.Spec.SSHKey,
-		AvailabilityZone: pool.Spec.AvailabilityZone,
-		InitialNodeCount: pool.Spec.Replicas,
-		BillingMode:      pool.Spec.BillingMode,
-		Spot:             pool.Spec.Spot,
-		SpotPrice:        pool.Spec.SpotPrice,
-		Taints:           pool.Spec.Taints,
-		Labels:           pool.Spec.Labels,
-		SecurityGroups:   pool.Spec.SecurityGroups,
+		ClusterID:             clusterID,
+		ClusterName:           pool.Spec.ClusterName,
+		Name:                  pool.Spec.NodePoolName,
+		Flavor:                pool.Spec.Flavor,
+		OS:                    pool.Spec.OS,
+		SSHKey:                pool.Spec.SSHKey,
+		AvailabilityZone:      pool.Spec.AvailabilityZone,
+		InitialNodeCount:      pool.Spec.Replicas,
+		BillingMode:           pool.Spec.BillingMode,
+		Spot:                  pool.Spec.Spot,
+		SpotPrice:             pool.Spec.SpotPrice,
+		Taints:                pool.Spec.Taints,
+		Labels:                pool.Spec.Labels,
+		SecurityGroups:        pool.Spec.SecurityGroups,
+		EcsGroupId:            pool.Spec.EcsGroupId,
+		FaultDomain:           pool.Spec.FaultDomain,
+		DedicatedHostId:       pool.Spec.DedicatedHostId,
+		PreInstall:            pool.Spec.PreInstall,
+		PostInstall:           pool.Spec.PostInstall,
+		WaitPostInstallFinish: pool.Spec.WaitPostInstallFinish,
 	}
 	if features.Enabled(features.NodePoolAutoscaling) {
 		in.Autoscaling = toProviderAutoscaling(pool.Spec.Autoscaling)
@@ -468,23 +534,59 @@ func toProviderAutoscaling(s infrav1beta1.AutoscalingSpec) *cceService.NodePoolA
 	}
 }
 
-// syncReplicasFromOwner copies spec.replicas from the owning CAPI MachinePool
-// (found via its template.spec.infrastructureRef.name) onto this infra pool,
-// so `kubectl scale machinepool` drives the CCE node pool size.
-func (r *CCEManagedMachinePoolReconciler) syncReplicasFromOwner(ctx context.Context, pool *infrav1beta1.CCEManagedMachinePool) error {
+// reconcileNodeRepair detects Abnormal/Error nodes in THIS pool and resets
+// them via CCE ResetNode (node auto-repair; the CCE substitute for EKS
+// NodeRepairConfig). Nodes are scoped to the pool via metadata.
+// ownerReferences.nodepoolID (ListNodes is cluster-wide, so filter by pool).
+func (r *CCEManagedMachinePoolReconciler) reconcileNodeRepair(ctx context.Context, svc cceService.Service, clusterID string, pool *infrav1beta1.CCEManagedMachinePool) error {
+	nodes, err := svc.ListNodesWithStatus(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	var abnormal []string
+	for _, n := range nodes {
+		if n.NodePoolID != pool.Status.NodePoolID {
+			continue // not ours: another pool's node.
+		}
+		if n.Phase == "Abnormal" || n.Phase == "Error" {
+			abnormal = append(abnormal, n.UID)
+		}
+	}
+	if len(abnormal) == 0 {
+		return nil
+	}
+	recordEvent(r.Recorder, pool, corev1.EventTypeNormal, "NodeRepairTriggered",
+		"resetting %d abnormal node(s)", len(abnormal))
+	return svc.ResetNode(ctx, clusterID, abnormal)
+}
+
+// findOwnerMachinePool returns the owning CAPI MachinePool (found via its
+// template.spec.infrastructureRef.name), or nil when none matches yet.
+func (r *CCEManagedMachinePoolReconciler) findOwnerMachinePool(ctx context.Context, pool *infrav1beta1.CCEManagedMachinePool) (*clusterv1.MachinePool, error) {
 	mps := &clusterv1.MachinePoolList{}
 	if err := r.List(ctx, mps, client.InNamespace(pool.Namespace),
 		client.MatchingLabels{clusterv1.ClusterNameLabel: pool.Spec.ClusterName}); err != nil {
-		return errors.Wrap(err, "failed to list MachinePools")
+		return nil, errors.Wrap(err, "failed to list MachinePools")
 	}
 	for i := range mps.Items {
 		mp := &mps.Items[i]
 		if mp.Spec.Template.Spec.InfrastructureRef.Name == pool.Name {
-			if mp.Spec.Replicas != nil && *mp.Spec.Replicas != pool.Spec.Replicas {
-				pool.Spec.Replicas = *mp.Spec.Replicas
-			}
-			return nil
+			return mp, nil
 		}
+	}
+	return nil, nil
+}
+
+// syncReplicasFromOwner copies spec.replicas from the owning CAPI MachinePool
+// onto this infra pool, so `kubectl scale machinepool` drives the CCE node
+// pool size.
+func (r *CCEManagedMachinePoolReconciler) syncReplicasFromOwner(ctx context.Context, pool *infrav1beta1.CCEManagedMachinePool) error {
+	mp, err := r.findOwnerMachinePool(ctx, pool)
+	if err != nil {
+		return err
+	}
+	if mp != nil && mp.Spec.Replicas != nil && *mp.Spec.Replicas != pool.Spec.Replicas {
+		pool.Spec.Replicas = *mp.Spec.Replicas
 	}
 	return nil
 }

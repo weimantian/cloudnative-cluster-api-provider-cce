@@ -339,7 +339,7 @@ clusterctl delete --infrastructure cce
 - [clusterctl deployment validation (kind + real CCE)](docs/clusterctl-deployment-validation.md)
 - [Official API reference review findings](docs/api-review-findings.md)
 - [Full code audit findings](docs/code-audit-findings.md)
-- [CAPA parity gap analysis](docs/capa-parity-gap-analysis.md)
+- [CAPA parity gap analysis](docs/capa-alignment-summary-2026-08-22.md)
 - [CAPA code analysis](docs/CAPA架构分析报告.md) · [Alibaba ACK provider code analysis](docs/ACKProvider架构分析报告.md) · [CAPHW code analysis](docs/CAPHW架构分析报告.md)
 
 ## Dependencies & Acknowledgements

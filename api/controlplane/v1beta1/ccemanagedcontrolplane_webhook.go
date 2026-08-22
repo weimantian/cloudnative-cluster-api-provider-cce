@@ -68,6 +68,18 @@ func (c *CCEManagedControlPlane) ValidateUpdate(_ context.Context, oldObj, newOb
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "category"),
 			newObj.Spec.Category, "field is immutable after creation"))
 	}
+	// Encryption mode and authentication mode are immutable (CCE does not
+	// support changing them post-create).
+	if oldObj.Spec.EncryptionConfig != nil && newObj.Spec.EncryptionConfig != nil &&
+		oldObj.Spec.EncryptionConfig.Mode != newObj.Spec.EncryptionConfig.Mode {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "encryptionConfig", "mode"),
+			newObj.Spec.EncryptionConfig.Mode, "field is immutable after creation"))
+	}
+	if oldObj.Spec.Authentication != nil && newObj.Spec.Authentication != nil &&
+		oldObj.Spec.Authentication.Mode != newObj.Spec.Authentication.Mode {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "authentication", "mode"),
+			newObj.Spec.Authentication.Mode, "field is immutable after creation"))
+	}
 	if err := newObj.validate(); err != nil {
 		return nil, err
 	}
@@ -110,6 +122,14 @@ func (c *CCEManagedControlPlane) validate() error {
 	if c.Spec.Billing.Mode == 1 {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "billing", "mode"), "1",
 			"subscription billing is not supported yet (periodType/periodNum not exposed)"))
+	}
+	// authenticating_proxy mode requires the CA + client cert + key.
+	if c.Spec.Authentication != nil && c.Spec.Authentication.Mode == "authenticating_proxy" {
+		ap := c.Spec.Authentication.AuthenticatingProxy
+		if ap == nil || ap.CA == "" || ap.Cert == "" || ap.PrivateKey == "" {
+			allErrs = append(allErrs, field.Required(field.NewPath("spec", "authentication", "authenticatingProxy"),
+				"authenticating_proxy mode requires ca, cert and privateKey"))
+		}
 	}
 	if len(allErrs) == 0 {
 		return nil

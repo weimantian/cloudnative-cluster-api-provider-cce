@@ -107,8 +107,8 @@ func TestControlPlaneReconcileSuccess(t *testing.T) {
 	if in.Name != "test-cluster" || in.Category != "Turbo" || in.ContainerNetworkMode != "eni" {
 		t.Errorf("unexpected create input: %+v", in)
 	}
-	if fakeSvc.KubeconfigCalls != 1 {
-		t.Errorf("expected 1 kubeconfig call, got %d", fakeSvc.KubeconfigCalls)
+	if fakeSvc.KubeconfigCalls != 2 {
+		t.Errorf("expected 2 kubeconfig calls (CAPI + user), got %d", fakeSvc.KubeconfigCalls)
 	}
 	secret := &corev1.Secret{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "test-cluster-kubeconfig"}, secret); err != nil {
@@ -116,6 +116,15 @@ func TestControlPlaneReconcileSuccess(t *testing.T) {
 	}
 	if len(secret.Data["value"]) == 0 {
 		t.Error("expected kubeconfig Secret data")
+	}
+	// The user kubeconfig (mirrors CAPA <cluster>-user-kubeconfig) is an
+	// independent credential owned by the control plane.
+	userSecret := &corev1.Secret{}
+	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "test-cluster-user-kubeconfig"}, userSecret); err != nil {
+		t.Fatalf("expected user kubeconfig Secret: %v", err)
+	}
+	if len(userSecret.Data["value"]) == 0 {
+		t.Error("expected user kubeconfig Secret data")
 	}
 }
 

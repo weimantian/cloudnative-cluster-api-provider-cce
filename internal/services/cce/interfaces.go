@@ -45,15 +45,27 @@ type CreateClusterInput struct {
 	Version              string
 	ContainerNetworkMode string // overlay_l2 | vpc-router | eni
 	ContainerNetworkCIDR string
-	ENISubnets           []string
+	// ContainerNetworkCIDRs lists secondary container CIDRs (model.
+	// ContainerNetwork.Cidrs -> []ContainerCidr). Empty = single CIDR.
+	ContainerNetworkCIDRs []string
+	ENISubnets            []string
 	// HostNetworkVpcID is the VPC the cluster nodes live in (official
 	// hostNetwork.vpc is required — A2).
 	HostNetworkVpcID string
 	// HostNetworkSubnetID is the node subnet (official hostNetwork.subnet).
 	HostNetworkSubnetID string
 	ServiceCIDR         string
-	CustomSAN           []string
-	PublicAccess        bool
+	// ServiceIPv6CIDR is the service network IPv6 CIDR (dual-stack).
+	// Maps to model.ServiceNetwork.IPv6CIDR.
+	ServiceIPv6CIDR string
+	// Ipv6Enable enables IPv6 dual-stack (maps to model.ClusterSpec.
+	// Ipv6enable). nil = leave to the platform default (disabled).
+	Ipv6Enable *bool
+	// EnableAutopilot creates an Autopilot (Serverless) cluster (maps to
+	// model.ClusterSpec.EnableAutopilot). nil = standard CCE/Turbo cluster.
+	EnableAutopilot *bool
+	CustomSAN       []string
+	PublicAccess    bool
 	// PublicAccessCIDRs is the public API server whitelist (PublicAccess
 	// model cidrs). Only sent when PublicAccess is true; empty = the
 	// platform default ["0.0.0.0/0"].
@@ -71,6 +83,34 @@ type CreateClusterInput struct {
 	// tag (cluster-api-provider-cce.cluster.<name>=owned) is always added by
 	// the service.
 	Tags map[string]string
+
+	// EncryptionConfig controls etcd secret encryption (nil = platform
+	// default Default). Mode: "Default" | "KMS".
+	EncryptionConfig *EncryptionConfigInput
+
+	// Authentication controls the API server auth mode (nil = platform
+	// default rbac).
+	Authentication *AuthenticationInput
+}
+
+// EncryptionConfigInput is the service-layer encryption config.
+type EncryptionConfigInput struct {
+	Mode string // "Default" | "KMS"
+}
+
+// AuthenticationInput is the service-layer authentication config.
+type AuthenticationInput struct {
+	Mode                string // "rbac" | "authenticating_proxy"
+	AuthenticatingProxy *AuthenticatingProxyInput
+}
+
+// AuthenticatingProxyInput is the service-layer authenticating-proxy
+// config. CA/Cert/PrivateKey are PEM-encoded (the service base64-encodes
+// them for the CCE API).
+type AuthenticatingProxyInput struct {
+	CA         string
+	Cert       string
+	PrivateKey string
 }
 
 // CreateNodePoolInput maps the CCEManagedMachinePool spec to the CCE
@@ -111,6 +151,21 @@ type CreateNodePoolInput struct {
 	// Tags are additional node pool tags (mapped to CCE userTags); the owned
 	// tag is always added by the service.
 	Tags map[string]string
+	// EcsGroupId maps to nodeTemplate.ecsGroupId (ECS server group).
+	EcsGroupId string
+	// FaultDomain maps to nodeTemplate.faultDomain.
+	FaultDomain string
+	// DedicatedHostId maps to nodeTemplate.dedicatedHostId.
+	DedicatedHostId string
+	// PreInstall is the base64-encoded pre-install script
+	// (nodeTemplate.extendParam["alpha.cce/preInstall"]).
+	PreInstall string
+	// PostInstall is the base64-encoded post-install script
+	// (nodeTemplate.extendParam["alpha.cce/postInstall"]).
+	PostInstall string
+	// WaitPostInstallFinish blocks pod scheduling until the post-install
+	// script finishes (nodeTemplate.waitPostInstallFinish).
+	WaitPostInstallFinish *bool
 }
 
 // NodePoolAutoscaling mirrors NodePoolNodeAutoscaling (enable/min/max).
@@ -145,6 +200,18 @@ type NodePoolInfo struct {
 	NodeCount int32
 	// ActiveNodeCount is status.activeNode (nodes in Active state).
 	ActiveNodeCount int32
+}
+
+// NodeInfo is a node with its lifecycle phase (used by node auto-repair).
+type NodeInfo struct {
+	// UID is the CCE node ID (metadata.uid).
+	UID string
+	// NodePoolID is the owning node pool ID (metadata.ownerReferences.
+	// nodepoolID); empty for nodes not in a pool.
+	NodePoolID string
+	// Phase is the node lifecycle phase: Build/Installing/Upgrading/Active/
+	// Abnormal/Deleting/Error.
+	Phase string
 }
 
 // DeleteClusterInput carries the CCE DeleteCluster query options. Official
@@ -311,6 +378,38 @@ type ClusterRef struct {
 	Tags      map[string]string
 }
 
+// EipRef is an EIP as reported by ListEips (used by the GC sweeper to find
+// orphaned, owned-tagged public IPs).
+type EipRef struct {
+	ID      string
+	Address string
+	Tags    map[string]string
+}
+
+// VolumeRef is an EVS volume as reported by ListVolumes (used by the GC
+// sweeper to find orphaned, owned-tagged disks).
+type VolumeRef struct {
+	ID   string
+	Name string
+	Tags map[string]string
+}
+
+// VpcRef is a VPC as reported by ListVpcs (used by the GC sweeper to find
+// orphaned, owned-tagged VPCs). Tags are fetched via ShowVpcTags (N+1).
+type VpcRef struct {
+	ID   string
+	Name string
+	Tags map[string]string
+}
+
+// NatGatewayRef is a NAT gateway as reported by ListNatGateways (used by the
+// GC sweeper to find orphaned, owned-tagged NAT gateways).
+type NatGatewayRef struct {
+	ID   string
+	Name string
+	Tags map[string]string
+}
+
 // AccessPolicyInput declares a CCE access policy to create/update.
 type AccessPolicyInput struct {
 	Name          string
@@ -345,6 +444,26 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	// ListClusters lists all CCE clusters in the region (used by the garbage
 	// collector's orphan sweeper; returns cluster ID, name and tags).
 	ListClusters(ctx context.Context) ([]ClusterRef, error)
+	// ListEips lists all EIPs in the region (used by the GC sweeper to find
+	// orphaned, owned-tagged public IPs).
+	ListEips(ctx context.Context) ([]EipRef, error)
+	// DeleteEip releases an EIP by ID.
+	DeleteEip(ctx context.Context, eipID string) error
+	// ListVolumes lists all EVS volumes in the region (used by the GC sweeper
+	// to find orphaned, owned-tagged disks).
+	ListVolumes(ctx context.Context) ([]VolumeRef, error)
+	// DeleteVolume deletes an EVS volume by ID.
+	DeleteVolume(ctx context.Context, volumeID string) error
+	// ListVpcs lists all VPCs with their tags (GC orphan sweeper).
+	ListVpcs(ctx context.Context) ([]VpcRef, error)
+	// DeleteVpc deletes a VPC by ID.
+	DeleteVpc(ctx context.Context, vpcID string) error
+	// ListNatGateways lists all NAT gateways with their tags (GC orphan
+	// sweeper).
+	ListNatGateways(ctx context.Context) ([]NatGatewayRef, error)
+	// DeleteNatGateway deletes a NAT gateway (SNAT rules first, then the
+	// gateway).
+	DeleteNatGateway(ctx context.Context, gatewayID string) error
 	// CreateNodePool creates a node pool and returns its ID.
 	CreateNodePool(ctx context.Context, in CreateNodePoolInput) (string, error)
 	// ScaleNodePool scales a node pool to the given absolute desired total
@@ -359,6 +478,16 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	DeleteNodePool(ctx context.Context, clusterID, nodePoolID string) error
 	// ListNodePools lists the node pools of a cluster.
 	ListNodePools(ctx context.Context, clusterID string) ([]NodePoolInfo, error)
+	// ListNodes lists the provider IDs (node UIDs) of all nodes in a cluster.
+	// Each UID matches the spec.providerID of the corresponding workload node,
+	// which Cluster API consumes to fill MachinePool.status.nodeRefs.
+	ListNodes(ctx context.Context, clusterID string) ([]string, error)
+	// ListNodesWithStatus lists the nodes of a cluster with their phase (used
+	// by node auto-repair to find Abnormal/Error nodes).
+	ListNodesWithStatus(ctx context.Context, clusterID string) ([]NodeInfo, error)
+	// ResetNode resets (reinstalls) the given nodes - destructive, used by
+	// node auto-repair for Abnormal/Error nodes.
+	ResetNode(ctx context.Context, clusterID string, nodeIDs []string) error
 	// GetUpgradeInfo returns the platform's upgrade targets for a cluster.
 	GetUpgradeInfo(ctx context.Context, clusterID string) (*UpgradeInfo, error)
 	// StartUpgrade drives the upgrade workflow (CreateUpgradeWorkFlow ->

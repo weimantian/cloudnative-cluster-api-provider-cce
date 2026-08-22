@@ -1,13 +1,17 @@
+//go:build e2e
+// +build e2e
+
 /*
 Copyright 2025 Huawei Cloud.
 
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-// Package e2e contains end-to-end tests that drive a real management cluster
-// and a real Huawei Cloud CCE account.
+// Package e2e contains the Ginkgo spec that drives a real management cluster
+// and a real Huawei Cloud CCE account (mirrors CAPA's suite shape: build tag
+// `e2e`, env-gated, Ginkgo Describe/It).
 //
-// The test is environment-gated: it skips unless a management cluster
+// The spec is environment-gated: it skips unless a management cluster
 // kubeconfig and the CCE cloud configuration are provided. When run with a
 // management cluster (with CAPI + this provider installed) and CCE
 // credentials, it exercises the full workload-cluster lifecycle:
@@ -27,10 +31,12 @@ package e2e
 
 import (
 	"context"
+	"fmt"
 	"os"
-	"testing"
 	"time"
 
+	. "github.com/onsi/ginkgo/v2"
+	. "github.com/onsi/gomega"
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -50,220 +56,189 @@ import (
 
 const e2eTimeout = 30 * time.Minute
 
-func TestE2EClusterLifecycle(t *testing.T) {
-	kubeconfig := os.Getenv("E2E_MANAGEMENT_KUBECONFIG")
-	if kubeconfig == "" {
-		kubeconfig = os.Getenv("KUBECONFIG")
-	}
-	region := envOr("CCE_E2E_REGION", "cn-north-4")
-	vpcID := os.Getenv("CCE_E2E_VPC_ID")
-	subnetID := os.Getenv("CCE_E2E_SUBNET_ID")
-	az := envOr("CCE_E2E_AZ", "cn-north-4a")
-	nodeFlavor := envOr("CCE_E2E_NODE_FLAVOR", "c6.large.2")
-	keypair := os.Getenv("CCE_E2E_KEYPAIR")
+var _ = Describe("CCE workload cluster lifecycle", func() {
+	It("provisions and deletes a workload cluster", func() {
+		kubeconfig := os.Getenv("E2E_MANAGEMENT_KUBECONFIG")
+		if kubeconfig == "" {
+			kubeconfig = os.Getenv("KUBECONFIG")
+		}
+		region := envOr("CCE_E2E_REGION", "cn-north-4")
+		vpcID := os.Getenv("CCE_E2E_VPC_ID")
+		subnetID := os.Getenv("CCE_E2E_SUBNET_ID")
+		az := envOr("CCE_E2E_AZ", "cn-north-4a")
+		nodeFlavor := envOr("CCE_E2E_NODE_FLAVOR", "c6.large.2")
+		keypair := os.Getenv("CCE_E2E_KEYPAIR")
 
-	switch {
-	case kubeconfig == "":
-		t.Skip("E2E_MANAGEMENT_KUBECONFIG/KUBECONFIG not set; skipping e2e")
-	case vpcID == "" || subnetID == "":
-		t.Skip("CCE_E2E_VPC_ID/CCE_E2E_SUBNET_ID not set; skipping e2e")
-	case keypair == "":
-		t.Skip("CCE_E2E_KEYPAIR not set; skipping e2e")
-	case os.Getenv("CCE_ACCESS_KEY") == "" || os.Getenv("CCE_SECRET_KEY") == "":
-		t.Skip("CCE_ACCESS_KEY/CCE_SECRET_KEY not set; skipping e2e")
-	}
+		// Environment gate (mirrors the go-test skip; Ginkgo Skip).
+		switch {
+		case kubeconfig == "":
+			Skip("E2E_MANAGEMENT_KUBECONFIG/KUBECONFIG not set; skipping e2e")
+		case vpcID == "" || subnetID == "":
+			Skip("CCE_E2E_VPC_ID/CCE_E2E_SUBNET_ID not set; skipping e2e")
+		case keypair == "":
+			Skip("CCE_E2E_KEYPAIR not set; skipping e2e")
+		case os.Getenv("CCE_ACCESS_KEY") == "" || os.Getenv("CCE_SECRET_KEY") == "":
+			Skip("CCE_ACCESS_KEY/CCE_SECRET_KEY not set; skipping e2e")
+		}
 
-	restCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
-	if err != nil {
-		t.Fatalf("failed to load management kubeconfig: %v", err)
-	}
-	scheme := runtime.NewScheme()
-	if err := clientgoscheme.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add client-go scheme: %v", err)
-	}
-	if err := clusterv1.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add CAPI scheme: %v", err)
-	}
-	if err := infrav1beta1.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add infrastructure scheme: %v", err)
-	}
-	if err := infrav1beta2.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add infrastructure v1beta2 scheme: %v", err)
-	}
-	if err := controlplanev1beta1.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add control plane scheme: %v", err)
-	}
-	if err := controlplanev1beta2.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add control plane v1beta2 scheme: %v", err)
-	}
-	if err := controlplanev1beta1.AddToScheme(scheme); err != nil {
-		t.Fatalf("failed to add control plane scheme: %v", err)
-	}
-	c, err := client.New(restCfg, client.Options{Scheme: scheme})
-	if err != nil {
-		t.Fatalf("failed to build management client: %v", err)
-	}
+		restCfg, err := clientcmd.BuildConfigFromFlags("", kubeconfig)
+		Expect(err).NotTo(HaveOccurred(), "failed to load management kubeconfig")
 
-	ctx, cancel := context.WithTimeout(context.Background(), e2eTimeout)
-	defer cancel()
+		scheme := runtime.NewScheme()
+		Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
+		Expect(clusterv1.AddToScheme(scheme)).To(Succeed())
+		Expect(infrav1beta1.AddToScheme(scheme)).To(Succeed())
+		Expect(infrav1beta2.AddToScheme(scheme)).To(Succeed())
+		Expect(controlplanev1beta1.AddToScheme(scheme)).To(Succeed())
+		Expect(controlplanev1beta2.AddToScheme(scheme)).To(Succeed())
 
-	const clusterName = "e2e-cluster"
-	const namespace = "default"
+		c, err := client.New(restCfg, client.Options{Scheme: scheme})
+		Expect(err).NotTo(HaveOccurred(), "failed to build management client")
 
-	// Credentials + empty bootstrap Secret required by the CAPI v1.14
-	// MachinePool contract (managed pools carry no bootstrap data).
-	if err := ensureSecret(ctx, c, namespace, clusterName+"-credentials",
-		map[string][]byte{"accessKey": []byte(os.Getenv("CCE_ACCESS_KEY")), "secretKey": []byte(os.Getenv("CCE_SECRET_KEY"))}); err != nil {
-		t.Fatalf("failed to create credentials Secret: %v", err)
-	}
-	if err := ensureSecret(ctx, c, namespace, clusterName+"-bootstrap",
-		map[string][]byte{"value": []byte("")}); err != nil {
-		t.Fatalf("failed to create bootstrap Secret: %v", err)
-	}
+		ctx, cancel := context.WithTimeout(context.Background(), e2eTimeout)
+		DeferCleanup(cancel)
 
-	// Build the workload cluster objects (mirrors config/samples/cluster-template.yaml).
-	cluster := &clusterv1.Cluster{
-		ObjectMeta: metav1.ObjectMeta{Name: clusterName, Namespace: namespace},
-		Spec: clusterv1.ClusterSpec{
-			ClusterNetwork: clusterv1.ClusterNetwork{
-				Pods:     clusterv1.NetworkRanges{CIDRBlocks: []string{"10.244.0.0/16"}},
-				Services: clusterv1.NetworkRanges{CIDRBlocks: []string{"10.247.0.0/16"}},
-			},
-			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-				APIGroup: infrav1beta1.GroupVersion.Group,
-				Kind:     "CCECluster",
-				Name:     clusterName,
-			},
-			ControlPlaneRef: clusterv1.ContractVersionedObjectReference{
-				APIGroup: controlplanev1beta1.GroupVersion.Group,
-				Kind:     "CCEManagedControlPlane",
-				Name:     clusterName + "-control-plane",
-			},
-		},
-	}
-	if err := c.Create(ctx, cluster); err != nil {
-		t.Fatalf("failed to create Cluster: %v", err)
-	}
-	t.Cleanup(func() { _ = c.Delete(context.Background(), cluster) })
+		const clusterName = "e2e-cluster"
+		const namespace = "default"
 
-	ownerRef := metav1.OwnerReference{
-		APIVersion: clusterv1.GroupVersion.String(),
-		Kind:       "Cluster",
-		Name:       clusterName,
-		UID:        cluster.UID,
-	}
-	labels := map[string]string{clusterv1.ClusterNameLabel: clusterName}
+		// Credentials + empty bootstrap Secret required by the CAPI v1.14
+		// MachinePool contract (managed pools carry no bootstrap data).
+		Expect(ensureSecret(ctx, c, namespace, clusterName+"-credentials",
+			map[string][]byte{"accessKey": []byte(os.Getenv("CCE_ACCESS_KEY")), "secretKey": []byte(os.Getenv("CCE_SECRET_KEY"))})).To(Succeed())
+		Expect(ensureSecret(ctx, c, namespace, clusterName+"-bootstrap",
+			map[string][]byte{"value": []byte("")})).To(Succeed())
 
-	objects := []client.Object{
-		&infrav1beta1.CCECluster{
-			ObjectMeta: metav1.ObjectMeta{Name: clusterName, Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
-			Spec: infrav1beta1.CCEClusterSpec{
-				Region: region,
-				Network: common.NetworkSpec{
-					VPC:     common.VPC{ID: vpcID},
-					Subnets: []common.Subnet{{ID: subnetID, AvailabilityZone: az}},
+		// Build the workload cluster objects (mirrors config/samples/cluster-template.yaml).
+		cluster := &clusterv1.Cluster{
+			ObjectMeta: metav1.ObjectMeta{Name: clusterName, Namespace: namespace},
+			Spec: clusterv1.ClusterSpec{
+				ClusterNetwork: clusterv1.ClusterNetwork{
+					Pods:     clusterv1.NetworkRanges{CIDRBlocks: []string{"10.244.0.0/16"}},
+					Services: clusterv1.NetworkRanges{CIDRBlocks: []string{"10.247.0.0/16"}},
+				},
+				InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+					APIGroup: infrav1beta1.GroupVersion.Group,
+					Kind:     "CCECluster",
+					Name:     clusterName,
+				},
+				ControlPlaneRef: clusterv1.ContractVersionedObjectReference{
+					APIGroup: controlplanev1beta1.GroupVersion.Group,
+					Kind:     "CCEManagedControlPlane",
+					Name:     clusterName + "-control-plane",
 				},
 			},
-		},
-		&controlplanev1beta1.CCEManagedControlPlane{
-			ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-control-plane", Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
-			Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{
-				ClusterName: clusterName,
-				Category:    "CCE",
-				Version:     "v1.33",
-				Flavor:      "cce.s2.medium",
-				ContainerNetwork: controlplanev1beta1.ContainerNetworkSpec{
-					Mode: "vpc-router",
-					CIDR: "10.244.0.0/16",
+		}
+		Expect(c.Create(ctx, cluster)).To(Succeed(), "failed to create Cluster")
+		DeferCleanup(func() { _ = c.Delete(context.Background(), cluster) })
+
+		ownerRef := metav1.OwnerReference{
+			APIVersion: clusterv1.GroupVersion.String(),
+			Kind:       "Cluster",
+			Name:       clusterName,
+			UID:        cluster.UID,
+		}
+		labels := map[string]string{clusterv1.ClusterNameLabel: clusterName}
+
+		objects := []client.Object{
+			&infrav1beta1.CCECluster{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName, Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
+				Spec: infrav1beta1.CCEClusterSpec{
+					Region: region,
+					Network: common.NetworkSpec{
+						VPC:     common.VPC{ID: vpcID},
+						Subnets: []common.Subnet{{ID: subnetID, AvailabilityZone: az}},
+					},
 				},
-				ServiceNetwork: controlplanev1beta1.ServiceNetworkSpec{CIDR: "10.247.0.0/16"},
-				EndpointAccess: controlplanev1beta1.EndpointAccessSpec{Public: false},
-				Billing:        controlplanev1beta1.BillingSpec{Mode: 0},
 			},
-		},
-		&clusterv1.MachinePool{
-			ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-pool-0", Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
-			Spec: clusterv1.MachinePoolSpec{
-				ClusterName: clusterName,
-				Replicas:    int32Ptr(1),
-				Template: clusterv1.MachineTemplateSpec{
-					Spec: clusterv1.MachineSpec{
-						ClusterName: clusterName,
-						Version:     "v1.33.0",
-						Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr(clusterName + "-bootstrap")},
-						InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-							APIGroup: infrav1beta1.GroupVersion.Group,
-							Kind:     "CCEManagedMachinePool",
-							Name:     clusterName + "-pool-0",
+			&controlplanev1beta1.CCEManagedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-control-plane", Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
+				Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{
+					ClusterName: clusterName,
+					Category:    "CCE",
+					Version:     "v1.33",
+					Flavor:      "cce.s2.medium",
+					ContainerNetwork: controlplanev1beta1.ContainerNetworkSpec{
+						Mode: "vpc-router",
+						CIDR: "10.244.0.0/16",
+					},
+					ServiceNetwork: controlplanev1beta1.ServiceNetworkSpec{CIDR: "10.247.0.0/16"},
+					EndpointAccess: controlplanev1beta1.EndpointAccessSpec{Public: false},
+					Billing:        controlplanev1beta1.BillingSpec{Mode: 0},
+				},
+			},
+			&clusterv1.MachinePool{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-pool-0", Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
+				Spec: clusterv1.MachinePoolSpec{
+					ClusterName: clusterName,
+					Replicas:    int32Ptr(1),
+					Template: clusterv1.MachineTemplateSpec{
+						Spec: clusterv1.MachineSpec{
+							ClusterName: clusterName,
+							Version:     "v1.33.0",
+							Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr(clusterName + "-bootstrap")},
+							InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+								APIGroup: infrav1beta1.GroupVersion.Group,
+								Kind:     "CCEManagedMachinePool",
+								Name:     clusterName + "-pool-0",
+							},
 						},
 					},
 				},
 			},
-		},
-		&infrav1beta1.CCEManagedMachinePool{
-			ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-pool-0", Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
-			Spec: infrav1beta1.CCEManagedMachinePoolSpec{
-				ClusterName:      clusterName,
-				NodePoolName:     "pool-0",
-				Flavor:           nodeFlavor,
-				OS:               "Huawei Cloud EulerOS 2.0",
-				RootVolume:       &common.NodeVolume{Size: 40, Type: "GPSSD"},
-				DataVolumes:      []common.NodeVolume{{Size: 100, Type: "GPSSD"}},
-				SSHKey:           keypair,
-				AvailabilityZone: az,
-				Replicas:         1,
-				BillingMode:      0,
+			&infrav1beta1.CCEManagedMachinePool{
+				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-pool-0", Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
+				Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+					ClusterName:      clusterName,
+					NodePoolName:     "pool-0",
+					Flavor:           nodeFlavor,
+					OS:               "Huawei Cloud EulerOS 2.0",
+					RootVolume:       &common.NodeVolume{Size: 40, Type: "GPSSD"},
+					DataVolumes:      []common.NodeVolume{{Size: 100, Type: "GPSSD"}},
+					SSHKey:           keypair,
+					AvailabilityZone: az,
+					Replicas:         1,
+					BillingMode:      0,
+				},
 			},
-		},
-	}
-	for _, o := range objects {
-		if err := c.Create(ctx, o); err != nil {
-			t.Fatalf("failed to create %T %s: %v", o, client.ObjectKeyFromObject(o), err)
 		}
-	}
+		for _, o := range objects {
+			Expect(c.Create(ctx, o)).To(Succeed(), fmt.Sprintf("failed to create %T %s", o, client.ObjectKeyFromObject(o)))
+		}
 
-	// Wait for the control plane to become Ready (cluster Available +
-	// kubeconfig generated).
-	t.Log("waiting for CCEManagedControlPlane to become Ready…")
-	if !waitForCondition(t, ctx, 25*time.Minute, "control plane Ready", func() (bool, error) {
-		cp := &controlplanev1beta1.CCEManagedControlPlane{}
-		if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: clusterName + "-control-plane"}, cp); err != nil {
+		// Wait for the control plane to become Ready (cluster Available +
+		// kubeconfig generated).
+		By("waiting for CCEManagedControlPlane to become Ready")
+		waitForCondition(ctx, 25*time.Minute, "control plane Ready", func() (bool, error) {
+			cp := &controlplanev1beta1.CCEManagedControlPlane{}
+			if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: clusterName + "-control-plane"}, cp); err != nil {
+				return false, err
+			}
+			return cp.Status.Ready, nil
+		})
+
+		// Wait for the node pool to reach its desired replicas.
+		By("waiting for CCEManagedMachinePool to become Ready")
+		waitForCondition(ctx, 25*time.Minute, "node pool Ready", func() (bool, error) {
+			pool := &infrav1beta1.CCEManagedMachinePool{}
+			if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: clusterName + "-pool-0"}, pool); err != nil {
+				return false, err
+			}
+			return pool.Status.Ready && pool.Status.Replicas == 1, nil
+		})
+
+		// Delete the workload cluster and wait for it to disappear.
+		By("deleting the workload cluster")
+		Expect(c.Delete(ctx, cluster)).To(Succeed(), "failed to delete Cluster")
+		waitForCondition(ctx, 25*time.Minute, "cluster deleted", func() (bool, error) {
+			got := &clusterv1.Cluster{}
+			err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: clusterName}, got)
+			if apierrors.IsNotFound(err) {
+				return true, nil
+			}
 			return false, err
-		}
-		return cp.Status.Ready, nil
-	}) {
-		t.Fatal("control plane did not become Ready within timeout")
-	}
-
-	// Wait for the node pool to reach its desired replicas.
-	t.Log("waiting for CCEManagedMachinePool to become Ready…")
-	if !waitForCondition(t, ctx, 25*time.Minute, "node pool Ready", func() (bool, error) {
-		pool := &infrav1beta1.CCEManagedMachinePool{}
-		if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: clusterName + "-pool-0"}, pool); err != nil {
-			return false, err
-		}
-		return pool.Status.Ready && pool.Status.Replicas == 1, nil
-	}) {
-		t.Fatal("node pool did not become Ready within timeout")
-	}
-
-	// Delete the workload cluster and wait for it to disappear.
-	t.Log("deleting workload cluster…")
-	if err := c.Delete(ctx, cluster); err != nil {
-		t.Fatalf("failed to delete Cluster: %v", err)
-	}
-	if !waitForCondition(t, ctx, 25*time.Minute, "cluster deleted", func() (bool, error) {
-		got := &clusterv1.Cluster{}
-		err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: clusterName}, got)
-		if apierrors.IsNotFound(err) {
-			return true, nil
-		}
-		return false, err
-	}) {
-		t.Fatal("cluster was not deleted within timeout")
-	}
-	t.Log("E2E lifecycle passed")
-}
+		})
+	})
+})
 
 func ensureSecret(ctx context.Context, c client.Client, namespace, name string, data map[string][]byte) error {
 	secret := &corev1.Secret{
@@ -276,23 +251,21 @@ func ensureSecret(ctx context.Context, c client.Client, namespace, name string, 
 	return nil
 }
 
-func waitForCondition(t *testing.T, ctx context.Context, timeout time.Duration, desc string, check func() (bool, error)) bool {
-	t.Helper()
+func waitForCondition(ctx context.Context, timeout time.Duration, desc string, check func() (bool, error)) {
 	deadline := time.Now().Add(timeout)
 	for time.Now().Before(deadline) {
 		if ctx.Err() != nil {
-			t.Logf("timed out waiting for %s", desc)
-			return false
+			Fail(fmt.Sprintf("timed out waiting for %s", desc))
 		}
 		done, err := check()
 		if err != nil {
-			t.Logf("waiting for %s: %v", desc, err)
+			fmt.Fprintf(GinkgoWriter, "waiting for %s: %v\n", desc, err)
 		} else if done {
-			return true
+			return
 		}
 		time.Sleep(10 * time.Second)
 	}
-	return false
+	Fail(fmt.Sprintf("timed out waiting for %s", desc))
 }
 
 func envOr(key, fallback string) string {

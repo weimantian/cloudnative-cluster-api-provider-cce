@@ -57,6 +57,14 @@ type CCEManagedMachinePoolSpec struct {
 	// +optional
 	Replicas int32 `json:"replicas,omitempty"`
 
+	// ProviderIDList is the list of provider IDs of the nodes in the pool,
+	// populated by the controller so Cluster API can fill
+	// MachinePool.status.nodeRefs (and the deprecated readyReplicas). Each
+	// entry is a CCE node UID (metadata.uid), matching the spec.providerID
+	// of the corresponding workload node. The controller owns this field.
+	// +optional
+	ProviderIDList []string `json:"providerIDList,omitempty"`
+
 	// BillingMode: 0=on-demand, 1=subscription.
 	// +kubebuilder:validation:Enum=0;1
 	// +optional
@@ -109,9 +117,53 @@ type CCEManagedMachinePoolSpec struct {
 	// UpgradeNodePool to synchronise them onto running nodes.
 	// +optional
 	UpdateConfig UpdateConfigSpec `json:"updateConfig,omitempty"`
+
+	// NodeRepair enables node auto-repair (mirrors CAPA NodeRepairConfig.
+	// Enabled). CCE has no EKS-style auto-repair switch, so the provider
+	// detects Abnormal/Error nodes and resets them via CCE ResetNode (a
+	// destructive operation - reset clears the node's data volumes). Off by
+	// default.
+	// +optional
+	NodeRepair *NodeRepairSpec `json:"nodeRepair,omitempty"`
+
+	// EcsGroupId is the ECS server group ID (云服务器组) for the nodes
+	// (nodeTemplate.ecsGroupId). Used to place nodes according to the group's
+	// affinity/anti-affinity policy.
+	// +optional
+	EcsGroupId string `json:"ecsGroupId,omitempty"`
+
+	// FaultDomain is the fault domain (故障域) for the nodes
+	// (nodeTemplate.faultDomain). Enables single-AZ multi-fault-domain
+	// placement.
+	// +optional
+	FaultDomain string `json:"faultDomain,omitempty"`
+
+	// DedicatedHostId is the dedicated host (专属主机) ID for the nodes
+	// (nodeTemplate.dedicatedHostId). Only effective for dedicated-host
+	// flavors.
+	// +optional
+	DedicatedHostId string `json:"dedicatedHostId,omitempty"`
+
+	// PreInstall is the base64-encoded script run before node installation
+	// (nodeTemplate.extendParam["alpha.cce/preInstall"]). Mirrors the CCE node
+	// lifecycle preInstall hook; the value must already be base64-encoded.
+	// +optional
+	PreInstall string `json:"preInstall,omitempty"`
+
+	// PostInstall is the base64-encoded script run after node installation
+	// (nodeTemplate.extendParam["alpha.cce/postInstall"]). Mirrors the CCE
+	// node lifecycle postInstall hook; the value must already be base64-
+	// encoded.
+	// +optional
+	PostInstall string `json:"postInstall,omitempty"`
+
+	// WaitPostInstallFinish blocks pod scheduling until the post-install
+	// script finishes (nodeTemplate.waitPostInstallFinish). Mirrors CCE's
+	// NodeLifecycleConfig waitPostInstallFinish.
+	// +optional
+	WaitPostInstallFinish *bool `json:"waitPostInstallFinish,omitempty"`
 }
 
-// UpdateConfigSpec maps the CCE 同步节点池 (UpgradeNodePool) parameters.
 type UpdateConfigSpec struct {
 	// MaxUnavailable is the maximum number of nodes made unavailable per
 	// rolling batch (official range [1,20]; default 1).
@@ -119,6 +171,16 @@ type UpdateConfigSpec struct {
 	// +kubebuilder:validation:Maximum=20
 	// +optional
 	MaxUnavailable int32 `json:"maxUnavailable,omitempty"`
+}
+
+// NodeRepairSpec mirrors CAPA NodeRepairConfig: a declarative enable flag
+// for node auto-repair.
+type NodeRepairSpec struct {
+	// Enabled enables auto-repair: the provider detects Abnormal/Error nodes
+	// and resets them via CCE ResetNode.
+	// +kubebuilder:default=false
+	// +optional
+	Enabled bool `json:"enabled,omitempty"`
 }
 
 // ExtensionScaleGroupSpec describes one CCE extension scale group — an

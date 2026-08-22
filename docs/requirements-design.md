@@ -2,11 +2,11 @@
 
 - 版本:v0.2(需求+PoC 验证版)
 - 状态:需求定稿(全部 P0/P1 项已实现,经真实 CCE 冒烟与 clusterctl 部署验证;P2 项为远期)
-- 配套文档:[调研依据与事实清单](research-sources.md)、[架构设计文档](architecture-design.md)、[华为云 CCE 对齐问卷](cce-verification-questionnaire.md)、[验证结论记录](cce-verification-findings.md)、[clusterctl 部署演练记录](clusterctl-deployment-validation.md)、[CAPA 架构分析报告](CAPA架构分析报告.md)、[CAPHW 架构分析报告](CAPHW架构分析报告.md)、[ACKProvider 架构分析报告](ACKProvider架构分析报告.md)
+- 配套文档:[调研依据与事实清单](research-sources.md)、[架构设计文档](architecture-design.md)、[华为云 CCE 对齐问卷](archive/cce-verification-questionnaire.md)、[验证结论记录](cce-verification-findings.md)、[clusterctl 部署演练记录](clusterctl-deployment-validation.md)、[CAPA 架构分析报告](archive/CAPA架构分析报告.md)、[CAPHW 架构分析报告](archive/CAPHW架构分析报告.md)、[ACKProvider 架构分析报告](archive/ACKProvider架构分析报告.md)
 
 > **事实基准声明**:同架构文档,所有需求项的依据均来自真实来源(华为云官方 SDK/文档、CAPA 与阿里云 ACK Provider 源码);无法从公开资料确认处标注 **[需验证]**,需对接真实华为云 CCE 确认(完整清单见 [research-sources.md §4](research-sources.md))。
 >
-> **验证状态(2026-08-19)**:各 FR 中引用的 [需验证] 项已逐项确认——Q1/Q2/Q3/Q5/Q7/Q8/Q13/Q14 真实冒烟实测(含 Q14 Retry-After 抓包)、Q4/Q6/Q9/Q10/Q12 官方文档确认、Q11 实测(v1.33→v1.34 目标开放并跑通升级工作流;空目标=按版本线动态开放,controller 按正常状态处理);落地状态逐项见 [验证结论记录](cce-verification-findings.md) 与 [落地跟踪](poc-implementation-tracker.md)。**P0/P1 全部实现;仅 Q11 完整成功升级耗时待预检查通过后实测。**
+> **验证状态(2026-08-19)**:各 FR 中引用的 [需验证] 项已逐项确认——Q1/Q2/Q3/Q5/Q7/Q8/Q13/Q14 真实冒烟实测(含 Q14 Retry-After 抓包)、Q4/Q6/Q9/Q10/Q12 官方文档确认、Q11 实测(v1.33→v1.34 目标开放并跑通升级工作流;空目标=按版本线动态开放,controller 按正常状态处理);落地状态逐项见 [验证结论记录](cce-verification-findings.md) 与 [落地跟踪](archive/poc-implementation-tracker.md)。**P0/P1 全部实现;仅 Q11 完整成功升级耗时待预检查通过后实测。**
 
 ---
 
@@ -54,7 +54,7 @@
 | FR-1.2 | 集群创建幂等:重复 reconcile 不重复创建(固定命名 + 创建冲突时按名称接管 adopt-by-name,实测确认) | P0 | ACK Provider 固定名 Get 判存在模式;实测补充:创建成功但响应丢失(限流边界)时按名称接管已有集群 |
 | FR-1.3 | 等待集群 phase=Available 后回写 `status.clusterID`、`status.controlPlaneEndpoint` | P0 | 官方 phase 枚举(Available/Unavailable/ScalingUp/ScalingDown);`ShowClusterEndpoints` 返回 url+type |
 | FR-1.4 | 集群更新:支持可变更字段(描述、标签、日志、插件等)对齐;网段等不可变字段变更由 webhook 拒绝 | P0 | 官方:隧道模式网段创建后不可改,vpc-router/eni 可增不可改 |
-| FR-1.5 | 集群删除:先删依赖(节点池→插件→集群),容忍 404,轮询至消失后移除 finalizer | P0 | 参照 CAPA reconcileDelete 的依赖计数 + 错误聚合模式([CAPA 架构分析报告](CAPA架构分析报告.md) §3.1) |
+| FR-1.5 | 集群删除:先删依赖(节点池→插件→集群),容忍 404,轮询至消失后移除 finalizer | P0 | 参照 CAPA reconcileDelete 的依赖计数 + 错误聚合模式([CAPA 架构分析报告](archive/CAPA架构分析报告.md) §3.1) |
 | FR-1.6 | `Unavailable` 等异常状态集群的状态上报与失败条件 | P0 | 官方 phase:Unavailable 需手动删除 |
 | FR-1.7 | 集群升级(改 version 触发 CCE 升级工作流) | P1(已实现) | CCE API `CreateUpgradeWorkFlow/CreatePreCheck/CreatePostCheck`(SDK 事实);升级行为细节 **[需验证] 11 → 已实测:v1.33→v1.34 目标开放并跑通工作流;空目标=按版本线动态开放(正常状态);3 个真实 API 约束已修复** |
 | FR-1.8 | 集群休眠/唤醒(AwakeCluster) | P2 | SDK 有 `AwakeCluster`;运维策略,优先级低 |
@@ -68,7 +68,7 @@
 | FR-2.2 | 扩缩容:`MachinePool.spec.replicas` 变更 → 节点池伸缩 API(`ScaleNodePool`,SDK 事实;IAM `cce:nodepool:scale`)或 `UpdateNodePool(initialNodeCount)` | P0 | 伸缩语义 **[需验证] 3** |
 | FR-2.3 | 状态回写:`status.replicas/availableReplicas`(按节点 `Active` 数)、`status.nodePoolID` | P0 | 参照 ACK Provider AliyunManagedMachinePoolStatus;节点状态枚举见 SDK model_node_status.go |
 | FR-2.4 | 节点池删除 → `DeleteNodePool` → 轮询至不存在 → 移除 finalizer | P0 | SDK 事实 |
-| FR-2.5 | 控制面未就绪时节点池等待(WaitingForControlPlane 条件) | P0 | CAPA 模式:MachinePool 控制器须等 ControlPlane.Status.Ready([CAPA 架构分析报告](CAPA架构分析报告.md) §3.3) |
+| FR-2.5 | 控制面未就绪时节点池等待(WaitingForControlPlane 条件) | P0 | CAPA 模式:MachinePool 控制器须等 ControlPlane.Status.Ready([CAPA 架构分析报告](archive/CAPA架构分析报告.md) §3.3) |
 | FR-2.6 | 节点池自动扩缩容(autoscaling enable/min/max)映射 | P1(已实现,Alpha gate 默认关) | 与 CAPI 扩缩容双驱动语义冲突处理 **[需验证] 3 → 已实测:并存不冲突(B3)**;`--feature-gates=NodePoolAutoscaling=true` 启用 |
 | FR-2.7 | 节点池安全组绑定(Turbo ≥1.21,≤5 个) | P1 | 官方文档 cce_02_0354 |
 | FR-2.8 | 单节点路径(`CCEMachine` ↔ CCE CreateNode/AddNode) | P2 | 引导语义 **[需验证] 9**;若不可行则移除 |
@@ -87,11 +87,11 @@
 
 | 编号 | 需求 | 优先级 | 依据/说明 |
 |---|---|---|---|
-| FR-4.1 | 每集群凭证 Secret(推荐)+ 全局兜底(env/默认 Secret) | P0 | 修正 CAPHW 全局单凭证/明文打印反例([CAPHW 架构分析报告](CAPHW架构分析报告.md) §7) |
+| FR-4.1 | 每集群凭证 Secret(推荐)+ 全局兜底(env/默认 Secret) | P0 | 修正 CAPHW 全局单凭证/明文打印反例([CAPHW 架构分析报告](archive/CAPHW架构分析报告.md) §7) |
 | FR-4.2 | 凭证缺失/非法 → CredentialsReady=False + 事件提示 | P0 | ACK Provider:凭证缺失程序拒绝启动(README) |
 | FR-4.3 | 凭证不写入日志/镜像/userdata;日志脱敏 | P0 | 安全要求;CAPHW 把 AK/SK 写入 cloud-config 为反例 |
 | FR-4.4 | 支持 CCE 集群委托 agencyName(cce_cluster_agency) | P1 | 官方委托说明(系统委托 cce_admin_trust 全量权限 vs cce_cluster_agency 最小权限) |
-| FR-4.5 | IAM 临时凭证/委托链支持 | P2 | CAPA identity 三层模型([CAPA 架构分析报告](CAPA架构分析报告.md) §6)为远期参考 |
+| FR-4.5 | IAM 临时凭证/委托链支持 | P2 | CAPA identity 三层模型([CAPA 架构分析报告](archive/CAPA架构分析报告.md) §6)为远期参考 |
 
 ### 3.5 网络
 
@@ -125,7 +125,7 @@
 |---|---|---|---|
 | FR-8.1 | CRD namespace-scoped;TypeMeta/ObjectMeta;`cluster.x-k8s.io/v1beta1(+v1beta2)` 版本标签 | P0 | Contract 硬性要求(用户聊天已确认清单) |
 | FR-8.2 | status.conditions 标准 Conditions + finalizer + paused 支持 | P0 | Contract + CAPA/CAPHW 模式 |
-| FR-8.3 | `metadata.yaml` + `infrastructure-components.yaml` + `cluster-template.yaml`,支持 `clusterctl init --infrastructure cce` | P0 | clusterctl 合约;ACK Provider 仅做到 describe/get kubeconfig 兼容、未做 init 打包([ACKProvider 架构分析报告](ACKProvider架构分析报告.md) §11),我们补齐;打包模式参照 CAPA |
+| FR-8.3 | `metadata.yaml` + `infrastructure-components.yaml` + `cluster-template.yaml`,支持 `clusterctl init --infrastructure cce` | P0 | clusterctl 合约;ACK Provider 仅做到 describe/get kubeconfig 兼容、未做 init 打包([ACKProvider 架构分析报告](archive/ACKProvider架构分析报告.md) §11),我们补齐;打包模式参照 CAPA |
 | FR-8.4 | webhook:defaulting + validating(网段不可变、category/mode 一致性、flavor 白名单、taints≤20、SG≤5) | P0 | 官方约束 + 对齐 ACK Provider webhook |
 | FR-8.5 | 发布到华为云官方组织与开发者社区;文档结构对齐 CAPA/CAPHW(docs/book) | P0 | 用户已确认的发布策略 |
 
@@ -241,8 +241,8 @@
 
 ### 8.2 工程与社区对齐注意(来自三仓库代码调研)
 
-11. **不要照抄 CAPHW 的"自建集群"实现**:其 VPC/子网/SG/NAT/EIP 自动创建、kubeadm userdata、cloud-config 明文 AK/SK 注入等全部不适用于 CCE 托管模式(可复用部分见 [CAPHW 架构分析报告](CAPHW架构分析报告.md) §12)。
-12. **不要照抄 ACK Provider 的 Crossplane/Upjet + Terraform 内嵌架构**:其 API 类型由 Terraform provider 生成、内嵌 terraform 运行时,复杂度高;本项目直接用华为云官方 Go SDK(cce/v3)更简单可控(见 [ACKProvider 架构分析报告](ACKProvider架构分析报告.md))。
+11. **不要照抄 CAPHW 的"自建集群"实现**:其 VPC/子网/SG/NAT/EIP 自动创建、kubeadm userdata、cloud-config 明文 AK/SK 注入等全部不适用于 CCE 托管模式(可复用部分见 [CAPHW 架构分析报告](archive/CAPHW架构分析报告.md) §12)。
+12. **不要照抄 ACK Provider 的 Crossplane/Upjet + Terraform 内嵌架构**:其 API 类型由 Terraform provider 生成、内嵌 terraform 运行时,复杂度高;本项目直接用华为云官方 Go SDK(cce/v3)更简单可控(见 [ACKProvider 架构分析报告](archive/ACKProvider架构分析报告.md))。
 13. **不要照抄 ACK/CAPHW 的"假 e2e"**:两者 e2e 均不触达真实云,是脚手架;本项目把"真实 CCE 冒烟"设为发布门槛。
 14. **凭证处理对标 CAPA 而非 CAPHW**:CAPHW 全局单凭证 + 明文打印 AK 是反例;每集群 Secret + 脱敏 + 最小 RBAC。
 15. **Contract 合规是"发布即验收"**:版本标签、conditions、finalizer、clusterctl 发布物缺一不可(用户聊天已确认清单);建议用 `clusterctl generate provider` 校验本地发布物。
@@ -254,7 +254,7 @@
 
 ### 8.3 需对接华为云 CCE 确认(索引)
 
-见 [附录 A](#附录-a需对接华为云-cce-验证事项索引) 与 [research-sources.md §4](research-sources.md)(14 项)。**正式问卷(中英双语,可直接发送):[华为云 CCE 对齐问卷](cce-verification-questionnaire.md)。在 M0 完成前,不进入 PoC 编码**。
+见 [附录 A](#附录-a需对接华为云-cce-验证事项索引) 与 [research-sources.md §4](research-sources.md)(14 项)。**正式问卷(中英双语,可直接发送):[华为云 CCE 对齐问卷](archive/cce-verification-questionnaire.md)。在 M0 完成前,不进入 PoC 编码**。
 
 ### 8.4 华为云仓库治理注意(2025 新增硬性要求)
 

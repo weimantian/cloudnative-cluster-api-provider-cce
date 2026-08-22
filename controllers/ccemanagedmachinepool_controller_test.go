@@ -984,3 +984,191 @@ func TestMachinePoolReconcileDeleteControlPlaneGone(t *testing.T) {
 		t.Error("expected finalizer removed")
 	}
 }
+
+// TestMachinePoolReconcileReplicasExternallyManaged verifies the CAPA-parity
+// reverse-sync: when the owning MachinePool carries the external-autoscaler
+// annotation, the provider does NOT scale, and instead patches the CAPI
+// MachinePool.spec.replicas to the cloud-side node count (mirrors CAPA
+// eks/nodegroup.go).
+func TestMachinePoolReconcileReplicasExternallyManaged(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-ext-managed"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+	cp.Status.ClusterID = "cluster-1"
+	cp.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+
+	// The MachinePool declares replicas=3 but is managed by an external
+	// autoscaler (cluster.x-k8s.io/replicas-managed-by).
+	mp := &clusterv1.MachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:        "test-cluster-pool-0",
+			Namespace:   ns,
+			Labels:      map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+			Annotations: map[string]string{clusterv1.ReplicasManagedByAnnotation: "true"},
+		},
+		Spec: clusterv1.MachinePoolSpec{
+			ClusterName: "test-cluster",
+			Replicas:    int32Ptr(3),
+			Template: clusterv1.MachineTemplateSpec{
+				Spec: clusterv1.MachineSpec{
+					ClusterName: "test-cluster",
+					Bootstrap: clusterv1.Bootstrap{
+						DataSecretName: stringPtr(""),
+					},
+					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+						APIGroup: infrav1beta1.GroupVersion.Group,
+						Kind:     "CCEManagedMachinePool",
+						Name:     "test-cluster-pool-0",
+					},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, mp); err != nil {
+		t.Fatalf("failed to create MachinePool: %v", err)
+	}
+	pool := &infrav1beta1.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+			ClusterName:  "test-cluster",
+			NodePoolName: "pool-0",
+			Flavor:       "c7.large.2",
+			Replicas:     3,
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create CCEManagedMachinePool: %v", err)
+	}
+
+	// The external autoscaler has scaled the cloud node pool to 5 nodes.
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeSvc.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
+		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", DesiredNodeCount: 5, NodeCount: 5, ActiveNodeCount: 5}}, nil
+	}
+	r := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pool)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+
+	// The CAPI MachinePool.spec.replicas must be reverse-synced to the
+	// cloud-side count (5), not the infra pool spec.
+	gotMP := &clusterv1.MachinePool{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(mp), gotMP); err != nil {
+		t.Fatalf("failed to get MachinePool: %v", err)
+	}
+	if gotMP.Spec.Replicas == nil || *gotMP.Spec.Replicas != 5 {
+		t.Errorf("expected MachinePool.spec.replicas reverse-synced to 5, got %v", gotMP.Spec.Replicas)
+	}
+	// The provider must not have issued a ScaleNodePool (it is not the
+	// source of truth for externally-managed pools).
+	if len(fakeSvc.ScaleCalls) != 0 {
+		t.Errorf("expected no ScaleNodePool for externally-managed pool, got %v", fakeSvc.ScaleCalls)
+	}
+}
+
+// TestMachinePoolReconcileNodeRepair verifies node auto-repair: when
+// spec.nodeRepair.enabled is set, Abnormal/Error nodes are reset via CCE
+// ResetNode (the CCE substitute for EKS NodeRepairConfig).
+func TestMachinePoolReconcileNodeRepair(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-node-repair"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+	cp.Status.ClusterID = "cluster-1"
+	cp.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+
+	mp := &clusterv1.MachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: clusterv1.MachinePoolSpec{
+			ClusterName: "test-cluster",
+			Replicas:    int32Ptr(1),
+			Template: clusterv1.MachineTemplateSpec{
+				Spec: clusterv1.MachineSpec{
+					ClusterName: "test-cluster",
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+						APIGroup: infrav1beta1.GroupVersion.Group,
+						Kind:     "CCEManagedMachinePool",
+						Name:     "test-cluster-pool-0",
+					},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, mp); err != nil {
+		t.Fatalf("failed to create MachinePool: %v", err)
+	}
+	pool := &infrav1beta1.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+			ClusterName:  "test-cluster",
+			NodePoolName: "pool-0",
+			Flavor:       "c7.large.2",
+			Replicas:     1,
+			NodeRepair:   &infrav1beta1.NodeRepairSpec{Enabled: true},
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create CCEManagedMachinePool: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeSvc.ListNodesWithStatusFn = func(_ context.Context, _ string) ([]cceService.NodeInfo, error) {
+		return []cceService.NodeInfo{
+			{UID: "node-abnormal-1", NodePoolID: "nodepool-1", Phase: "Abnormal"},
+			{UID: "node-error-1", NodePoolID: "nodepool-1", Phase: "Error"},
+			{UID: "node-active-1", NodePoolID: "nodepool-1", Phase: "Active"},
+			{UID: "node-other-pool-abnormal", NodePoolID: "nodepool-other", Phase: "Abnormal"},
+		}, nil
+	}
+	r := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pool)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+
+	// Only the Abnormal/Error nodes must be reset; Active nodes are left alone.
+	if len(fakeSvc.ResetNodeCalls) != 1 {
+		t.Fatalf("expected 1 ResetNode call, got %d", len(fakeSvc.ResetNodeCalls))
+	}
+	reset := fakeSvc.ResetNodeCalls[0]
+	if len(reset) != 2 || reset[0] != "node-abnormal-1" || reset[1] != "node-error-1" {
+		t.Errorf("expected [node-abnormal-1 node-error-1] to be reset, got %v", reset)
+	}
+}

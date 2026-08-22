@@ -24,7 +24,6 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/log/zap"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
-	"sigs.k8s.io/controller-runtime/pkg/webhook/conversion"
 
 	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
@@ -62,6 +61,7 @@ func main() {
 		machinePoolConcurrency  int
 		gcRegion                string
 		gcInterval              time.Duration
+		gcResourceTypes         []string
 	)
 
 	flag.StringVar(&metricsAddr, "metrics-bind-address", ":8080", "The address the metric endpoint binds to.")
@@ -85,6 +85,15 @@ func main() {
 		"Region for the external-resource GC orphan sweeper (empty disables GC even when the gate is on).")
 	flag.DurationVar(&gcInterval, "gc-interval", time.Hour,
 		"Interval between external-resource GC sweeps.")
+	flag.Func("gc-resource-types", "Comma-separated extra resource types for the GC orphan sweeper beyond clusters: eip,evs,vpc,nat (empty = clusters only).",
+		func(v string) error {
+			if v == "" {
+				gcResourceTypes = nil
+				return nil
+			}
+			gcResourceTypes = strings.Split(v, ",")
+			return nil
+		})
 	opts := zap.Options{Development: false}
 	opts.BindFlags(flag.CommandLine)
 	flag.Parse()
@@ -139,9 +148,10 @@ func main() {
 			ServiceFactory: func(regionID, ak, sk string) (cceService.Service, error) {
 				return cceService.NewClient(regionID, ak, sk)
 			},
-			Region:   gcRegion,
-			Interval: gcInterval,
-			Log:      ctrl.Log.WithName("garbage-collector"),
+			Region:        gcRegion,
+			Interval:      gcInterval,
+			ResourceTypes: gcResourceTypes,
+			Log:           ctrl.Log.WithName("garbage-collector"),
 		}); err != nil {
 			setupLog.Error(err, "unable to add garbage collector")
 			os.Exit(1)
@@ -185,11 +195,6 @@ func main() {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEClusterRoleIdentity")
 			os.Exit(1)
 		}
-		// CRD conversion webhook (v1beta1 <-> v1beta2). The scheme's
-		// conversion.Hub (v1beta2) + conversion.Convertible (v1beta1) types
-		// drive the conversion; the registry is empty so conversion falls
-		// back to the Hub/Convertible type assertions.
-		mgr.GetWebhookServer().Register("/convert", conversion.NewWebhookHandler(mgr.GetScheme(), conversion.NewRegistry()))
 	}
 
 	// +kubebuilder:scaffold:builder

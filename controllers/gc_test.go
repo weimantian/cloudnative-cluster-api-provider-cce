@@ -92,3 +92,73 @@ func TestGarbageCollectorSweep(t *testing.T) {
 		t.Errorf("expected cascade delete options, got %+v", d)
 	}
 }
+
+// TestGarbageCollectorSweepEipEvs verifies phase-2: owned-tagged EIP/EVS
+// whose Cluster CR is gone are deleted; tracked/non-owned ones are kept.
+func TestGarbageCollectorSweepEipEvs(t *testing.T) {
+	ctx := context.Background()
+	ns := "gc-test-eip-evsv"
+	createNamespace(t, ns)
+
+	cluster := &clusterv1.Cluster{}
+	cluster.Name = "tracked-cluster"
+	cluster.Namespace = ns
+	cluster.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{APIGroup: "infrastructure.cluster.x-k8s.io", Kind: "CCECluster", Name: "tracked-cluster"}
+	if err := k8sClient.Create(ctx, cluster); err != nil {
+		t.Fatalf("failed to create Cluster CR: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeSvc.ListEipsFn = func(_ context.Context) ([]cceService.EipRef, error) {
+		return []cceService.EipRef{
+			{ID: "eip-orphan", Address: "1.2.3.4", Tags: map[string]string{"cluster-api-provider-cce.cluster.orphan-1": "owned"}},
+			{ID: "eip-tracked", Address: "5.6.7.8", Tags: map[string]string{"cluster-api-provider-cce.cluster.tracked-cluster": "owned"}},
+			{ID: "eip-foreign", Address: "9.10.11.12", Tags: map[string]string{}},
+		}, nil
+	}
+	fakeSvc.ListVolumesFn = func(_ context.Context) ([]cceService.VolumeRef, error) {
+		return []cceService.VolumeRef{
+			{ID: "vol-orphan", Name: "orphan-disk", Tags: map[string]string{"cluster-api-provider-cce.cluster.orphan-1": "owned"}},
+			{ID: "vol-foreign", Name: "other-disk", Tags: map[string]string{}},
+		}, nil
+	}
+	fakeSvc.ListVpcsFn = func(_ context.Context) ([]cceService.VpcRef, error) {
+		return []cceService.VpcRef{
+			{ID: "vpc-orphan", Name: "orphan-vpc", Tags: map[string]string{"cluster-api-provider-cce.cluster.orphan-1": "owned"}},
+			{ID: "vpc-foreign", Name: "other-vpc", Tags: map[string]string{}},
+		}, nil
+	}
+	fakeSvc.ListNatGatewaysFn = func(_ context.Context) ([]cceService.NatGatewayRef, error) {
+		return []cceService.NatGatewayRef{
+			{ID: "nat-orphan", Name: "orphan-nat", Tags: map[string]string{"cluster-api-provider-cce.cluster.orphan-1": "owned"}},
+			{ID: "nat-tracked", Name: "tracked-nat", Tags: map[string]string{"cluster-api-provider-cce.cluster.tracked-cluster": "owned"}},
+		}, nil
+	}
+
+	gc := &GarbageCollector{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+		Region:        "cn-north-4",
+		Interval:      1,
+		ResourceTypes: []string{"eip", "evs", "vpc", "nat"},
+	}
+	t.Setenv("CLOUD_SDK_AK", "test-ak")
+	t.Setenv("CLOUD_SDK_SK", "test-sk")
+
+	gc.sweep(ctx)
+
+	if len(fakeSvc.DeletedEips) != 1 || fakeSvc.DeletedEips[0] != "eip-orphan" {
+		t.Errorf("expected only eip-orphan deleted, got %v", fakeSvc.DeletedEips)
+	}
+	if len(fakeSvc.DeletedVolumes) != 1 || fakeSvc.DeletedVolumes[0] != "vol-orphan" {
+		t.Errorf("expected only vol-orphan deleted, got %v", fakeSvc.DeletedVolumes)
+	}
+	if len(fakeSvc.DeletedVpcs) != 1 || fakeSvc.DeletedVpcs[0] != "vpc-orphan" {
+		t.Errorf("expected only vpc-orphan deleted, got %v", fakeSvc.DeletedVpcs)
+	}
+	if len(fakeSvc.DeletedNatGateways) != 1 || fakeSvc.DeletedNatGateways[0] != "nat-orphan" {
+		t.Errorf("expected only nat-orphan deleted (tracked kept), got %v", fakeSvc.DeletedNatGateways)
+	}
+}

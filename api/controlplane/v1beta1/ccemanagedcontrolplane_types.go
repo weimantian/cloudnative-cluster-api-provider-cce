@@ -43,6 +43,18 @@ type CCEManagedControlPlaneSpec struct {
 	// +optional
 	ServiceNetwork ServiceNetworkSpec `json:"serviceNetwork,omitempty"`
 
+	// Ipv6Enable enables IPv6 dual-stack for the cluster (maps to CCE
+	// spec.ipv6enable). Requires a VPC with IPv6 enabled; the service
+	// network IPv6CIDR must be set as well.
+	// +optional
+	Ipv6Enable *bool `json:"ipv6enable,omitempty"`
+
+	// EnableAutopilot creates an Autopilot (Serverless) cluster instead of a
+	// standard CCE/Turbo cluster (maps to CCE spec.enableAutopilot). Autopilot
+	// requires category Turbo and a compatible flavor (cce.autopilot.cluster).
+	// +optional
+	EnableAutopilot *bool `json:"enableAutopilot,omitempty"`
+
 	// CustomSan entries for the API server certificate.
 	// +optional
 	CustomSan []string `json:"customSan,omitempty"`
@@ -87,6 +99,27 @@ type CCEManagedControlPlaneSpec struct {
 	// create missing, update drift, remove those no longer listed.
 	// +optional
 	AccessPolicies []AccessPolicySpec `json:"accessPolicies,omitempty"`
+
+	// EncryptionConfig controls etcd secret encryption (mirrors CAPA EKS
+	// EncryptionConfig). Mode Default leaves etcd unencrypted; KMS enables
+	// envelope encryption with a KMS key configured at the account level.
+	// Immutable after creation.
+	// +optional
+	EncryptionConfig *EncryptionConfigSpec `json:"encryptionConfig,omitempty"`
+
+	// Authentication controls the API server authentication mode (mirrors
+	// CAPA EKS AccessConfig.AuthenticationMode). Default rbac;
+	// authenticating_proxy delegates auth to an external proxy (requires a
+	// CA + client cert + key). Immutable after creation.
+	// +optional
+	Authentication *AuthenticationSpec `json:"authentication,omitempty"`
+	// ControlPlaneEndpoint is the API server endpoint (host:port) of the
+	// managed control plane. It is backfilled by the controller once the CCE
+	// cluster is available and is read by CAPI to populate
+	// Cluster.spec.controlPlaneEndpoint — the CAPI control-plane contract
+	// reads spec.controlPlaneEndpoint, not status.
+	// +optional
+	ControlPlaneEndpoint *clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
 }
 
 // ControlPlaneLoggingSpec maps the CCE ClusterLogConfig (ttl_in_days +
@@ -193,6 +226,12 @@ type ContainerNetworkSpec struct {
 	// +optional
 	CIDR string `json:"cidr,omitempty"`
 
+	// CIDRs lists additional container network segments (secondary CIDR).
+	// Maps to model.ContainerNetwork.Cidrs; each entry becomes a
+	// model.ContainerCidr. Empty = single-CIDR cluster.
+	// +optional
+	CIDRs []string `json:"cidrs,omitempty"`
+
 	// ENISubnets for eni mode (Turbo).
 	// +optional
 	ENISubnets []string `json:"eniSubnets,omitempty"`
@@ -203,6 +242,11 @@ type ServiceNetworkSpec struct {
 	// CIDR of the service network.
 	// +optional
 	CIDR string `json:"cidr,omitempty"`
+
+	// IPv6CIDR of the service network (required when Ipv6Enable is true).
+	// Maps to model.ServiceNetwork.IPv6CIDR.
+	// +optional
+	IPv6CIDR string `json:"ipv6CIDR,omitempty"`
 }
 
 // EndpointAccessSpec controls API server access.
@@ -228,12 +272,59 @@ type BillingSpec struct {
 	Mode int32 `json:"mode,omitempty"`
 }
 
+// EncryptionConfigSpec controls etcd secret encryption (CCE spec.encryptionConfig).
+type EncryptionConfigSpec struct {
+	// Mode: "Default" (no encryption) or "KMS" (envelope encryption with a
+	// KMS key configured at the account level).
+	// +kubebuilder:validation:Enum=Default;KMS
+	// +kubebuilder:default=Default
+	// +optional
+	Mode string `json:"mode,omitempty"`
+}
+
+// AuthenticationSpec controls the API server authentication mode (CCE
+// spec.authentication).
+type AuthenticationSpec struct {
+	// Mode: "rbac" (default) or "authenticating_proxy".
+	// +kubebuilder:validation:Enum=rbac;authenticating_proxy
+	// +kubebuilder:default=rbac
+	// +optional
+	Mode string `json:"mode,omitempty"`
+
+	// AuthenticatingProxy config (required when Mode=authenticating_proxy).
+	// +optional
+	AuthenticatingProxy *AuthenticatingProxySpec `json:"authenticatingProxy,omitempty"`
+}
+
+// AuthenticatingProxySpec declares the x509 CA + client cert/key for the
+// authenticating_proxy mode. All fields are PEM-encoded; the service layer
+// base64-encodes them for the CCE API.
+type AuthenticatingProxySpec struct {
+	// CA certificate (PEM) of the proxy.
+	// +optional
+	CA string `json:"ca,omitempty"`
+
+	// Client certificate (PEM) signed by the CA.
+	// +optional
+	Cert string `json:"cert,omitempty"`
+
+	// Private key (PEM, unencrypted) matching the client certificate.
+	// +optional
+	PrivateKey string `json:"privateKey,omitempty"`
+}
+
 // CCEManagedControlPlaneStatus defines the observed state of
 // CCEManagedControlPlane.
 type CCEManagedControlPlaneStatus struct {
 	// Ready indicates the CCE control plane is available.
 	// +optional
 	Ready bool `json:"ready,omitempty"`
+	// Initialization reports control-plane initialization state.
+	// ControlPlaneInitialized mirrors the CAPI ControlPlane contract path
+	// status.initialization.controlPlaneInitialized, which the CAPI Cluster
+	// controller gates Cluster.Status.Initialization.ControlPlaneInitialized on.
+	// +optional
+	Initialization ControlPlaneInitializationStatus `json:"initialization,omitempty"`
 
 	// Initialized indicates the kubeconfig Secret has been generated.
 	// +optional
@@ -264,6 +355,16 @@ type CCEManagedControlPlaneStatus struct {
 	// Conditions defines current service state.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`
+}
+
+// ControlPlaneInitializationStatus reports the initialization state of the
+// control plane. ControlPlaneInitialized is the CAPI ControlPlane contract
+// field (status.initialization.controlPlaneInitialized).
+type ControlPlaneInitializationStatus struct {
+	// ControlPlaneInitialized indicates the control plane has been initialized
+	// (CAPI contract).
+	// +optional
+	ControlPlaneInitialized bool `json:"controlPlaneInitialized,omitempty"`
 }
 
 // +kubebuilder:object:root=true

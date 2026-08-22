@@ -11,7 +11,9 @@ package fakes
 
 import (
 	"context"
+	"fmt"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
 )
@@ -32,6 +34,9 @@ type FakeCCEService struct {
 	UpdateNodePoolFn         func(ctx context.Context, in cceService.UpdateNodePoolInput) error
 	DeleteNodePoolFn         func(ctx context.Context, clusterID, nodePoolID string) error
 	ListNodePoolsFn          func(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error)
+	ListNodesFn              func(ctx context.Context, clusterID string) ([]string, error)
+	ListNodesWithStatusFn    func(ctx context.Context, clusterID string) ([]cceService.NodeInfo, error)
+	ResetNodeFn              func(ctx context.Context, clusterID string, nodeIDs []string) error
 	GetUpgradeInfoFn         func(ctx context.Context, clusterID string) (*cceService.UpgradeInfo, error)
 	StartUpgradeFn           func(ctx context.Context, clusterID, targetVersion string) (string, error)
 	ShowUpgradeTaskFn        func(ctx context.Context, clusterID, taskID string) (string, error)
@@ -49,6 +54,22 @@ type FakeCCEService struct {
 	UpdateAccessPolicyFn     func(ctx context.Context, policyID string, in cceService.AccessPolicyInput) error
 	ListAccessPoliciesFn     func(ctx context.Context) ([]cceService.AccessPolicyInfo, error)
 	DeleteAccessPolicyFn     func(ctx context.Context, policyID string) error
+	ListEipsFn               func(ctx context.Context) ([]cceService.EipRef, error)
+	DeleteEipFn              func(ctx context.Context, eipID string) error
+	ListVolumesFn            func(ctx context.Context) ([]cceService.VolumeRef, error)
+	DeleteVolumeFn           func(ctx context.Context, volumeID string) error
+	ListVpcsFn               func(ctx context.Context) ([]cceService.VpcRef, error)
+	DeleteVpcFn              func(ctx context.Context, vpcID string) error
+	ListNatGatewaysFn        func(ctx context.Context) ([]cceService.NatGatewayRef, error)
+	DeleteNatGatewayFn       func(ctx context.Context, gatewayID string) error
+	// DeletedEips / DeletedVolumes record GC deletions for assertions.
+	DeletedEips    []string
+	DeletedVolumes []string
+	// DeletedVpcs / DeletedNatGateways record GC deletions for assertions.
+	DeletedVpcs        []string
+	DeletedNatGateways []string
+	// ResetNodeCalls records node-repair resets for assertions.
+	ResetNodeCalls [][]string
 
 	// Records for assertions.
 	CreatedClusters      []cceService.CreateClusterInput
@@ -110,6 +131,34 @@ func NewFakeCCEService() *FakeCCEService {
 	f.ListClustersFn = func(_ context.Context) ([]cceService.ClusterRef, error) {
 		return []cceService.ClusterRef{}, nil
 	}
+	f.ListEipsFn = func(_ context.Context) ([]cceService.EipRef, error) {
+		return []cceService.EipRef{}, nil
+	}
+	f.DeleteEipFn = func(_ context.Context, eipID string) error {
+		f.DeletedEips = append(f.DeletedEips, eipID)
+		return nil
+	}
+	f.ListVolumesFn = func(_ context.Context) ([]cceService.VolumeRef, error) {
+		return []cceService.VolumeRef{}, nil
+	}
+	f.DeleteVolumeFn = func(_ context.Context, volumeID string) error {
+		f.DeletedVolumes = append(f.DeletedVolumes, volumeID)
+		return nil
+	}
+	f.ListVpcsFn = func(_ context.Context) ([]cceService.VpcRef, error) {
+		return []cceService.VpcRef{}, nil
+	}
+	f.DeleteVpcFn = func(_ context.Context, vpcID string) error {
+		f.DeletedVpcs = append(f.DeletedVpcs, vpcID)
+		return nil
+	}
+	f.ListNatGatewaysFn = func(_ context.Context) ([]cceService.NatGatewayRef, error) {
+		return []cceService.NatGatewayRef{}, nil
+	}
+	f.DeleteNatGatewayFn = func(_ context.Context, gatewayID string) error {
+		f.DeletedNatGateways = append(f.DeletedNatGateways, gatewayID)
+		return nil
+	}
 	f.CreateNodePoolFn = func(_ context.Context, in cceService.CreateNodePoolInput) (string, error) {
 		f.CreatedNodePools = append(f.CreatedNodePools, in)
 		return "nodepool-1", nil
@@ -147,6 +196,16 @@ func NewFakeCCEService() *FakeCCEService {
 	f.DeleteNodePoolFn = func(_ context.Context, _, _ string) error { return nil }
 	f.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
 		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", DesiredNodeCount: 3, NodeCount: 3, ActiveNodeCount: 3}}, nil
+	}
+	f.ListNodesFn = func(_ context.Context, _ string) ([]string, error) {
+		return nil, nil
+	}
+	f.ListNodesWithStatusFn = func(_ context.Context, _ string) ([]cceService.NodeInfo, error) {
+		return nil, nil
+	}
+	f.ResetNodeFn = func(_ context.Context, _ string, nodeIDs []string) error {
+		f.ResetNodeCalls = append(f.ResetNodeCalls, nodeIDs)
+		return nil
 	}
 	f.GetUpgradeInfoFn = func(_ context.Context, _ string) (*cceService.UpgradeInfo, error) {
 		return &cceService.UpgradeInfo{CurrentVersion: "v1.30.0", TargetVersions: []string{"v1.31.0"}}, nil
@@ -202,6 +261,65 @@ func (f *FakeNetworkValidator) Validate(_ context.Context, _ network.ValidateInp
 	return f.Issues, nil
 }
 
+// FakeNetworkManager is a scriptable network.ManagerInterface for the
+// managed-network (VPC/subnets/NAT) reconciler paths.
+type FakeNetworkManager struct {
+	// ReconcileVpcFn / ReconcileSubnetsFn / ReconcileNatGatewayFn override the
+	// corresponding step; when nil the step backfills deterministic ResourceIDs.
+	ReconcileVpcFn        func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
+	ReconcileSubnetsFn    func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
+	ReconcileNatGatewayFn func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
+	// DeleteFn is called by DeleteNetwork; when nil, deletion succeeds.
+	DeleteFn func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
+	// ReconcileCalls counts the total step invocations (Vpc+Subnets+NatGateway).
+	ReconcileCalls int
+	DeleteCalls    int
+}
+
+func (f *FakeNetworkManager) ReconcileVpc(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {
+	f.ReconcileCalls++
+	if f.ReconcileVpcFn != nil {
+		return f.ReconcileVpcFn(ctx, spec, clusterName)
+	}
+	if spec.VPC.ID == "" && spec.VPC.ResourceID == "" {
+		spec.VPC.ResourceID = "vpc-managed-fake"
+	}
+	return nil
+}
+
+func (f *FakeNetworkManager) ReconcileSubnets(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {
+	f.ReconcileCalls++
+	if f.ReconcileSubnetsFn != nil {
+		return f.ReconcileSubnetsFn(ctx, spec, clusterName)
+	}
+	for i := range spec.Subnets {
+		if spec.Subnets[i].ID == "" && spec.Subnets[i].ResourceID == "" {
+			spec.Subnets[i].ResourceID = fmt.Sprintf("subnet-managed-fake-%d", i)
+		}
+	}
+	return nil
+}
+
+func (f *FakeNetworkManager) ReconcileNatGateway(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {
+	f.ReconcileCalls++
+	if f.ReconcileNatGatewayFn != nil {
+		return f.ReconcileNatGatewayFn(ctx, spec, clusterName)
+	}
+	if spec.NatGateway != nil && spec.NatGateway.ResourceID == "" {
+		spec.NatGateway.ResourceID = "nat-fake"
+		spec.NatGateway.EIPResourceID = "eip-fake"
+	}
+	return nil
+}
+
+func (f *FakeNetworkManager) DeleteNetwork(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {
+	f.DeleteCalls++
+	if f.DeleteFn != nil {
+		return f.DeleteFn(ctx, spec, clusterName)
+	}
+	return nil
+}
+
 // --- Service interface methods ---
 
 // ShowCluster implements cceService.Service.
@@ -234,6 +352,46 @@ func (f *FakeCCEService) ListClusters(ctx context.Context) ([]cceService.Cluster
 	return f.ListClustersFn(ctx)
 }
 
+// ListEips implements cceService.Service.
+func (f *FakeCCEService) ListEips(ctx context.Context) ([]cceService.EipRef, error) {
+	return f.ListEipsFn(ctx)
+}
+
+// DeleteEip implements cceService.Service.
+func (f *FakeCCEService) DeleteEip(ctx context.Context, eipID string) error {
+	return f.DeleteEipFn(ctx, eipID)
+}
+
+// ListVolumes implements cceService.Service.
+func (f *FakeCCEService) ListVolumes(ctx context.Context) ([]cceService.VolumeRef, error) {
+	return f.ListVolumesFn(ctx)
+}
+
+// DeleteVolume implements cceService.Service.
+func (f *FakeCCEService) DeleteVolume(ctx context.Context, volumeID string) error {
+	return f.DeleteVolumeFn(ctx, volumeID)
+}
+
+// ListVpcs implements cceService.Service.
+func (f *FakeCCEService) ListVpcs(ctx context.Context) ([]cceService.VpcRef, error) {
+	return f.ListVpcsFn(ctx)
+}
+
+// DeleteVpc implements cceService.Service.
+func (f *FakeCCEService) DeleteVpc(ctx context.Context, vpcID string) error {
+	return f.DeleteVpcFn(ctx, vpcID)
+}
+
+// ListNatGateways implements cceService.Service.
+func (f *FakeCCEService) ListNatGateways(ctx context.Context) ([]cceService.NatGatewayRef, error) {
+	return f.ListNatGatewaysFn(ctx)
+}
+
+// DeleteNatGateway implements cceService.Service.
+func (f *FakeCCEService) DeleteNatGateway(ctx context.Context, gatewayID string) error {
+	return f.DeleteNatGatewayFn(ctx, gatewayID)
+}
+
 // CreateNodePool implements cceService.Service.
 func (f *FakeCCEService) CreateNodePool(ctx context.Context, in cceService.CreateNodePoolInput) (string, error) {
 	return f.CreateNodePoolFn(ctx, in)
@@ -257,6 +415,21 @@ func (f *FakeCCEService) DeleteNodePool(ctx context.Context, clusterID, nodePool
 // ListNodePools implements cceService.Service.
 func (f *FakeCCEService) ListNodePools(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error) {
 	return f.ListNodePoolsFn(ctx, clusterID)
+}
+
+// ListNodes implements cceService.Service.
+func (f *FakeCCEService) ListNodes(ctx context.Context, clusterID string) ([]string, error) {
+	return f.ListNodesFn(ctx, clusterID)
+}
+
+// ListNodesWithStatus implements cceService.Service.
+func (f *FakeCCEService) ListNodesWithStatus(ctx context.Context, clusterID string) ([]cceService.NodeInfo, error) {
+	return f.ListNodesWithStatusFn(ctx, clusterID)
+}
+
+// ResetNode implements cceService.Service.
+func (f *FakeCCEService) ResetNode(ctx context.Context, clusterID string, nodeIDs []string) error {
+	return f.ResetNodeFn(ctx, clusterID, nodeIDs)
 }
 
 // GetUpgradeInfo implements cceService.Service.

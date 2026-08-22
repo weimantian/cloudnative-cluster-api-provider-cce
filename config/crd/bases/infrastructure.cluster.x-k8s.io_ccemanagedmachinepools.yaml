@@ -116,6 +116,18 @@ spec:
                   - size
                   type: object
                 type: array
+              dedicatedHostId:
+                description: |-
+                  DedicatedHostId is the dedicated host (专属主机) ID for the nodes
+                  (nodeTemplate.dedicatedHostId). Only effective for dedicated-host
+                  flavors.
+                type: string
+              ecsGroupId:
+                description: |-
+                  EcsGroupId is the ECS server group ID (云服务器组) for the nodes
+                  (nodeTemplate.ecsGroupId). Used to place nodes according to the group's
+                  affinity/anti-affinity policy.
+                type: string
               extensionScaleGroups:
                 description: |-
                   ExtensionScaleGroups extends the node pool into additional availability
@@ -141,6 +153,12 @@ spec:
                   - name
                   type: object
                 type: array
+              faultDomain:
+                description: |-
+                  FaultDomain is the fault domain (故障域) for the nodes
+                  (nodeTemplate.faultDomain). Enables single-AZ multi-fault-domain
+                  placement.
+                type: string
               flavor:
                 description: Flavor is the ECS instance flavor of the nodes (nodeTemplate.flavor).
                 type: string
@@ -152,12 +170,50 @@ spec:
               nodePoolName:
                 description: NodePoolName is the CCE node pool name.
                 type: string
+              nodeRepair:
+                description: |-
+                  NodeRepair enables node auto-repair (mirrors CAPA NodeRepairConfig.
+                  Enabled). CCE has no EKS-style auto-repair switch, so the provider
+                  detects Abnormal/Error nodes and resets them via CCE ResetNode (a
+                  destructive operation - reset clears the node's data volumes). Off by
+                  default.
+                properties:
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled enables auto-repair: the provider detects Abnormal/Error nodes
+                      and resets them via CCE ResetNode.
+                    type: boolean
+                type: object
               os:
                 description: |-
                   OS image family of the nodes (nodeTemplate.os), e.g.
                   "Huawei Cloud EulerOS 2.0". Required by the webhook (official
                   CreateNodePool requires os unless a private image is used).
                 type: string
+              postInstall:
+                description: |-
+                  PostInstall is the base64-encoded script run after node installation
+                  (nodeTemplate.extendParam["alpha.cce/postInstall"]). Mirrors the CCE
+                  node lifecycle postInstall hook; the value must already be base64-
+                  encoded.
+                type: string
+              preInstall:
+                description: |-
+                  PreInstall is the base64-encoded script run before node installation
+                  (nodeTemplate.extendParam["alpha.cce/preInstall"]). Mirrors the CCE node
+                  lifecycle preInstall hook; the value must already be base64-encoded.
+                type: string
+              providerIDList:
+                description: |-
+                  ProviderIDList is the list of provider IDs of the nodes in the pool,
+                  populated by the controller so Cluster API can fill
+                  MachinePool.status.nodeRefs (and the deprecated readyReplicas). Each
+                  entry is a CCE node UID (metadata.uid), matching the spec.providerID
+                  of the corresponding workload node. The controller owns this field.
+                items:
+                  type: string
+                type: array
               replicas:
                 description: |-
                   Replicas is the desired node count (maps to the node pool expected count).
@@ -226,6 +282,12 @@ spec:
                     minimum: 1
                     type: integer
                 type: object
+              waitPostInstallFinish:
+                description: |-
+                  WaitPostInstallFinish blocks pod scheduling until the post-install
+                  script finishes (nodeTemplate.waitPostInstallFinish). Mirrors CCE's
+                  NodeLifecycleConfig waitPostInstallFinish.
+                type: boolean
             required:
             - clusterName
             - flavor
@@ -442,6 +504,18 @@ spec:
                   - size
                   type: object
                 type: array
+              dedicatedHostId:
+                description: |-
+                  DedicatedHostId is the dedicated host (专属主机) ID for the nodes
+                  (nodeTemplate.dedicatedHostId). Only effective for dedicated-host
+                  flavors.
+                type: string
+              ecsGroupId:
+                description: |-
+                  EcsGroupId is the ECS server group ID (云服务器组) for the nodes
+                  (nodeTemplate.ecsGroupId). Used to place nodes according to the group's
+                  affinity/anti-affinity policy.
+                type: string
               extensionScaleGroups:
                 description: |-
                   ExtensionScaleGroups extends the node pool into additional availability
@@ -467,6 +541,12 @@ spec:
                   - name
                   type: object
                 type: array
+              faultDomain:
+                description: |-
+                  FaultDomain is the fault domain (故障域) for the nodes
+                  (nodeTemplate.faultDomain). Enables single-AZ multi-fault-domain
+                  placement.
+                type: string
               flavor:
                 description: Flavor is the ECS instance flavor of the nodes (nodeTemplate.flavor).
                 type: string
@@ -478,12 +558,48 @@ spec:
               nodePoolName:
                 description: NodePoolName is the CCE node pool name.
                 type: string
+              nodeRepair:
+                description: |-
+                  NodeRepair enables node auto-repair (mirrors CAPA NodeRepairConfig.
+                  Enabled). CCE has no EKS-style auto-repair switch, so the provider
+                  detects Abnormal/Error nodes and resets them via CCE ResetNode.
+                properties:
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled enables auto-repair: the provider detects Abnormal/Error nodes
+                      and resets them via CCE ResetNode.
+                    type: boolean
+                type: object
               os:
                 description: |-
                   OS image family of the nodes (nodeTemplate.os), e.g.
                   "Huawei Cloud EulerOS 2.0". Required by the webhook (official
                   CreateNodePool requires os unless a private image is used).
                 type: string
+              postInstall:
+                description: |-
+                  PostInstall is the base64-encoded script run after node installation
+                  (nodeTemplate.extendParam["alpha.cce/postInstall"]). Mirrors the CCE
+                  node lifecycle postInstall hook; the value must already be base64-
+                  encoded.
+                type: string
+              preInstall:
+                description: |-
+                  PreInstall is the base64-encoded script run before node installation
+                  (nodeTemplate.extendParam["alpha.cce/preInstall"]). Mirrors the CCE node
+                  lifecycle preInstall hook; the value must already be base64-encoded.
+                type: string
+              providerIDList:
+                description: |-
+                  ProviderIDList is the list of provider IDs of the nodes in the pool,
+                  populated by the controller so Cluster API can fill
+                  MachinePool.status.nodeRefs (and the deprecated readyReplicas). Each
+                  entry is a CCE node UID (metadata.uid), matching the spec.providerID
+                  of the corresponding workload node. The controller owns this field.
+                items:
+                  type: string
+                type: array
               replicas:
                 description: |-
                   Replicas is the desired node count (maps to the node pool expected count).
@@ -552,6 +668,12 @@ spec:
                     minimum: 1
                     type: integer
                 type: object
+              waitPostInstallFinish:
+                description: |-
+                  WaitPostInstallFinish blocks pod scheduling until the post-install
+                  script finishes (nodeTemplate.waitPostInstallFinish). Mirrors CCE's
+                  NodeLifecycleConfig waitPostInstallFinish.
+                type: boolean
             required:
             - clusterName
             - flavor
