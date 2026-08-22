@@ -68,6 +68,11 @@
 | EIP tag 格式 | 打 tag `{Key,Value}` → ListPublicips 返回 `"key=value"`（等号），匹配 `parseKVTags` ✅ 实测闭环 |
 | NAT tag 格式 | 推断星号（华为云 `Tags *[]string` 统一约定）⚠️ 未实测——账户余额冻结 `CBC.30060005 "Frozen CbcDeposit Failed!"` |
 
+**F. 限流中间件实现（token bucket，2026-08-23）**：
+- 客户端主动限流：`throttleRoundTripper` 包裹 `http.DefaultTransport`，读（GET/HEAD）20 ops/s burst 100，写（其余方法）10 req/min burst 10。
+- 接线：`internal/services/network/manager.go` 统一注入限流 transport；`throttle.go` + `throttle_test.go`（5 用例）。
+- 依赖：`golang.org/x/time` 提升为直接依赖。
+
 ---
 
 ## 二、文档关系与状态澄清（重要）
@@ -83,7 +88,7 @@
 
 ## 三、当前状态速览
 
-**骨架 + 大部分外围已对齐 CAPA EKS managed 子集；9 项修复（P0/P1/P2）+ 二次审计 3 个 bug + 4 项对标补充全部落地并测试通过。剩余差距集中在「云能力缺失需决策」「余额冻结待实测」「远期调研」三类，无阻塞性缺陷。**
+**骨架 + 大部分外围已对齐 CAPA EKS managed 子集；9 项修复（P0/P1/P2）+ 二次审计 3 个 bug + 4 项对标补充 + 限流中间件全部落地并测试通过。剩余差距集中在「余额冻结待实测」「MHC 生态验证」两类，无阻塞性缺陷。**
 
 ---
 
@@ -165,7 +170,7 @@
 | e2e（Ginkgo + flavors） | ✅（本次 #9）build tag `e2e` |
 | clusterctl 打包 | ✅ metadata.yaml + components |
 | GC（tag 扫描） | ✅（本次 #2 + #2-ext）孤儿集群 + EIP/EVS/VPC/NAT 扫删 |
-| 限流中间件（token bucket） | 🟡 退避 requeue（无主动限流） |
+| 限流中间件（token bucket） | ✅（本次） | 客户端主动限流：`throttleRoundTripper` 包裹 `http.DefaultTransport`，读（GET/HEAD）20 ops/s burst 100、写（其余）10 req/min burst 10 |
 | SSA patch / ClusterCacheTracker | ⚪ 未引入（CCE 场景影响小） |
 
 ### 4.6 feature gates
@@ -183,7 +188,7 @@
 | 3 | 真实云冒烟（managed VPC/NAT 一键建删、GC EIP/EVS/VPC/NAT、KMS/authenticating_proxy、ResetNode 正向） | 依赖余额 | ⏳ 余额冻结 + 需账号操作 |
 | 4 | NAT 默认建 vs 显式 enabled | 产品决策 | ✅ 已决策：对标 CAPA 默认建，去掉 Enabled 字段（见 §七 #1、§八 8.2） |
 | 5 | providerID 格式 + MHC 生态集成验证 | 生态验证 | ✅ providerID 已修正为 huaweicloud:///<serverId>（见 §七 #3、§八 8.1）；MHC 生态消费验证仍 ⏳ |
-| 6 | 限流中间件（token bucket） | 工程化 | 🟡 低优先级 |
+| 6 | 限流中间件（token bucket） | 工程化 | ✅ 已实现：客户端 token bucket 主动限流（`throttle.go`，读 20 ops/s burst 100、写 10 req/min burst 10） |
 | 7 | Fargate/Autopilot 超节点（#10） | 远期 | ✅ 已实现：`spec.enableAutopilot` 透传（无需 hypernode-research） |
 
 ---
