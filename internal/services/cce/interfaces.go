@@ -478,9 +478,10 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	DeleteNodePool(ctx context.Context, clusterID, nodePoolID string) error
 	// ListNodePools lists the node pools of a cluster.
 	ListNodePools(ctx context.Context, clusterID string) ([]NodePoolInfo, error)
-	// ListNodes lists the provider IDs (node UIDs) of all nodes in a cluster.
-	// Each UID matches the spec.providerID of the corresponding workload node,
-	// which Cluster API consumes to fill MachinePool.status.nodeRefs.
+	// ListNodes lists the provider IDs of all nodes in a cluster. Each entry
+	// has the form huaweicloud:///<serverId>, matching the spec.providerID of
+	// the corresponding workload node, which Cluster API consumes to fill
+	// MachinePool.status.nodeRefs.
 	ListNodes(ctx context.Context, clusterID string) ([]string, error)
 	// ListNodesWithStatus lists the nodes of a cluster with their phase (used
 	// by node auto-repair to find Abnormal/Error nodes).

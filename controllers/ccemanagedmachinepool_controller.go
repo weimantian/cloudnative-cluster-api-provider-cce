@@ -314,16 +314,17 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 
 	// Populate spec.providerIDList so Cluster API can fill
 	// MachinePool.status.nodeRefs (and the deprecated readyReplicas). The
-	// controller owns this field, mirroring the CCE node UIDs. Sorting keeps
-	// the slice stable across reconciles to avoid spurious spec churn.
-	nodeUIDs, err := svc.ListNodes(ctx, clusterID)
+	// controller owns this field, mirroring the huaweicloud:///<serverId>
+	// provider IDs. Sorting keeps the slice stable across reconciles to avoid
+	// spurious spec churn.
+	providerIDs, err := svc.ListNodes(ctx, clusterID)
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
-	slices.Sort(nodeUIDs)
-	pool.Spec.ProviderIDList = nodeUIDs
+	slices.Sort(providerIDs)
+	pool.Spec.ProviderIDList = providerIDs
 
 	// Node auto-repair (mirrors CAPA NodeRepairConfig.Enabled). CCE has no
 	// EKS-style auto-repair switch, so the provider drives repair directly:

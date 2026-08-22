@@ -1035,10 +1035,10 @@ func (s *Client) ListNodePools(_ context.Context, clusterID string) ([]NodePoolI
 	return out, nil
 }
 
-// ListNodes implements Service. It returns the provider IDs (node UIDs) of
-// all nodes in the cluster. Each UID matches the spec.providerID of the
-// corresponding workload node, which Cluster API uses to fill
-// MachinePool.status.nodeRefs.
+// ListNodes implements Service. It returns the provider IDs of all nodes in
+// the cluster. Each entry has the form huaweicloud:///<serverId>, matching
+// the spec.providerID of the corresponding workload node, which Cluster API
+// uses to fill MachinePool.status.nodeRefs.
 func (s *Client) ListNodes(_ context.Context, clusterID string) ([]string, error) {
 	resp, err := s.cce.ListNodes(&model.ListNodesRequest{ClusterId: clusterID})
 	if err != nil {

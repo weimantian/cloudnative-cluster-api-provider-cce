@@ -60,8 +60,9 @@ type CCEManagedMachinePoolSpec struct {
 	// ProviderIDList is the list of provider IDs of the nodes in the pool,
 	// populated by the controller so Cluster API can fill
 	// MachinePool.status.nodeRefs (and the deprecated readyReplicas). Each
-	// entry is a CCE node UID (metadata.uid), matching the spec.providerID
-	// of the corresponding workload node. The controller owns this field.
+	// entry has the form huaweicloud:///<serverId>, matching the
+	// spec.providerID of the corresponding workload node. The controller owns
+	// this field.
 	// +optional
 	ProviderIDList []string `json:"providerIDList,omitempty"`
 
