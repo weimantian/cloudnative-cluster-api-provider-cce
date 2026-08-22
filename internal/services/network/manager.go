@@ -10,6 +10,7 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"net/http"
 	"net/netip"
 	"time"
 
@@ -113,6 +114,7 @@ func NewManager(regionID, ak, sk string) (*Manager, error) {
 		return nil, errors.Wrap(err, "failed to build network credentials")
 	}
 	httpConfig := config.DefaultHttpConfig()
+	httpConfig.WithHttpRoundTripper(newThrottleRoundTripper(http.DefaultTransport, newOperationLimiter()))
 
 	vpcHC, err := vpcv2.VpcClientBuilder().WithRegion(region).WithCredential(cred).WithHttpConfig(httpConfig).SafeBuild()
 	if err != nil {
