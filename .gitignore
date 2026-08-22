@@ -20,9 +20,22 @@ coverage.txt
 !.env.example
 *.pem
 *.key
+*.kubeconfig
 
 # ===== Generated Kubernetes manifests (see Makefile targets) =====
 config/default/generated/
 _artifacts/
 /smoke-setup
 /bin/
+
+# ===== Agent orchestration state (never commit) =====
+.omo/
+
+# ===== Local dev helper binaries (compiled scripts) =====
+/bind-eip
+/cleanup-hw
+/cleanup-smoke-clusters
+/create-mgmt-cluster
+/create-subnet
+/nat-egress
+/regtest
