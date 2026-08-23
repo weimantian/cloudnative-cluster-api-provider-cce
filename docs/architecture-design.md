@@ -119,7 +119,7 @@
 ### 3.2 `CCECluster`(InfraCluster)
 
 ```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
 kind: CCECluster
 metadata:
   name: my-cluster
@@ -156,7 +156,7 @@ status:
 ### 3.3 `CCEManagedControlPlane`(ControlPlane)
 
 ```yaml
-apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
 kind: CCEManagedControlPlane
 metadata:
   name: my-cluster-control-plane
@@ -201,7 +201,7 @@ status:
 ### 3.4 `CCEManagedMachinePool`(InfraMachinePool)
 
 ```yaml
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
 kind: CCEManagedMachinePool
 metadata:
   name: my-cluster-pool-0
@@ -455,8 +455,8 @@ status:
 ```
 cce-provider-for-cluster-api/
 ├── api/
-│   ├── infrastructure/v1beta1/     # CCECluster, CCEMachine(二期), CCEMachineTemplate(二期)
-│   ├── controlplane/v1beta1/       # CCEManagedControlPlane
+│   ├── infrastructure/v1beta2/     # CCECluster, CCEMachine(二期), CCEMachineTemplate(二期)
+│   ├── controlplane/v1beta2/       # CCEManagedControlPlane
 │   └── common/                     # 共享类型(VPC/Subnet/Tags 等)
 ├── controllers/                    # CCECluster / CCEManagedControlPlane / CCEManagedMachinePool
 ├── internal/
