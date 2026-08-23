@@ -317,7 +317,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	// controller owns this field, mirroring the huaweicloud:///<serverId>
 	// provider IDs. Sorting keeps the slice stable across reconciles to avoid
 	// spurious spec churn.
-	providerIDs, err := svc.ListNodes(ctx, clusterID)
+	providerIDs, err := svc.ListNodes(ctx, clusterID, pool.Status.NodePoolID)
 	if err != nil {
 		conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())

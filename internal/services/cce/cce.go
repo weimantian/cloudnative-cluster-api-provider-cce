@@ -587,7 +587,11 @@ func (s *Client) ListNatGateways(ctx context.Context) ([]NatGatewayRef, error) {
 // (the platform rejects deleting a gateway that still has SNAT rules).
 func (s *Client) DeleteNatGateway(ctx context.Context, gatewayID string) error {
 	ids := []string{gatewayID}
-	if rules, err := s.nat.ListNatGatewaySnatRules(&natmodel.ListNatGatewaySnatRulesRequest{NatGatewayId: &ids}); err == nil && rules.SnatRules != nil {
+	rules, err := s.nat.ListNatGatewaySnatRules(&natmodel.ListNatGatewaySnatRulesRequest{NatGatewayId: &ids})
+	if err != nil && !clouderrors.IsNotFound(err) {
+		return errors.Wrap(err, "ListNatGatewaySnatRules failed")
+	}
+	if err == nil && rules.SnatRules != nil {
 		for _, r := range *rules.SnatRules {
 			if _, derr := s.nat.DeleteNatGatewaySnatRule(&natmodel.DeleteNatGatewaySnatRuleRequest{
 				NatGatewayId: gatewayID,
@@ -597,7 +601,7 @@ func (s *Client) DeleteNatGateway(ctx context.Context, gatewayID string) error {
 			}
 		}
 	}
-	_, err := s.nat.DeleteNatGateway(&natmodel.DeleteNatGatewayRequest{NatGatewayId: gatewayID})
+	_, err = s.nat.DeleteNatGateway(&natmodel.DeleteNatGatewayRequest{NatGatewayId: gatewayID})
 	if err != nil && !clouderrors.IsNotFound(err) {
 		return errors.Wrapf(err, "DeleteNatGateway %s failed", gatewayID)
 	}
@@ -622,10 +626,10 @@ func (s *Client) CreateAccessPolicy(ctx context.Context, in AccessPolicyInput) (
 	if err != nil {
 		return "", errors.Wrap(err, "CreateAccessPolicy failed")
 	}
-	if resp.PolicyId != nil {
-		return *resp.PolicyId, nil
+	if resp.PolicyId == nil {
+		return "", errors.New("CreateAccessPolicy returned no policy id")
 	}
-	return "", nil
+	return *resp.PolicyId, nil
 }
 
 // UpdateAccessPolicy implements Service.
@@ -672,7 +676,7 @@ func (s *Client) ListAccessPolicies(ctx context.Context) ([]AccessPolicyInfo, er
 // DeleteAccessPolicy implements Service.
 func (s *Client) DeleteAccessPolicy(ctx context.Context, policyID string) error {
 	_, err := s.cce.DeleteAccessPolicy(&model.DeleteAccessPolicyRequest{PolicyId: policyID})
-	if err != nil {
+	if err != nil && !clouderrors.IsNotFound(err) {
 		return errors.Wrap(err, "DeleteAccessPolicy failed")
 	}
 	return nil
@@ -1039,7 +1043,7 @@ func (s *Client) ListNodePools(_ context.Context, clusterID string) ([]NodePoolI
 // the cluster. Each entry has the form huaweicloud:///<serverId>, matching
 // the spec.providerID of the corresponding workload node, which Cluster API
 // uses to fill MachinePool.status.nodeRefs.
-func (s *Client) ListNodes(_ context.Context, clusterID string) ([]string, error) {
+func (s *Client) ListNodes(_ context.Context, clusterID, nodePoolID string) ([]string, error) {
 	resp, err := s.cce.ListNodes(&model.ListNodesRequest{ClusterId: clusterID})
 	if err != nil {
 		return nil, errors.Wrap(err, "ListNodes failed")
@@ -1047,6 +1051,13 @@ func (s *Client) ListNodes(_ context.Context, clusterID string) ([]string, error
 	var out []string
 	if resp.Items != nil {
 		for _, n := range *resp.Items {
+			// Only nodes owned by the requested node pool (metadata.ownerReferences.
+			// nodepoolID); a cluster-wide listing would assign every pool's nodes
+			// to every MachinePool.
+			if n.Metadata == nil || n.Metadata.OwnerReferences == nil ||
+				n.Metadata.OwnerReferences.NodepoolID == nil || *n.Metadata.OwnerReferences.NodepoolID != nodePoolID {
+				continue
+			}
 			// ProviderID must match the huaweicloud cloud-provider contract:
 			// `huaweicloud:///<serverId>` where serverId is the underlying ECS
 			// instance ID (mirrors CAPA's aws:///az/instance-id, which uses the

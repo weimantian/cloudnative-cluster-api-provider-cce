@@ -34,7 +34,7 @@ type FakeCCEService struct {
 	UpdateNodePoolFn         func(ctx context.Context, in cceService.UpdateNodePoolInput) error
 	DeleteNodePoolFn         func(ctx context.Context, clusterID, nodePoolID string) error
 	ListNodePoolsFn          func(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error)
-	ListNodesFn              func(ctx context.Context, clusterID string) ([]string, error)
+	ListNodesFn              func(ctx context.Context, clusterID, nodePoolID string) ([]string, error)
 	ListNodesWithStatusFn    func(ctx context.Context, clusterID string) ([]cceService.NodeInfo, error)
 	ResetNodeFn              func(ctx context.Context, clusterID string, nodeIDs []string) error
 	GetUpgradeInfoFn         func(ctx context.Context, clusterID string) (*cceService.UpgradeInfo, error)
@@ -197,7 +197,7 @@ func NewFakeCCEService() *FakeCCEService {
 	f.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
 		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", DesiredNodeCount: 3, NodeCount: 3, ActiveNodeCount: 3}}, nil
 	}
-	f.ListNodesFn = func(_ context.Context, _ string) ([]string, error) {
+	f.ListNodesFn = func(_ context.Context, _, _ string) ([]string, error) {
 		return nil, nil
 	}
 	f.ListNodesWithStatusFn = func(_ context.Context, _ string) ([]cceService.NodeInfo, error) {
@@ -418,8 +418,8 @@ func (f *FakeCCEService) ListNodePools(ctx context.Context, clusterID string) ([
 }
 
 // ListNodes implements cceService.Service.
-func (f *FakeCCEService) ListNodes(ctx context.Context, clusterID string) ([]string, error) {
-	return f.ListNodesFn(ctx, clusterID)
+func (f *FakeCCEService) ListNodes(ctx context.Context, clusterID, nodePoolID string) ([]string, error) {
+	return f.ListNodesFn(ctx, clusterID, nodePoolID)
 }
 
 // ListNodesWithStatus implements cceService.Service.

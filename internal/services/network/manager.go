@@ -345,16 +345,16 @@ func (m *Manager) ensureNatGateway(ctx context.Context, spec *common.NetworkSpec
 		}
 	}
 	if ng.ResourceID == "" {
+		subnetID := firstManagedNodeSubnet(spec)
+		if subnetID == "" {
+			return errors.New("natGateway requires a managed node subnet")
+		}
 		if ng.EIPResourceID == "" {
 			id, err := m.createEip(ctx, clusterName+"-nat-eip", clusterName)
 			if err != nil {
 				return err
 			}
 			ng.EIPResourceID = id
-		}
-		subnetID := firstManagedNodeSubnet(spec)
-		if subnetID == "" {
-			return errors.New("natGateway requires a managed node subnet")
 		}
 		gwID, err := m.createNatGateway(ctx, clusterName+"-nat", spec.VPC.ResourceID, subnetID, ng.Spec, clusterName)
 		if err != nil {
