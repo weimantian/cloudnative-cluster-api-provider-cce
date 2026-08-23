@@ -28,8 +28,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
@@ -73,7 +73,7 @@ func (r *CCEManagedMachinePoolReconciler) newCCEService(regionID, ak, sk string)
 func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	pool := &infrav1beta1.CCEManagedMachinePool{}
+	pool := &infrav1beta2.CCEManagedMachinePool{}
 	if err := r.Get(ctx, req.NamespacedName, pool); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -112,12 +112,12 @@ func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctr
 	return r.reconcileNormal(ctx, cluster, pool)
 }
 
-func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, pool *infrav1beta1.CCEManagedMachinePool) (ctrl.Result, error) {
+func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, pool *infrav1beta2.CCEManagedMachinePool) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// Node pools can only be created once the control plane is Available
 	// (official: CreateNodePool requires an Available/Scaling cluster).
-	cp := &controlplanev1beta1.CCEManagedControlPlane{}
+	cp := &controlplanev1beta2.CCEManagedControlPlane{}
 	if cluster.Spec.ControlPlaneRef.Name != "" {
 		if err := r.Get(ctx, types.NamespacedName{Namespace: pool.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err != nil {
 			return ctrl.Result{}, errors.Wrap(err, "failed to get control plane")
@@ -352,7 +352,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	return ctrl.Result{}, nil
 }
 
-func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, pool *infrav1beta1.CCEManagedMachinePool) (ctrl.Result, error) {
+func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, pool *infrav1beta2.CCEManagedMachinePool) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	if pool.Status.NodePoolID != "" {
@@ -361,7 +361,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 		// credential chain. The delete path must honor identityRef exactly
 		// like reconcileNormal - resolving only the per-cluster Secret left
 		// identity-based clusters stuck in a delete-error loop forever.
-		cp := &controlplanev1beta1.CCEManagedControlPlane{}
+		cp := &controlplanev1beta2.CCEManagedControlPlane{}
 		cpFound := false
 		if cluster.Spec.ControlPlaneRef.Name != "" {
 			err := r.Get(ctx, types.NamespacedName{Namespace: pool.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp)
@@ -428,7 +428,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 // SetupWithManager registers the controller with the manager.
 func (r *CCEManagedMachinePoolReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&infrav1beta1.CCEManagedMachinePool{}).
+		For(&infrav1beta2.CCEManagedMachinePool{}).
 		// Watch the owning CAPI MachinePool so replica changes (kubectl scale
 		// machinepool) trigger reconciliation of the infrastructure pool:
 		// CAPI core does NOT sync spec.replicas onto infrastructure machine
@@ -464,11 +464,11 @@ func (r *CCEManagedMachinePoolReconciler) machinePoolToInfraPool(_ context.Conte
 
 // ---- helpers ----
 
-func (r *CCEManagedMachinePoolReconciler) clusterRegion(ctx context.Context, cluster *clusterv1.Cluster, pool *infrav1beta1.CCEManagedMachinePool) (string, error) {
+func (r *CCEManagedMachinePoolReconciler) clusterRegion(ctx context.Context, cluster *clusterv1.Cluster, pool *infrav1beta2.CCEManagedMachinePool) (string, error) {
 	if cluster.Spec.InfrastructureRef.Name == "" {
 		return "", errors.New("cluster has no infrastructureRef")
 	}
-	cceCluster := &infrav1beta1.CCECluster{}
+	cceCluster := &infrav1beta2.CCECluster{}
 	key := types.NamespacedName{Namespace: pool.Namespace, Name: cluster.Spec.InfrastructureRef.Name}
 	if err := r.Get(ctx, key, cceCluster); err != nil {
 		return "", errors.Wrapf(err, "failed to get CCECluster %s", key)
@@ -476,7 +476,7 @@ func (r *CCEManagedMachinePoolReconciler) clusterRegion(ctx context.Context, clu
 	return cceCluster.Spec.Region, nil
 }
 
-func toCreateNodePoolInput(clusterID string, pool *infrav1beta1.CCEManagedMachinePool) cceService.CreateNodePoolInput {
+func toCreateNodePoolInput(clusterID string, pool *infrav1beta2.CCEManagedMachinePool) cceService.CreateNodePoolInput {
 	in := cceService.CreateNodePoolInput{
 		ClusterID:             clusterID,
 		ClusterName:           pool.Spec.ClusterName,
@@ -527,7 +527,7 @@ func toCreateNodePoolInput(clusterID string, pool *infrav1beta1.CCEManagedMachin
 
 // toProviderAutoscaling maps the spec autoscaling to the service input.
 // Called only when the NodePoolAutoscaling gate is enabled.
-func toProviderAutoscaling(s infrav1beta1.AutoscalingSpec) *cceService.NodePoolAutoscaling {
+func toProviderAutoscaling(s infrav1beta2.AutoscalingSpec) *cceService.NodePoolAutoscaling {
 	return &cceService.NodePoolAutoscaling{
 		Enable:       s.Enable,
 		MinNodeCount: s.MinNodeCount,
@@ -539,7 +539,7 @@ func toProviderAutoscaling(s infrav1beta1.AutoscalingSpec) *cceService.NodePoolA
 // them via CCE ResetNode (node auto-repair; the CCE substitute for EKS
 // NodeRepairConfig). Nodes are scoped to the pool via metadata.
 // ownerReferences.nodepoolID (ListNodes is cluster-wide, so filter by pool).
-func (r *CCEManagedMachinePoolReconciler) reconcileNodeRepair(ctx context.Context, svc cceService.Service, clusterID string, pool *infrav1beta1.CCEManagedMachinePool) error {
+func (r *CCEManagedMachinePoolReconciler) reconcileNodeRepair(ctx context.Context, svc cceService.Service, clusterID string, pool *infrav1beta2.CCEManagedMachinePool) error {
 	nodes, err := svc.ListNodesWithStatus(ctx, clusterID)
 	if err != nil {
 		return err
@@ -563,7 +563,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNodeRepair(ctx context.Contex
 
 // findOwnerMachinePool returns the owning CAPI MachinePool (found via its
 // template.spec.infrastructureRef.name), or nil when none matches yet.
-func (r *CCEManagedMachinePoolReconciler) findOwnerMachinePool(ctx context.Context, pool *infrav1beta1.CCEManagedMachinePool) (*clusterv1.MachinePool, error) {
+func (r *CCEManagedMachinePoolReconciler) findOwnerMachinePool(ctx context.Context, pool *infrav1beta2.CCEManagedMachinePool) (*clusterv1.MachinePool, error) {
 	mps := &clusterv1.MachinePoolList{}
 	if err := r.List(ctx, mps, client.InNamespace(pool.Namespace),
 		client.MatchingLabels{clusterv1.ClusterNameLabel: pool.Spec.ClusterName}); err != nil {
@@ -581,7 +581,7 @@ func (r *CCEManagedMachinePoolReconciler) findOwnerMachinePool(ctx context.Conte
 // syncReplicasFromOwner copies spec.replicas from the owning CAPI MachinePool
 // onto this infra pool, so `kubectl scale machinepool` drives the CCE node
 // pool size.
-func (r *CCEManagedMachinePoolReconciler) syncReplicasFromOwner(ctx context.Context, pool *infrav1beta1.CCEManagedMachinePool) error {
+func (r *CCEManagedMachinePoolReconciler) syncReplicasFromOwner(ctx context.Context, pool *infrav1beta2.CCEManagedMachinePool) error {
 	mp, err := r.findOwnerMachinePool(ctx, pool)
 	if err != nil {
 		return err

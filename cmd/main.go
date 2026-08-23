@@ -25,9 +25,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/controllers"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
@@ -42,9 +40,7 @@ var (
 func init() {
 	utilruntime.Must(clientgoscheme.AddToScheme(scheme))
 	utilruntime.Must(clusterv1.AddToScheme(scheme))
-	utilruntime.Must(infrav1beta1.AddToScheme(scheme))
 	utilruntime.Must(infrav1beta2.AddToScheme(scheme))
-	utilruntime.Must(controlplanev1beta1.AddToScheme(scheme))
 	utilruntime.Must(controlplanev1beta2.AddToScheme(scheme))
 }
 
@@ -116,7 +112,7 @@ func main() {
 		}
 	}
 	if validFlavors != "" {
-		infrav1beta1.ValidFlavors = splitCSV(validFlavors)
+		infrav1beta2.ValidFlavors = splitCSV(validFlavors)
 	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), manager.Options{
@@ -159,39 +155,39 @@ func main() {
 	}
 
 	if os.Getenv("ENABLE_WEBHOOKS") != "false" {
-		if err := (&infrav1beta1.CCECluster{}).SetupWebhookWithManager(mgr); err != nil {
+		if err := (&infrav1beta2.CCECluster{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCECluster")
 			os.Exit(1)
 		}
-		if err := (&infrav1beta1.CCEManagedMachinePool{}).SetupWebhookWithManager(mgr); err != nil {
+		if err := (&infrav1beta2.CCEManagedMachinePool{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEManagedMachinePool")
 			os.Exit(1)
 		}
-		if err := (&controlplanev1beta1.CCEManagedControlPlane{}).SetupWebhookWithManager(mgr); err != nil {
+		if err := (&controlplanev1beta2.CCEManagedControlPlane{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEManagedControlPlane")
 			os.Exit(1)
 		}
-		if err := (&infrav1beta1.CCEClusterTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+		if err := (&infrav1beta2.CCEClusterTemplate{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEClusterTemplate")
 			os.Exit(1)
 		}
-		if err := (&controlplanev1beta1.CCEManagedControlPlaneTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+		if err := (&controlplanev1beta2.CCEManagedControlPlaneTemplate{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEManagedControlPlaneTemplate")
 			os.Exit(1)
 		}
-		if err := (&infrav1beta1.CCEManagedMachinePoolTemplate{}).SetupWebhookWithManager(mgr); err != nil {
+		if err := (&infrav1beta2.CCEManagedMachinePoolTemplate{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEManagedMachinePoolTemplate")
 			os.Exit(1)
 		}
-		if err := (&infrav1beta1.CCEClusterControllerIdentity{}).SetupWebhookWithManager(mgr); err != nil {
+		if err := (&infrav1beta2.CCEClusterControllerIdentity{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEClusterControllerIdentity")
 			os.Exit(1)
 		}
-		if err := (&infrav1beta1.CCEClusterStaticIdentity{}).SetupWebhookWithManager(mgr); err != nil {
+		if err := (&infrav1beta2.CCEClusterStaticIdentity{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEClusterStaticIdentity")
 			os.Exit(1)
 		}
-		if err := (&infrav1beta1.CCEClusterRoleIdentity{}).SetupWebhookWithManager(mgr); err != nil {
+		if err := (&infrav1beta2.CCEClusterRoleIdentity{}).SetupWebhookWithManager(mgr); err != nil {
 			setupLog.Error(err, "unable to create webhook", "webhook", "CCEClusterRoleIdentity")
 			os.Exit(1)
 		}

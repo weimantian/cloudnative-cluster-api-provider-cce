@@ -21,7 +21,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
 
 // Credentials are the Huawei Cloud AK/SK used by the services layer.
@@ -75,7 +75,7 @@ func ResolveIdentity(ctx context.Context, c client.Client, namespace string, ide
 	}
 	switch identityRef.Kind {
 	case "CCEClusterControllerIdentity":
-		id := &infrav1beta1.CCEClusterControllerIdentity{}
+		id := &infrav1beta2.CCEClusterControllerIdentity{}
 		if err := c.Get(ctx, types.NamespacedName{Name: identityRef.Name}, id); err != nil {
 			return nil, "", errors.Wrapf(err, "failed to get CCEClusterControllerIdentity %s", identityRef.Name)
 		}
@@ -88,7 +88,7 @@ func ResolveIdentity(ctx context.Context, c client.Client, namespace string, ide
 		creds, err := credentialsFromEnv()
 		return creds, "", err
 	case "CCEClusterStaticIdentity":
-		id := &infrav1beta1.CCEClusterStaticIdentity{}
+		id := &infrav1beta2.CCEClusterStaticIdentity{}
 		if err := c.Get(ctx, types.NamespacedName{Name: identityRef.Name}, id); err != nil {
 			return nil, "", errors.Wrapf(err, "failed to get CCEClusterStaticIdentity %s", identityRef.Name)
 		}
@@ -105,7 +105,7 @@ func ResolveIdentity(ctx context.Context, c client.Client, namespace string, ide
 		}
 		return &Credentials{AccessKey: ak, SecretKey: sk}, "", nil
 	case "CCEClusterRoleIdentity":
-		id := &infrav1beta1.CCEClusterRoleIdentity{}
+		id := &infrav1beta2.CCEClusterRoleIdentity{}
 		if err := c.Get(ctx, types.NamespacedName{Name: identityRef.Name}, id); err != nil {
 			return nil, "", errors.Wrapf(err, "failed to get CCEClusterRoleIdentity %s", identityRef.Name)
 		}
@@ -122,7 +122,7 @@ func ResolveIdentity(ctx context.Context, c client.Client, namespace string, ide
 // checkAllowedNamespace enforces the identity's allowedNamespaces. A nil
 // pointer means "any namespace" (CAPA contract); an empty list + empty
 // selector means "no namespace".
-func checkAllowedNamespace(ctx context.Context, c client.Client, allowed *infrav1beta1.AllowedNamespaces, namespace, identityName string) error {
+func checkAllowedNamespace(ctx context.Context, c client.Client, allowed *infrav1beta2.AllowedNamespaces, namespace, identityName string) error {
 	if allowed == nil {
 		return nil // any namespace
 	}

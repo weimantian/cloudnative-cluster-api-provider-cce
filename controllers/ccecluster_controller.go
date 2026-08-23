@@ -26,8 +26,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
@@ -86,7 +86,7 @@ func (r *CCEClusterReconciler) newNetworkService(regionID, ak, sk string) (netwo
 func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	cceCluster := &infrav1beta1.CCECluster{}
+	cceCluster := &infrav1beta2.CCECluster{}
 	if err := r.Get(ctx, req.NamespacedName, cceCluster); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -125,7 +125,7 @@ func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	return r.reconcileNormal(ctx, cluster, cceCluster)
 }
 
-func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, cceCluster *infrav1beta1.CCECluster) (ctrl.Result, error) {
+func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, cceCluster *infrav1beta2.CCECluster) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	controllerutil.AddFinalizer(cceCluster, CCEClusterFinalizer)
@@ -178,7 +178,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		// Read the container/service CIDR from the control plane spec.
 		containerMode, containerCIDR, serviceCIDR, eniSubnets := "", "", "", []string{}
 		if cluster.Spec.ControlPlaneRef.Name != "" {
-			cp := &controlplanev1beta1.CCEManagedControlPlane{}
+			cp := &controlplanev1beta2.CCEManagedControlPlane{}
 			if err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err == nil {
 				containerMode = cp.Spec.ContainerNetwork.Mode
 				containerCIDR = cp.Spec.ContainerNetwork.CIDR
@@ -228,7 +228,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 
 	// Backfill the CCE cluster ID from the control plane when available.
 	if cluster.Spec.ControlPlaneRef.Name != "" {
-		cp := &controlplanev1beta1.CCEManagedControlPlane{}
+		cp := &controlplanev1beta2.CCEManagedControlPlane{}
 		if err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err == nil && cp.Status.ClusterID != "" {
 			cceCluster.Status.ClusterID = cp.Status.ClusterID
 		}
@@ -241,7 +241,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 
 // effectiveVPCID returns the VPC the cluster consumes: the referenced BYO
 // id, or the provider-created resource id in managed mode.
-func effectiveVPCID(cceCluster *infrav1beta1.CCECluster) string {
+func effectiveVPCID(cceCluster *infrav1beta2.CCECluster) string {
 	if cceCluster.Spec.Network.VPC.ID != "" {
 		return cceCluster.Spec.Network.VPC.ID
 	}
@@ -251,7 +251,7 @@ func effectiveVPCID(cceCluster *infrav1beta1.CCECluster) string {
 // subnetIDs extracts the node-subnet IDs from the CCECluster spec: the BYO
 // id when referencing, the provider-created ResourceID in managed mode.
 // ENI subnets (type eni) are excluded - they carry container traffic.
-func subnetIDs(cceCluster *infrav1beta1.CCECluster) []string {
+func subnetIDs(cceCluster *infrav1beta2.CCECluster) []string {
 	var ids []string
 	for _, s := range cceCluster.Spec.Network.Subnets {
 		if s.Type == common.SubnetTypeENI {
@@ -268,7 +268,7 @@ func subnetIDs(cceCluster *infrav1beta1.CCECluster) []string {
 	return ids
 }
 
-func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, cceCluster *infrav1beta1.CCECluster) (ctrl.Result, error) {
+func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, cceCluster *infrav1beta2.CCECluster) (ctrl.Result, error) {
 	// Cloud resources (CCE cluster / node pools) are owned and deleted by the
 	// control plane and machine pool controllers; here we only release the
 	// shell object once they are gone. The control plane and machine pool
@@ -276,7 +276,7 @@ func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clu
 	// control plane to disappear before removing our finalizer - otherwise
 	// their deletion would loop on NotFound and orphan cloud resources.
 	if cluster.Spec.ControlPlaneRef.Name != "" {
-		cp := &controlplanev1beta1.CCEManagedControlPlane{}
+		cp := &controlplanev1beta2.CCEManagedControlPlane{}
 		err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp)
 		if err == nil {
 			// Control plane still exists - wait for it to be deleted first.
@@ -321,9 +321,9 @@ func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clu
 // through the control plane's identityRef chain when a control plane exists,
 // else the per-cluster Secret (mirrors resolveControlPlaneCredentials, which
 // the CP/MP controllers use, so identityRef-based clusters are not stuck).
-func (r *CCEClusterReconciler) resolveClusterCredentials(ctx context.Context, cluster *clusterv1.Cluster, cceCluster *infrav1beta1.CCECluster) (*scope.Credentials, error) {
+func (r *CCEClusterReconciler) resolveClusterCredentials(ctx context.Context, cluster *clusterv1.Cluster, cceCluster *infrav1beta2.CCECluster) (*scope.Credentials, error) {
 	if cluster.Spec.ControlPlaneRef.Name != "" {
-		cp := &controlplanev1beta1.CCEManagedControlPlane{}
+		cp := &controlplanev1beta2.CCEManagedControlPlane{}
 		if err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err == nil {
 			creds, _, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
 			return creds, err
@@ -335,7 +335,7 @@ func (r *CCEClusterReconciler) resolveClusterCredentials(ctx context.Context, cl
 // reconcileManagedNetwork drives the managed-network lifecycle step by step,
 // marking a dedicated condition per step (mirrors CAPA VpcReady/SubnetsReady/
 // NatGatewaysReady) so operators see intermediate progress.
-func (r *CCEClusterReconciler) reconcileManagedNetwork(ctx context.Context, cceCluster *infrav1beta1.CCECluster, clusterName string, svc network.ManagerInterface) error {
+func (r *CCEClusterReconciler) reconcileManagedNetwork(ctx context.Context, cceCluster *infrav1beta2.CCECluster, clusterName string, svc network.ManagerInterface) error {
 	spec := &cceCluster.Spec.Network
 	if err := svc.ReconcileVpc(ctx, spec, clusterName); err != nil {
 		conditions.MarkFalse(cceCluster, conditions.VpcReadyCondition,
@@ -372,7 +372,7 @@ func errStr(err error) string {
 // SetupWithManager registers the controller with the manager.
 func (r *CCEClusterReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&infrav1beta1.CCECluster{}).
+		For(&infrav1beta2.CCECluster{}).
 		WithOptions(opts).
 		Named("ccecluster").
 		Complete(r)

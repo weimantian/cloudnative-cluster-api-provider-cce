@@ -11,7 +11,7 @@ import (
 
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 )
 
@@ -26,7 +26,7 @@ import (
 // removed). The machine pool controller shares the control plane's identity
 // as well - mirroring CAPA, where machine pools resolve credentials from the
 // cluster scope.
-func resolveControlPlaneCredentials(ctx context.Context, c client.Client, cp *controlplanev1beta1.CCEManagedControlPlane) (*scope.Credentials, string, error) {
+func resolveControlPlaneCredentials(ctx context.Context, c client.Client, cp *controlplanev1beta2.CCEManagedControlPlane) (*scope.Credentials, string, error) {
 	if cp.Spec.IdentityRef != nil {
 		return scope.ResolveIdentity(ctx, c, cp.Namespace, cp.Spec.IdentityRef)
 	}

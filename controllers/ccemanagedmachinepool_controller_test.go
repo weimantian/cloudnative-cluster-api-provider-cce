@@ -23,8 +23,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
@@ -38,7 +38,7 @@ func TestMachinePoolReconcileAutoscalingGate(t *testing.T) {
 	ns := "mp-test-autoscale"
 	createNamespace(t, ns)
 
-	setupPoolReconciler := func() (*fakes.FakeCCEService, *CCEManagedMachinePoolReconciler, *infrav1beta1.CCEManagedMachinePool) {
+	setupPoolReconciler := func() (*fakes.FakeCCEService, *CCEManagedMachinePoolReconciler, *infrav1beta2.CCEManagedMachinePool) {
 		cluster, _, cp := newTestCluster(t, ns)
 		createCredentialsSecret(t, ns, "test-cluster")
 		markInfrastructureProvisioned(t, cluster)
@@ -57,7 +57,7 @@ func TestMachinePoolReconcileAutoscalingGate(t *testing.T) {
 						ClusterName: "test-cluster",
 						Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
 						InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-							APIGroup: infrav1beta1.GroupVersion.Group,
+							APIGroup: infrav1beta2.GroupVersion.Group,
 							Kind:     "CCEManagedMachinePool",
 							Name:     "test-cluster-pool-0",
 						},
@@ -68,18 +68,18 @@ func TestMachinePoolReconcileAutoscalingGate(t *testing.T) {
 		if err := k8sClient.Create(ctx, mp); err != nil {
 			t.Fatalf("failed to create MachinePool: %v", err)
 		}
-		pool := &infrav1beta1.CCEManagedMachinePool{
+		pool := &infrav1beta2.CCEManagedMachinePool{
 			ObjectMeta: metav1.ObjectMeta{
 				Name:      "test-cluster-pool-0",
 				Namespace: ns,
 				Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
 			},
-			Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+			Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 				ClusterName:  "test-cluster",
 				NodePoolName: "pool-0",
 				Flavor:       "c7.large.2",
 				Replicas:     3,
-				Autoscaling:  infrav1beta1.AutoscalingSpec{Enable: true, MinNodeCount: 1, MaxNodeCount: 5},
+				Autoscaling:  infrav1beta2.AutoscalingSpec{Enable: true, MinNodeCount: 1, MaxNodeCount: 5},
 			},
 		}
 		if err := k8sClient.Create(ctx, pool); err != nil {
@@ -134,7 +134,7 @@ func TestMachinePoolReconcileAutoscalingGate(t *testing.T) {
 					ClusterName: "test-cluster",
 					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-						APIGroup: infrav1beta1.GroupVersion.Group,
+						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
 						Name:     "test-cluster-pool-0",
 					},
@@ -145,18 +145,18 @@ func TestMachinePoolReconcileAutoscalingGate(t *testing.T) {
 	if err := k8sClient.Create(ctx, mp2); err != nil {
 		t.Fatalf("failed to create MachinePool (gate on): %v", err)
 	}
-	pool2 := &infrav1beta1.CCEManagedMachinePool{
+	pool2 := &infrav1beta2.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster-pool-0",
 			Namespace: ns2,
 			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
 		},
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			ClusterName:  "test-cluster",
 			NodePoolName: "pool-0",
 			Flavor:       "c7.large.2",
 			Replicas:     3,
-			Autoscaling:  infrav1beta1.AutoscalingSpec{Enable: true, MinNodeCount: 1, MaxNodeCount: 5},
+			Autoscaling:  infrav1beta2.AutoscalingSpec{Enable: true, MinNodeCount: 1, MaxNodeCount: 5},
 		},
 	}
 	if err := k8sClient.Create(ctx, pool2); err != nil {
@@ -208,7 +208,7 @@ func TestMachinePoolReconcileSuccess(t *testing.T) {
 						DataSecretName: stringPtr(""),
 					},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-						APIGroup: infrav1beta1.GroupVersion.Group,
+						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
 						Name:     "test-cluster-pool-0",
 					},
@@ -219,7 +219,7 @@ func TestMachinePoolReconcileSuccess(t *testing.T) {
 	if err := k8sClient.Create(ctx, mp); err != nil {
 		t.Fatalf("failed to create MachinePool: %v", err)
 	}
-	pool := &infrav1beta1.CCEManagedMachinePool{
+	pool := &infrav1beta2.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster-pool-0",
 			Namespace: ns,
@@ -227,7 +227,7 @@ func TestMachinePoolReconcileSuccess(t *testing.T) {
 				clusterv1.ClusterNameLabel: "test-cluster",
 			},
 		},
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			ClusterName:  "test-cluster",
 			NodePoolName: "pool-0",
 			Flavor:       "c7.large.2",
@@ -250,7 +250,7 @@ func TestMachinePoolReconcileSuccess(t *testing.T) {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
 
-	got := &infrav1beta1.CCEManagedMachinePool{}
+	got := &infrav1beta2.CCEManagedMachinePool{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
 		t.Fatalf("failed to get machine pool: %v", err)
 	}
@@ -307,7 +307,7 @@ func TestMachinePoolReconcileSecurityGroupDrift(t *testing.T) {
 					ClusterName: "test-cluster",
 					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-						APIGroup: infrav1beta1.GroupVersion.Group,
+						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
 						Name:     "test-cluster-pool-0",
 					},
@@ -318,13 +318,13 @@ func TestMachinePoolReconcileSecurityGroupDrift(t *testing.T) {
 	if err := k8sClient.Create(ctx, mp); err != nil {
 		t.Fatalf("failed to create MachinePool: %v", err)
 	}
-	pool := &infrav1beta1.CCEManagedMachinePool{
+	pool := &infrav1beta2.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster-pool-0",
 			Namespace: ns,
 			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
 		},
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			ClusterName:    "test-cluster",
 			NodePoolName:   "pool-0",
 			Flavor:         "c7.large.2",
@@ -354,7 +354,7 @@ func TestMachinePoolReconcileSecurityGroupDrift(t *testing.T) {
 	}
 
 	// Drift the security groups, then reconcile again.
-	got := &infrav1beta1.CCEManagedMachinePool{}
+	got := &infrav1beta2.CCEManagedMachinePool{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
 		t.Fatalf("failed to get machine pool: %v", err)
 	}
@@ -416,7 +416,7 @@ func TestMachinePoolReconcileWaitsForControlPlane(t *testing.T) {
 	cluster, _, _ := newTestCluster(t, ns)
 	markInfrastructureProvisioned(t, cluster)
 	// Control plane NOT ready.
-	pool := &infrav1beta1.CCEManagedMachinePool{
+	pool := &infrav1beta2.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster-pool-0",
 			Namespace: ns,
@@ -424,7 +424,7 @@ func TestMachinePoolReconcileWaitsForControlPlane(t *testing.T) {
 				clusterv1.ClusterNameLabel: "test-cluster",
 			},
 		},
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			ClusterName:  "test-cluster",
 			NodePoolName: "pool-0",
 			Flavor:       "c7.large.2",
@@ -476,14 +476,14 @@ func TestMachinePoolReconcileDelete(t *testing.T) {
 		t.Fatalf("failed to set control plane status: %v", err)
 	}
 
-	pool := &infrav1beta1.CCEManagedMachinePool{
+	pool := &infrav1beta2.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "test-cluster-pool-0",
 			Namespace:  ns,
 			Labels:     map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
 			Finalizers: []string{MachinePoolFinalizer},
 		},
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			ClusterName:  "test-cluster",
 			NodePoolName: "pool-0",
 			Flavor:       "c7.large.2",
@@ -570,7 +570,7 @@ func TestControlPlaneReconcileCredentialsFailure(t *testing.T) {
 		t.Fatal("expected Reconcile to fail when credentials Secret is missing")
 	}
 
-	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
 		t.Fatalf("failed to get control plane: %v", err)
 	}
@@ -613,7 +613,7 @@ func TestMachinePoolReconcileSyncsReplicasFromOwner(t *testing.T) {
 					ClusterName: "test-cluster",
 					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-						APIGroup: infrav1beta1.GroupVersion.Group,
+						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
 						Name:     "test-cluster-pool-0",
 					},
@@ -624,13 +624,13 @@ func TestMachinePoolReconcileSyncsReplicasFromOwner(t *testing.T) {
 	if err := k8sClient.Create(ctx, mp); err != nil {
 		t.Fatalf("failed to create MachinePool: %v", err)
 	}
-	pool := &infrav1beta1.CCEManagedMachinePool{
+	pool := &infrav1beta2.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster-pool-0",
 			Namespace: ns,
 			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
 		},
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			ClusterName:  "test-cluster",
 			NodePoolName: "pool-0",
 			Flavor:       "c7.large.2",
@@ -652,7 +652,7 @@ func TestMachinePoolReconcileSyncsReplicasFromOwner(t *testing.T) {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
 
-	got := &infrav1beta1.CCEManagedMachinePool{}
+	got := &infrav1beta2.CCEManagedMachinePool{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
 		t.Fatalf("failed to get machine pool: %v", err)
 	}
@@ -705,7 +705,7 @@ func TestMachinePoolToInfraPoolMapper(t *testing.T) {
 		t.Errorf("expected no mapping for empty ref name, got %+v", got)
 	}
 
-	got = r.machinePoolToInfraPool(context.Background(), &infrav1beta1.CCEManagedMachinePool{})
+	got = r.machinePoolToInfraPool(context.Background(), &infrav1beta2.CCEManagedMachinePool{})
 	if len(got) != 0 {
 		t.Errorf("expected no mapping for non-MachinePool object, got %+v", got)
 	}
@@ -748,7 +748,7 @@ func TestMachinePoolScaleTriggeredByWatch(t *testing.T) {
 					ClusterName: "test-cluster",
 					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-						APIGroup: infrav1beta1.GroupVersion.Group,
+						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
 						Name:     "test-cluster-pool-0",
 					},
@@ -759,13 +759,13 @@ func TestMachinePoolScaleTriggeredByWatch(t *testing.T) {
 	if err := k8sClient.Create(ctx, mp); err != nil {
 		t.Fatalf("failed to create MachinePool: %v", err)
 	}
-	pool := &infrav1beta1.CCEManagedMachinePool{
+	pool := &infrav1beta2.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster-pool-0",
 			Namespace: ns,
 			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
 		},
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			ClusterName:  "test-cluster",
 			NodePoolName: "pool-0",
 			Flavor:       "c7.large.2",
@@ -779,8 +779,8 @@ func TestMachinePoolScaleTriggeredByWatch(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
 	_ = clusterv1.AddToScheme(scheme)
-	_ = infrav1beta1.AddToScheme(scheme)
-	_ = controlplanev1beta1.AddToScheme(scheme)
+	_ = infrav1beta2.AddToScheme(scheme)
+	_ = controlplanev1beta2.AddToScheme(scheme)
 	mgr, err := ctrl.NewManager(restCfg, manager.Options{
 		Scheme:  scheme,
 		Metrics: metricsserver.Options{BindAddress: "0"},
@@ -805,7 +805,7 @@ func TestMachinePoolScaleTriggeredByWatch(t *testing.T) {
 
 	// Initial reconcile is event-driven (For() watch on the pool itself).
 	if !waitForCondition(t, 30*time.Second, func() bool {
-		got := &infrav1beta1.CCEManagedMachinePool{}
+		got := &infrav1beta2.CCEManagedMachinePool{}
 		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
 			return false
 		}
@@ -829,7 +829,7 @@ func TestMachinePoolScaleTriggeredByWatch(t *testing.T) {
 	// syncs from the owner and the pool scales to 5. Without the watch this
 	// never happens (no other event touches the pool).
 	if !waitForCondition(t, 30*time.Second, func() bool {
-		got := &infrav1beta1.CCEManagedMachinePool{}
+		got := &infrav1beta2.CCEManagedMachinePool{}
 		if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
 			return false
 		}
@@ -879,7 +879,7 @@ func TestMachinePoolReconcileWithIdentity(t *testing.T) {
 					ClusterName: "test-cluster",
 					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-						APIGroup: infrav1beta1.GroupVersion.Group,
+						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
 						Name:     "test-cluster-pool-0",
 					},
@@ -890,13 +890,13 @@ func TestMachinePoolReconcileWithIdentity(t *testing.T) {
 	if err := k8sClient.Create(ctx, mp); err != nil {
 		t.Fatalf("failed to create MachinePool: %v", err)
 	}
-	pool := &infrav1beta1.CCEManagedMachinePool{
+	pool := &infrav1beta2.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster-pool-0",
 			Namespace: ns,
 			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
 		},
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			ClusterName:  "test-cluster",
 			NodePoolName: "pool-0",
 			Flavor:       "c7.large.2",
@@ -937,14 +937,14 @@ func TestMachinePoolReconcileDeleteControlPlaneGone(t *testing.T) {
 		t.Fatalf("failed to delete control plane: %v", err)
 	}
 
-	pool := &infrav1beta1.CCEManagedMachinePool{
+	pool := &infrav1beta2.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:       "test-cluster-pool-0",
 			Namespace:  ns,
 			Labels:     map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
 			Finalizers: []string{MachinePoolFinalizer},
 		},
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			ClusterName:  "test-cluster",
 			NodePoolName: "pool-0",
 			Flavor:       "c7.large.2",
@@ -1023,7 +1023,7 @@ func TestMachinePoolReconcileReplicasExternallyManaged(t *testing.T) {
 						DataSecretName: stringPtr(""),
 					},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-						APIGroup: infrav1beta1.GroupVersion.Group,
+						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
 						Name:     "test-cluster-pool-0",
 					},
@@ -1034,13 +1034,13 @@ func TestMachinePoolReconcileReplicasExternallyManaged(t *testing.T) {
 	if err := k8sClient.Create(ctx, mp); err != nil {
 		t.Fatalf("failed to create MachinePool: %v", err)
 	}
-	pool := &infrav1beta1.CCEManagedMachinePool{
+	pool := &infrav1beta2.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster-pool-0",
 			Namespace: ns,
 			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
 		},
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			ClusterName:  "test-cluster",
 			NodePoolName: "pool-0",
 			Flavor:       "c7.large.2",
@@ -1114,7 +1114,7 @@ func TestMachinePoolReconcileNodeRepair(t *testing.T) {
 					ClusterName: "test-cluster",
 					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-						APIGroup: infrav1beta1.GroupVersion.Group,
+						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
 						Name:     "test-cluster-pool-0",
 					},
@@ -1125,18 +1125,18 @@ func TestMachinePoolReconcileNodeRepair(t *testing.T) {
 	if err := k8sClient.Create(ctx, mp); err != nil {
 		t.Fatalf("failed to create MachinePool: %v", err)
 	}
-	pool := &infrav1beta1.CCEManagedMachinePool{
+	pool := &infrav1beta2.CCEManagedMachinePool{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:      "test-cluster-pool-0",
 			Namespace: ns,
 			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
 		},
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			ClusterName:  "test-cluster",
 			NodePoolName: "pool-0",
 			Flavor:       "c7.large.2",
 			Replicas:     1,
-			NodeRepair:   &infrav1beta1.NodeRepairSpec{Enabled: true},
+			NodeRepair:   &infrav1beta2.NodeRepairSpec{Enabled: true},
 		},
 	}
 	if err := k8sClient.Create(ctx, pool); err != nil {

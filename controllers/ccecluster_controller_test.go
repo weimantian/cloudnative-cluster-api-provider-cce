@@ -17,8 +17,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
@@ -48,7 +48,7 @@ func TestCCEClusterReconcileReady(t *testing.T) {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
 
-	got := &infrav1beta1.CCECluster{}
+	got := &infrav1beta2.CCECluster{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), got); err != nil {
 		t.Fatalf("failed to get CCECluster: %v", err)
 	}
@@ -90,7 +90,7 @@ func TestCCEClusterReconcileNetworkFailure(t *testing.T) {
 		t.Error("expected a requeue after network validation failure")
 	}
 
-	got := &infrav1beta1.CCECluster{}
+	got := &infrav1beta2.CCECluster{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), got); err != nil {
 		t.Fatalf("failed to get CCECluster: %v", err)
 	}
@@ -139,7 +139,7 @@ func TestCCEClusterReconcileManagedNetwork(t *testing.T) {
 		t.Errorf("expected 3 step calls (Vpc+Subnets+NatGateway), got %d", fakeMgr.ReconcileCalls)
 	}
 
-	got := &infrav1beta1.CCECluster{}
+	got := &infrav1beta2.CCECluster{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), got); err != nil {
 		t.Fatalf("failed to get CCECluster: %v", err)
 	}
@@ -198,7 +198,7 @@ func TestCCEClusterReconcileAdoptedNetwork(t *testing.T) {
 	if fakeMgr.ReconcileCalls != 3 {
 		t.Errorf("expected 3 step calls for adopted network, got %d", fakeMgr.ReconcileCalls)
 	}
-	got := &infrav1beta1.CCECluster{}
+	got := &infrav1beta2.CCECluster{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), got); err != nil {
 		t.Fatalf("failed to get CCECluster: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestCCEClusterReconcileManagedNetworkFailure(t *testing.T) {
 	if res.RequeueAfter == 0 {
 		t.Error("expected requeue after managed network failure")
 	}
-	got := &infrav1beta1.CCECluster{}
+	got := &infrav1beta2.CCECluster{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), got); err != nil {
 		t.Fatalf("failed to get CCECluster: %v", err)
 	}
@@ -288,7 +288,7 @@ func TestCCEClusterDeleteManagedNetwork(t *testing.T) {
 	if _, err := setupR.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)}); err != nil {
 		t.Fatalf("setup Reconcile returned error: %v", err)
 	}
-	cp := &controlplanev1beta1.CCEManagedControlPlane{}
+	cp := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "test-cluster-control-plane"}, cp); err != nil {
 		t.Fatalf("failed to get control plane: %v", err)
 	}
@@ -300,7 +300,7 @@ func TestCCEClusterDeleteManagedNetwork(t *testing.T) {
 	// the reconciler's "control plane still exists" gate is open.
 	deadline := time.Now().Add(10 * time.Second)
 	for time.Now().Before(deadline) {
-		if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "test-cluster-control-plane"}, &controlplanev1beta1.CCEManagedControlPlane{}); apierrors.IsNotFound(err) {
+		if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "test-cluster-control-plane"}, &controlplanev1beta2.CCEManagedControlPlane{}); apierrors.IsNotFound(err) {
 			break
 		}
 		time.Sleep(100 * time.Millisecond)
@@ -330,7 +330,7 @@ func TestCCEClusterDeleteManagedNetwork(t *testing.T) {
 	if fakeMgr.DeleteCalls != 1 {
 		t.Errorf("expected 1 DeleteNetwork call, got %d", fakeMgr.DeleteCalls)
 	}
-	got := &infrav1beta1.CCECluster{}
+	got := &infrav1beta2.CCECluster{}
 	err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), got)
 	if err == nil {
 		if hasFinalizer(got.Finalizers, CCEClusterFinalizer) {

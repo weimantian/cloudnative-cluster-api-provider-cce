@@ -16,13 +16,13 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
 
 func deleteDefaultControllerIdentity(t *testing.T) {
 	t.Helper()
-	id := &infrav1beta1.CCEClusterControllerIdentity{}
-	if err := k8sClient.Get(context.Background(), types.NamespacedName{Name: infrav1beta1.CCEClusterControllerIdentityName}, id); err != nil {
+	id := &infrav1beta2.CCEClusterControllerIdentity{}
+	if err := k8sClient.Get(context.Background(), types.NamespacedName{Name: infrav1beta2.CCEClusterControllerIdentityName}, id); err != nil {
 		return
 	}
 	_ = k8sClient.Delete(context.Background(), id)
@@ -43,8 +43,8 @@ func TestControllerIdentityReconcilerCreatesDefault(t *testing.T) {
 	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
-	got := &infrav1beta1.CCEClusterControllerIdentity{}
-	if err := k8sClient.Get(ctx, types.NamespacedName{Name: infrav1beta1.CCEClusterControllerIdentityName}, got); err != nil {
+	got := &infrav1beta2.CCEClusterControllerIdentity{}
+	if err := k8sClient.Get(ctx, types.NamespacedName{Name: infrav1beta2.CCEClusterControllerIdentityName}, got); err != nil {
 		t.Fatalf("expected default identity to be created: %v", err)
 	}
 	if got.Spec.AllowedNamespaces != nil {
@@ -72,8 +72,8 @@ func TestControllerIdentityReconcilerSkipsStaticIdentity(t *testing.T) {
 	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
-	got := &infrav1beta1.CCEClusterControllerIdentity{}
-	err := k8sClient.Get(ctx, types.NamespacedName{Name: infrav1beta1.CCEClusterControllerIdentityName}, got)
+	got := &infrav1beta2.CCEClusterControllerIdentity{}
+	err := k8sClient.Get(ctx, types.NamespacedName{Name: infrav1beta2.CCEClusterControllerIdentityName}, got)
 	if !apierrors.IsNotFound(err) {
 		t.Errorf("expected no default identity for static identity cluster, err=%v", err)
 	}
@@ -95,7 +95,7 @@ func TestControllerIdentityReconcilerIdempotent(t *testing.T) {
 			t.Fatalf("reconcile %d returned error: %v", i, err)
 		}
 	}
-	list := &infrav1beta1.CCEClusterControllerIdentityList{}
+	list := &infrav1beta2.CCEClusterControllerIdentityList{}
 	if err := k8sClient.List(ctx, list); err != nil {
 		t.Fatalf("failed to list: %v", err)
 	}

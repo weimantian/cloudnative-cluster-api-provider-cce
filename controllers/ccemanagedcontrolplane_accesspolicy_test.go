@@ -13,7 +13,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
@@ -25,7 +25,7 @@ func TestAccessPolicyDrifted(t *testing.T) {
 		PolicyType: "CCEViewPolicy", PrincipalType: "user",
 		PrincipalIDs: []string{"user-1"}, Namespaces: []string{"*"},
 	}
-	want := controlplanev1beta1.AccessPolicySpec{
+	want := controlplanev1beta2.AccessPolicySpec{
 		Name: "p", PolicyType: "CCEViewPolicy", PrincipalType: "user", PrincipalIds: []string{"user-1"},
 	}
 	if accessPolicyDrifted(got, want) {
@@ -57,7 +57,7 @@ func TestControlPlaneReconcileAccessPolicies(t *testing.T) {
 	cluster, _, cp := newTestCluster(t, ns)
 	createCredentialsSecret(t, ns, "test-cluster")
 	markInfrastructureProvisioned(t, cluster)
-	cp.Spec.AccessPolicies = []controlplanev1beta1.AccessPolicySpec{
+	cp.Spec.AccessPolicies = []controlplanev1beta2.AccessPolicySpec{
 		{Name: "view-all", PolicyType: "CCEViewPolicy", PrincipalType: "user", PrincipalIds: []string{"user-1"}},
 		{Name: "ops-default-ns", PolicyType: "CCEAdminPolicy", PrincipalType: "group", PrincipalIds: []string{"grp-1"}, Namespaces: []string{"default"}},
 	}
@@ -90,11 +90,11 @@ func TestControlPlaneReconcileAccessPolicies(t *testing.T) {
 		{PolicyID: "pol-stale", Name: "stale-policy", PolicyType: "CCEViewPolicy", PrincipalType: "user", PrincipalIDs: []string{"user-9"}, Namespaces: []string{"*"}},
 	}
 	// Drift the "view-all" policyType.
-	latest := &controlplanev1beta1.CCEManagedControlPlane{}
+	latest := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), latest); err != nil {
 		t.Fatalf("failed to get control plane: %v", err)
 	}
-	latest.Spec.AccessPolicies = []controlplanev1beta1.AccessPolicySpec{
+	latest.Spec.AccessPolicies = []controlplanev1beta2.AccessPolicySpec{
 		{Name: "view-all", PolicyType: "CCEClusterAdminPolicy", PrincipalType: "user", PrincipalIds: []string{"user-1"}},
 	}
 	if err := k8sClient.Update(ctx, latest); err != nil {

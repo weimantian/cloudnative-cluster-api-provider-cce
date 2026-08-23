@@ -15,8 +15,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
 
 // CCEClusterControllerIdentityReconciler ensures the "default"
@@ -33,7 +33,7 @@ type CCEClusterControllerIdentityReconciler struct {
 // cluster-scoped, so the namespaced request only tells us a control plane
 // exists; we ensure the global "default" identity is present.
 func (r *CCEClusterControllerIdentityReconciler) Reconcile(ctx context.Context, req ctrl.Request) (ctrl.Result, error) {
-	cp := &controlplanev1beta1.CCEManagedControlPlane{}
+	cp := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := r.Get(ctx, req.NamespacedName, cp); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -51,8 +51,8 @@ func (r *CCEClusterControllerIdentityReconciler) Reconcile(ctx context.Context, 
 		}
 	}
 
-	existing := &infrav1beta1.CCEClusterControllerIdentity{}
-	err := r.Get(ctx, types.NamespacedName{Name: infrav1beta1.CCEClusterControllerIdentityName}, existing)
+	existing := &infrav1beta2.CCEClusterControllerIdentity{}
+	err := r.Get(ctx, types.NamespacedName{Name: infrav1beta2.CCEClusterControllerIdentityName}, existing)
 	if err == nil {
 		return ctrl.Result{}, nil // already exists
 	}
@@ -62,12 +62,12 @@ func (r *CCEClusterControllerIdentityReconciler) Reconcile(ctx context.Context, 
 
 	// AllowedNamespaces left nil (= any namespace): the default identity is
 	// the global fallback, usable from any namespace.
-	identity := &infrav1beta1.CCEClusterControllerIdentity{
+	identity := &infrav1beta2.CCEClusterControllerIdentity{
 		TypeMeta: metav1.TypeMeta{
-			APIVersion: infrav1beta1.GroupVersion.String(),
+			APIVersion: infrav1beta2.GroupVersion.String(),
 			Kind:       "CCEClusterControllerIdentity",
 		},
-		ObjectMeta: metav1.ObjectMeta{Name: infrav1beta1.CCEClusterControllerIdentityName},
+		ObjectMeta: metav1.ObjectMeta{Name: infrav1beta2.CCEClusterControllerIdentityName},
 	}
 	if err := r.Create(ctx, identity); err != nil {
 		if apierrors.IsAlreadyExists(err) {
@@ -81,7 +81,7 @@ func (r *CCEClusterControllerIdentityReconciler) Reconcile(ctx context.Context, 
 // SetupWithManager registers the reconciler with the manager.
 func (r *CCEClusterControllerIdentityReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&controlplanev1beta1.CCEManagedControlPlane{}).
+		For(&controlplanev1beta2.CCEManagedControlPlane{}).
 		Named("cceclustercontrolleridentity").
 		Complete(r)
 }

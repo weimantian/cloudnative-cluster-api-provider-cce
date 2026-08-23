@@ -4,7 +4,7 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-// Package v1beta1 contains API Schema definitions for the controlplane
+// Package v1beta2 contains API Schema definitions for the controlplane
 // cluster.x-k8s.io group (CCEManagedControlPlane).
 // +kubebuilder:object:generate=true
 // +groupName=controlplane.cluster.x-k8s.io

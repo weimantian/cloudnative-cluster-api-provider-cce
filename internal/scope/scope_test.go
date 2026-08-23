@@ -17,7 +17,7 @@ import (
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
 
 func TestResolveCredentialsFromSecret(t *testing.T) {
@@ -85,11 +85,11 @@ func TestResolveCredentialsEnvFallbackOnlyWhenUnreferenced(t *testing.T) {
 func TestResolveIdentityStatic(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
-	_ = infrav1beta1.AddToScheme(scheme)
+	_ = infrav1beta2.AddToScheme(scheme)
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		&infrav1beta1.CCEClusterStaticIdentity{
+		&infrav1beta2.CCEClusterStaticIdentity{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-id"},
-			Spec:       infrav1beta1.CCEClusterStaticIdentitySpec{SecretRef: "my-secret"},
+			Spec:       infrav1beta2.CCEClusterStaticIdentitySpec{SecretRef: "my-secret"},
 		},
 		&corev1.Secret{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "cce-provider-system"},
@@ -110,13 +110,13 @@ func TestResolveIdentityStatic(t *testing.T) {
 func TestResolveIdentityAllowedNamespace(t *testing.T) {
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
-	_ = infrav1beta1.AddToScheme(scheme)
+	_ = infrav1beta2.AddToScheme(scheme)
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		&infrav1beta1.CCEClusterStaticIdentity{
+		&infrav1beta2.CCEClusterStaticIdentity{
 			ObjectMeta: metav1.ObjectMeta{Name: "my-id"},
-			Spec: infrav1beta1.CCEClusterStaticIdentitySpec{
+			Spec: infrav1beta2.CCEClusterStaticIdentitySpec{
 				SecretRef: "my-secret",
-				AllowedNamespaces: &infrav1beta1.AllowedNamespaces{
+				AllowedNamespaces: &infrav1beta2.AllowedNamespaces{
 					NamespaceList: []string{"allowed-ns"},
 				},
 			},
@@ -163,12 +163,12 @@ func TestResolveIdentityControllerEnforcesAllowedNamespaces(t *testing.T) {
 
 	scheme := runtime.NewScheme()
 	_ = clientgoscheme.AddToScheme(scheme)
-	_ = infrav1beta1.AddToScheme(scheme)
+	_ = infrav1beta2.AddToScheme(scheme)
 	c := fake.NewClientBuilder().WithScheme(scheme).WithObjects(
-		&infrav1beta1.CCEClusterControllerIdentity{
+		&infrav1beta2.CCEClusterControllerIdentity{
 			ObjectMeta: metav1.ObjectMeta{Name: "default"},
-			Spec: infrav1beta1.CCEClusterControllerIdentitySpec{
-				AllowedNamespaces: &infrav1beta1.AllowedNamespaces{NamespaceList: []string{"allowed-ns"}},
+			Spec: infrav1beta2.CCEClusterControllerIdentitySpec{
+				AllowedNamespaces: &infrav1beta2.AllowedNamespaces{NamespaceList: []string{"allowed-ns"}},
 			},
 		},
 	).Build()

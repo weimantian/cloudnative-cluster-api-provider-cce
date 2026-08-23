@@ -48,9 +48,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
 
@@ -87,9 +85,7 @@ var _ = Describe("CCE workload cluster lifecycle", func() {
 		scheme := runtime.NewScheme()
 		Expect(clientgoscheme.AddToScheme(scheme)).To(Succeed())
 		Expect(clusterv1.AddToScheme(scheme)).To(Succeed())
-		Expect(infrav1beta1.AddToScheme(scheme)).To(Succeed())
 		Expect(infrav1beta2.AddToScheme(scheme)).To(Succeed())
-		Expect(controlplanev1beta1.AddToScheme(scheme)).To(Succeed())
 		Expect(controlplanev1beta2.AddToScheme(scheme)).To(Succeed())
 
 		c, err := client.New(restCfg, client.Options{Scheme: scheme})
@@ -117,12 +113,12 @@ var _ = Describe("CCE workload cluster lifecycle", func() {
 					Services: clusterv1.NetworkRanges{CIDRBlocks: []string{"10.247.0.0/16"}},
 				},
 				InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-					APIGroup: infrav1beta1.GroupVersion.Group,
+					APIGroup: infrav1beta2.GroupVersion.Group,
 					Kind:     "CCECluster",
 					Name:     clusterName,
 				},
 				ControlPlaneRef: clusterv1.ContractVersionedObjectReference{
-					APIGroup: controlplanev1beta1.GroupVersion.Group,
+					APIGroup: controlplanev1beta2.GroupVersion.Group,
 					Kind:     "CCEManagedControlPlane",
 					Name:     clusterName + "-control-plane",
 				},
@@ -140,9 +136,9 @@ var _ = Describe("CCE workload cluster lifecycle", func() {
 		labels := map[string]string{clusterv1.ClusterNameLabel: clusterName}
 
 		objects := []client.Object{
-			&infrav1beta1.CCECluster{
+			&infrav1beta2.CCECluster{
 				ObjectMeta: metav1.ObjectMeta{Name: clusterName, Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
-				Spec: infrav1beta1.CCEClusterSpec{
+				Spec: infrav1beta2.CCEClusterSpec{
 					Region: region,
 					Network: common.NetworkSpec{
 						VPC:     common.VPC{ID: vpcID},
@@ -150,20 +146,20 @@ var _ = Describe("CCE workload cluster lifecycle", func() {
 					},
 				},
 			},
-			&controlplanev1beta1.CCEManagedControlPlane{
+			&controlplanev1beta2.CCEManagedControlPlane{
 				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-control-plane", Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
-				Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{
+				Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{
 					ClusterName: clusterName,
 					Category:    "CCE",
 					Version:     "v1.33",
 					Flavor:      "cce.s2.medium",
-					ContainerNetwork: controlplanev1beta1.ContainerNetworkSpec{
+					ContainerNetwork: controlplanev1beta2.ContainerNetworkSpec{
 						Mode: "vpc-router",
 						CIDR: "10.244.0.0/16",
 					},
-					ServiceNetwork: controlplanev1beta1.ServiceNetworkSpec{CIDR: "10.247.0.0/16"},
-					EndpointAccess: controlplanev1beta1.EndpointAccessSpec{Public: false},
-					Billing:        controlplanev1beta1.BillingSpec{Mode: 0},
+					ServiceNetwork: controlplanev1beta2.ServiceNetworkSpec{CIDR: "10.247.0.0/16"},
+					EndpointAccess: controlplanev1beta2.EndpointAccessSpec{Public: false},
+					Billing:        controlplanev1beta2.BillingSpec{Mode: 0},
 				},
 			},
 			&clusterv1.MachinePool{
@@ -177,7 +173,7 @@ var _ = Describe("CCE workload cluster lifecycle", func() {
 							Version:     "v1.33.0",
 							Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr(clusterName + "-bootstrap")},
 							InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-								APIGroup: infrav1beta1.GroupVersion.Group,
+								APIGroup: infrav1beta2.GroupVersion.Group,
 								Kind:     "CCEManagedMachinePool",
 								Name:     clusterName + "-pool-0",
 							},
@@ -185,9 +181,9 @@ var _ = Describe("CCE workload cluster lifecycle", func() {
 					},
 				},
 			},
-			&infrav1beta1.CCEManagedMachinePool{
+			&infrav1beta2.CCEManagedMachinePool{
 				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-pool-0", Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
-				Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+				Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 					ClusterName:      clusterName,
 					NodePoolName:     "pool-0",
 					Flavor:           nodeFlavor,
@@ -209,7 +205,7 @@ var _ = Describe("CCE workload cluster lifecycle", func() {
 		// kubeconfig generated).
 		By("waiting for CCEManagedControlPlane to become Ready")
 		waitForCondition(ctx, 25*time.Minute, "control plane Ready", func() (bool, error) {
-			cp := &controlplanev1beta1.CCEManagedControlPlane{}
+			cp := &controlplanev1beta2.CCEManagedControlPlane{}
 			if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: clusterName + "-control-plane"}, cp); err != nil {
 				return false, err
 			}
@@ -219,7 +215,7 @@ var _ = Describe("CCE workload cluster lifecycle", func() {
 		// Wait for the node pool to reach its desired replicas.
 		By("waiting for CCEManagedMachinePool to become Ready")
 		waitForCondition(ctx, 25*time.Minute, "node pool Ready", func() (bool, error) {
-			pool := &infrav1beta1.CCEManagedMachinePool{}
+			pool := &infrav1beta2.CCEManagedMachinePool{}
 			if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: clusterName + "-pool-0"}, pool); err != nil {
 				return false, err
 			}

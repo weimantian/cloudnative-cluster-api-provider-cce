@@ -12,7 +12,7 @@
 # Fill in every VERIFY-... placeholder. Verified structurally; an end-to-end
 # topology run requires a management cluster with the CAPI topology controllers
 # (clusterctl init installs them by default).
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
 kind: CCEClusterTemplate
 metadata:
   name: cce-cluster-template
@@ -27,7 +27,7 @@ spec:
         subnets:
           - id: VERIFY-NODE-SUBNET-ID
 ---
-apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
 kind: CCEManagedControlPlaneTemplate
 metadata:
   name: cce-control-plane-template
@@ -48,7 +48,7 @@ spec:
       endpointAccess:
         public: true
 ---
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
 kind: CCEManagedMachinePoolTemplate
 metadata:
   name: cce-worker-pool-template
@@ -76,12 +76,12 @@ metadata:
 spec:
   infrastructure:
     ref:
-      apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+      apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
       kind: CCEClusterTemplate
       name: cce-cluster-template
   controlPlane:
     ref:
-      apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+      apiVersion: controlplane.cluster.x-k8s.io/v1beta2
       kind: CCEManagedControlPlaneTemplate
       name: cce-control-plane-template
   workers:
@@ -90,7 +90,7 @@ spec:
         template:
           infrastructure:
             ref:
-              apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+              apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
               kind: CCEManagedMachinePoolTemplate
               name: cce-worker-pool-template
   patches:
@@ -100,7 +100,7 @@ spec:
     - name: control-plane-cluster-name
       definitions:
         - selector:
-            apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+            apiVersion: controlplane.cluster.x-k8s.io/v1beta2
             kind: CCEManagedControlPlaneTemplate
             matchResources:
               controlPlane: true
@@ -112,7 +112,7 @@ spec:
     - name: machine-pool-cluster-name
       definitions:
         - selector:
-            apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+            apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
             kind: CCEManagedMachinePoolTemplate
             matchResources:
               machinePoolClass:

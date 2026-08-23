@@ -194,7 +194,7 @@ type ControlPlaneLogSpec struct {
 }
 
 // AccessPolicySpec declares one CCE access policy (maps to the CCE
-// AccessPolicy API). Structurally identical to the v1beta1 type.
+// AccessPolicy API).
 type AccessPolicySpec struct {
 	// Name of the access policy (unique within the account).
 	// +kubebuilder:validation:Required

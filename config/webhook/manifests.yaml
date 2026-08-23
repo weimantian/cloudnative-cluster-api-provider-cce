@@ -10,14 +10,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-ccecluster
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta2-ccecluster
   failurePolicy: Fail
   name: mutation.ccecluster.infrastructure.cluster.x-k8s.io
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -30,14 +30,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-controlplane-cluster-x-k8s-io-v1beta1-ccemanagedcontrolplane
+      path: /mutate-controlplane-cluster-x-k8s-io-v1beta2-ccemanagedcontrolplane
   failurePolicy: Fail
   name: mutation.ccemanagedcontrolplane.controlplane.cluster.x-k8s.io
   rules:
   - apiGroups:
     - controlplane.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -50,14 +50,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-controlplane-cluster-x-k8s-io-v1beta1-ccemanagedcontrolplanetemplate
+      path: /mutate-controlplane-cluster-x-k8s-io-v1beta2-ccemanagedcontrolplanetemplate
   failurePolicy: Fail
   name: mutation.ccemanagedcontrolplanetemplate.controlplane.cluster.x-k8s.io
   rules:
   - apiGroups:
     - controlplane.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -70,14 +70,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-ccemanagedmachinepool
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta2-ccemanagedmachinepool
   failurePolicy: Fail
   name: mutation.ccemanagedmachinepool.infrastructure.cluster.x-k8s.io
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -90,14 +90,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta1-ccemanagedmachinepooltemplate
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta2-ccemanagedmachinepooltemplate
   failurePolicy: Fail
   name: mutation.ccemanagedmachinepooltemplate.infrastructure.cluster.x-k8s.io
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -116,14 +116,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-ccecluster
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-ccecluster
   failurePolicy: Fail
   name: validation.ccecluster.infrastructure.cluster.x-k8s.io
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -136,14 +136,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-cceclustercontrolleridentity
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-cceclustercontrolleridentity
   failurePolicy: Fail
   name: validation.cceclustercontrolleridentity.infrastructure.cluster.x-k8s.io
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -156,14 +156,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-cceclusterroleidentity
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-cceclusterroleidentity
   failurePolicy: Fail
   name: validation.cceclusterroleidentity.infrastructure.cluster.x-k8s.io
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -176,14 +176,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-cceclusterstaticidentity
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-cceclusterstaticidentity
   failurePolicy: Fail
   name: validation.cceclusterstaticidentity.infrastructure.cluster.x-k8s.io
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -196,14 +196,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-cceclustertemplate
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-cceclustertemplate
   failurePolicy: Fail
   name: validation.cceclustertemplate.infrastructure.cluster.x-k8s.io
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -216,14 +216,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-controlplane-cluster-x-k8s-io-v1beta1-ccemanagedcontrolplane
+      path: /validate-controlplane-cluster-x-k8s-io-v1beta2-ccemanagedcontrolplane
   failurePolicy: Fail
   name: validation.ccemanagedcontrolplane.controlplane.cluster.x-k8s.io
   rules:
   - apiGroups:
     - controlplane.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -236,14 +236,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-controlplane-cluster-x-k8s-io-v1beta1-ccemanagedcontrolplanetemplate
+      path: /validate-controlplane-cluster-x-k8s-io-v1beta2-ccemanagedcontrolplanetemplate
   failurePolicy: Fail
   name: validation.ccemanagedcontrolplanetemplate.controlplane.cluster.x-k8s.io
   rules:
   - apiGroups:
     - controlplane.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -256,14 +256,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-ccemanagedmachinepool
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-ccemanagedmachinepool
   failurePolicy: Fail
   name: validation.ccemanagedmachinepool.infrastructure.cluster.x-k8s.io
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE
@@ -276,14 +276,14 @@ webhooks:
     service:
       name: webhook-service
       namespace: system
-      path: /validate-infrastructure-cluster-x-k8s-io-v1beta1-ccemanagedmachinepooltemplate
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-ccemanagedmachinepooltemplate
   failurePolicy: Fail
   name: validation.ccemanagedmachinepooltemplate.infrastructure.cluster.x-k8s.io
   rules:
   - apiGroups:
     - infrastructure.cluster.x-k8s.io
     apiVersions:
-    - v1beta1
+    - v1beta2
     operations:
     - CREATE
     - UPDATE

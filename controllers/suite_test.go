@@ -27,9 +27,7 @@ import (
 	logzap "sigs.k8s.io/controller-runtime/pkg/log/zap"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
@@ -70,13 +68,7 @@ func TestMain(m *testing.M) {
 	if err := clusterv1.AddToScheme(scheme); err != nil {
 		panic(err)
 	}
-	if err := infrav1beta1.AddToScheme(scheme); err != nil {
-		panic(err)
-	}
 	if err := infrav1beta2.AddToScheme(scheme); err != nil {
-		panic(err)
-	}
-	if err := controlplanev1beta1.AddToScheme(scheme); err != nil {
 		panic(err)
 	}
 	if err := controlplanev1beta2.AddToScheme(scheme); err != nil {
@@ -109,18 +101,18 @@ func TestMain(m *testing.M) {
 // newTestCluster returns a CAPI Cluster with a CCECluster shell (infra) and a
 // CCEManagedControlPlane wired via refs. InfrastructureProvisioned defaults
 // true so the control plane reconcile can proceed.
-func newTestCluster(t *testing.T, ns string) (*clusterv1.Cluster, *infrav1beta1.CCECluster, *controlplanev1beta1.CCEManagedControlPlane) {
+func newTestCluster(t *testing.T, ns string) (*clusterv1.Cluster, *infrav1beta2.CCECluster, *controlplanev1beta2.CCEManagedControlPlane) {
 	t.Helper()
 	cluster := &clusterv1.Cluster{
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: ns},
 		Spec: clusterv1.ClusterSpec{
 			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
-				APIGroup: infrav1beta1.GroupVersion.Group,
+				APIGroup: infrav1beta2.GroupVersion.Group,
 				Kind:     "CCECluster",
 				Name:     "test-cluster",
 			},
 			ControlPlaneRef: clusterv1.ContractVersionedObjectReference{
-				APIGroup: controlplanev1beta1.GroupVersion.Group,
+				APIGroup: controlplanev1beta2.GroupVersion.Group,
 				Kind:     "CCEManagedControlPlane",
 				Name:     "test-cluster-control-plane",
 			},
@@ -136,13 +128,13 @@ func newTestCluster(t *testing.T, ns string) (*clusterv1.Cluster, *infrav1beta1.
 		Name:       cluster.Name,
 		UID:        cluster.UID,
 	}
-	cceCluster := &infrav1beta1.CCECluster{
+	cceCluster := &infrav1beta2.CCECluster{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "test-cluster",
 			Namespace:       ns,
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
-		Spec: infrav1beta1.CCEClusterSpec{
+		Spec: infrav1beta2.CCEClusterSpec{
 			Region: "cn-north-4",
 			Network: common.NetworkSpec{
 				VPC:     common.VPC{ID: "vpc-1"},
@@ -150,22 +142,22 @@ func newTestCluster(t *testing.T, ns string) (*clusterv1.Cluster, *infrav1beta1.
 			},
 		},
 	}
-	cp := &controlplanev1beta1.CCEManagedControlPlane{
+	cp := &controlplanev1beta2.CCEManagedControlPlane{
 		ObjectMeta: metav1.ObjectMeta{
 			Name:            "test-cluster-control-plane",
 			Namespace:       ns,
 			OwnerReferences: []metav1.OwnerReference{ownerRef},
 		},
-		Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{
+		Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{
 			ClusterName: "test-cluster",
 			Category:    "Turbo",
 			Flavor:      "cce.s2.medium",
-			ContainerNetwork: controlplanev1beta1.ContainerNetworkSpec{
+			ContainerNetwork: controlplanev1beta2.ContainerNetworkSpec{
 				Mode:       "eni",
 				ENISubnets: []string{"sub-1"},
 			},
-			ServiceNetwork: controlplanev1beta1.ServiceNetworkSpec{CIDR: "10.247.0.0/16"},
-			EndpointAccess: controlplanev1beta1.EndpointAccessSpec{Public: true},
+			ServiceNetwork: controlplanev1beta2.ServiceNetworkSpec{CIDR: "10.247.0.0/16"},
+			EndpointAccess: controlplanev1beta2.EndpointAccessSpec{Public: true},
 		},
 	}
 	for _, o := range []client.Object{cceCluster, cp} {
@@ -229,9 +221,9 @@ func boolPtr(b bool) *bool { return &b }
 func createStaticIdentity(t *testing.T, name string) {
 	t.Helper()
 	createNamespace(t, "cce-provider-system")
-	id := &infrav1beta1.CCEClusterStaticIdentity{
+	id := &infrav1beta2.CCEClusterStaticIdentity{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
-		Spec:       infrav1beta1.CCEClusterStaticIdentitySpec{SecretRef: name + "-secret"},
+		Spec:       infrav1beta2.CCEClusterStaticIdentitySpec{SecretRef: name + "-secret"},
 	}
 	if err := k8sClient.Create(context.Background(), id); err != nil {
 		t.Fatalf("failed to create CCEClusterStaticIdentity: %v", err)

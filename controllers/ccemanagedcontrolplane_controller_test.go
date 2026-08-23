@@ -18,8 +18,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
@@ -79,7 +79,7 @@ func TestControlPlaneReconcileSuccess(t *testing.T) {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
 
-	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
 		t.Fatalf("failed to get control plane: %v", err)
 	}
@@ -151,7 +151,7 @@ func TestControlPlaneReconcileDeletePassesOptions(t *testing.T) {
 
 	// Trigger deletion via Delete() (deletionTimestamp is set by the API
 	// server; the object survives because the controller added a finalizer).
-	latest := &controlplanev1beta1.CCEManagedControlPlane{}
+	latest := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), latest); err != nil {
 		t.Fatalf("failed to re-get control plane: %v", err)
 	}
@@ -178,7 +178,7 @@ func TestControlPlaneReconcileDeletePassesOptions(t *testing.T) {
 
 // upgradeCP builds the shared CP upgrade scenario: spec.version v1.31.0 while
 // the cloud reports v1.30.0.
-func upgradeCP(t *testing.T, ns string) (*clusterv1.Cluster, *controlplanev1beta1.CCEManagedControlPlane, *fakes.FakeCCEService, *CCEManagedControlPlaneReconciler) {
+func upgradeCP(t *testing.T, ns string) (*clusterv1.Cluster, *controlplanev1beta2.CCEManagedControlPlane, *fakes.FakeCCEService, *CCEManagedControlPlaneReconciler) {
 	t.Helper()
 	cluster, _, cp := newTestCluster(t, ns)
 	createCredentialsSecret(t, ns, "test-cluster")
@@ -212,7 +212,7 @@ func TestControlPlaneReconcileUpgradeStart(t *testing.T) {
 	if len(fakeSvc.StartUpgradeCalls) != 1 || fakeSvc.StartUpgradeCalls[0] != "v1.31.0" {
 		t.Fatalf("expected StartUpgrade(v1.31.0), got %v", fakeSvc.StartUpgradeCalls)
 	}
-	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctxBG, client.ObjectKeyFromObject(cp), got); err != nil {
 		t.Fatalf("failed to get control plane: %v", err)
 	}
@@ -244,7 +244,7 @@ func TestControlPlaneReconcileUpgradeNotOffered(t *testing.T) {
 	if len(fakeSvc.StartUpgradeCalls) != 0 {
 		t.Errorf("expected no upgrade start when no targets offered, got %v", fakeSvc.StartUpgradeCalls)
 	}
-	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctxBG, client.ObjectKeyFromObject(cp), got); err != nil {
 		t.Fatalf("failed to get control plane: %v", err)
 	}
@@ -282,7 +282,7 @@ func TestControlPlaneReconcileUpgradeCompletes(t *testing.T) {
 	if len(fakeSvc.StartUpgradeCalls) != 1 {
 		t.Errorf("expected no new upgrade after completion, got %v", fakeSvc.StartUpgradeCalls)
 	}
-	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctxBG, client.ObjectKeyFromObject(cp), got); err != nil {
 		t.Fatalf("failed to get control plane: %v", err)
 	}
@@ -325,7 +325,7 @@ func TestControlPlaneReconcileAddons(t *testing.T) {
 	markInfrastructureProvisioned(t, cluster)
 
 	// Declare two addons; one already on the cloud at a stale version.
-	cp.Spec.Addons = []controlplanev1beta1.AddonSpec{
+	cp.Spec.Addons = []controlplanev1beta2.AddonSpec{
 		{Name: "coredns", Version: "1.2.0"},
 		{Name: "metrics-server", Version: ""}, // latest
 	}
@@ -361,7 +361,7 @@ func TestControlPlaneReconcileAddons(t *testing.T) {
 		t.Errorf("expected delete old-addon, got %v", fakeSvc.AddonDeleteCalls)
 	}
 
-	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
 		t.Fatalf("failed to get control plane: %v", err)
 	}
@@ -381,7 +381,7 @@ func TestControlPlaneReconcilePodIdentity(t *testing.T) {
 	createCredentialsSecret(t, ns, "test-cluster")
 	markInfrastructureProvisioned(t, cluster)
 
-	cp.Spec.PodIdentityAssociations = []controlplanev1beta1.PodIdentityAssociationSpec{
+	cp.Spec.PodIdentityAssociations = []controlplanev1beta2.PodIdentityAssociationSpec{
 		{Namespace: "default", ServiceAccount: "app-sa", AgencyName: "app-agency"},
 	}
 	if err := k8sClient.Update(ctx, cp); err != nil {
@@ -415,7 +415,7 @@ func TestControlPlaneReconcilePodIdentity(t *testing.T) {
 		t.Errorf("expected delete podid-old, got %v", fakeSvc.PodIdentityDelete)
 	}
 
-	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
 		t.Fatalf("failed to get control plane: %v", err)
 	}
@@ -435,9 +435,9 @@ func TestControlPlaneReconcileLogging(t *testing.T) {
 	createCredentialsSecret(t, ns, "test-cluster")
 	markInfrastructureProvisioned(t, cluster)
 
-	cp.Spec.Logging = &controlplanev1beta1.ControlPlaneLoggingSpec{
+	cp.Spec.Logging = &controlplanev1beta2.ControlPlaneLoggingSpec{
 		TTLInDays: 7,
-		Logs: []controlplanev1beta1.ControlPlaneLogSpec{
+		Logs: []controlplanev1beta2.ControlPlaneLogSpec{
 			{Name: "kube-apiserver", Type: "control", Enable: true},
 			{Name: "audit", Type: "audit", Enable: true},
 		},
@@ -478,7 +478,7 @@ func TestControlPlaneReconcileLogging(t *testing.T) {
 		t.Errorf("expected audit enabled in update, got %+v", call.Logs)
 	}
 
-	got := &controlplanev1beta1.CCEManagedControlPlane{}
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
 		t.Fatalf("failed to get control plane: %v", err)
 	}
@@ -498,9 +498,9 @@ func TestControlPlaneReconcileLoggingNoDrift(t *testing.T) {
 	createCredentialsSecret(t, ns, "test-cluster")
 	markInfrastructureProvisioned(t, cluster)
 
-	cp.Spec.Logging = &controlplanev1beta1.ControlPlaneLoggingSpec{
+	cp.Spec.Logging = &controlplanev1beta2.ControlPlaneLoggingSpec{
 		TTLInDays: 7,
-		Logs: []controlplanev1beta1.ControlPlaneLogSpec{
+		Logs: []controlplanev1beta2.ControlPlaneLogSpec{
 			{Name: "audit", Type: "audit", Enable: true},
 		},
 	}
@@ -564,7 +564,7 @@ func TestControlPlaneReconcileDeleteWithIdentity(t *testing.T) {
 
 	// Trigger deletion; the delete reconcile must resolve credentials via
 	// identityRef and reach DeleteCluster.
-	latest := &controlplanev1beta1.CCEManagedControlPlane{}
+	latest := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), latest); err != nil {
 		t.Fatalf("failed to re-get control plane: %v", err)
 	}
@@ -588,9 +588,9 @@ func TestControlPlaneReconcileRoleIdentityAgency(t *testing.T) {
 	t.Setenv("CLOUD_SDK_SK", "envSK")
 	ctx := context.Background()
 
-	roleID := &infrav1beta1.CCEClusterRoleIdentity{
+	roleID := &infrav1beta2.CCEClusterRoleIdentity{
 		ObjectMeta: metav1.ObjectMeta{Name: "cross-account"},
-		Spec:       infrav1beta1.CCEClusterRoleIdentitySpec{AgencyName: "delegated-agency"},
+		Spec:       infrav1beta2.CCEClusterRoleIdentitySpec{AgencyName: "delegated-agency"},
 	}
 	if err := k8sClient.Create(ctx, roleID); err != nil {
 		t.Fatalf("failed to create CCEClusterRoleIdentity: %v", err)

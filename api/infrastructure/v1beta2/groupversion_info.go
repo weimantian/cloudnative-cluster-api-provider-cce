@@ -4,7 +4,7 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-// Package v1beta1 contains API Schema definitions for the infrastructure
+// Package v1beta2 contains API Schema definitions for the infrastructure
 // cluster.x-k8s.io group (CCECluster, CCEManagedMachinePool).
 // +kubebuilder:object:generate=true
 // +groupName=infrastructure.cluster.x-k8s.io

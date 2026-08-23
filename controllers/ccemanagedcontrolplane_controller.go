@@ -29,8 +29,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
@@ -78,7 +78,7 @@ func (r *CCEManagedControlPlaneReconciler) newCCEService(regionID, ak, sk string
 func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
-	cp := &controlplanev1beta1.CCEManagedControlPlane{}
+	cp := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := r.Get(ctx, req.NamespacedName, cp); err != nil {
 		if apierrors.IsNotFound(err) {
 			return ctrl.Result{}, nil
@@ -117,7 +117,7 @@ func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ct
 	return r.reconcileNormal(ctx, cluster, cp)
 }
 
-func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta1.CCEManagedControlPlane) (ctrl.Result, error) {
+func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta2.CCEManagedControlPlane) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	// Wait for the CCECluster shell to report ready (CAPI v1beta2 contract:
@@ -305,7 +305,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 // pollUpgradeTask polls an in-flight upgrade task. Returns (result, true) when
 // the caller should return immediately; on Success it clears the task and
 // continues the normal reconcile (done=false).
-func (r *CCEManagedControlPlaneReconciler) pollUpgradeTask(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) (ctrl.Result, bool) {
+func (r *CCEManagedControlPlaneReconciler) pollUpgradeTask(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta2.CCEManagedControlPlane) (ctrl.Result, bool) {
 	log := ctrl.LoggerFrom(ctx)
 	phase, err := svc.ShowUpgradeTask(ctx, clusterID, cp.Status.UpgradeTaskID)
 	if err != nil {
@@ -343,7 +343,7 @@ func (r *CCEManagedControlPlaneReconciler) pollUpgradeTask(ctx context.Context, 
 // startUpgrade decides whether the platform offers the requested target and,
 // when it does, starts the upgrade workflow. Returns (result, true) when the
 // caller should return immediately.
-func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) (ctrl.Result, bool) {
+func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta2.CCEManagedControlPlane) (ctrl.Result, bool) {
 	log := ctrl.LoggerFrom(ctx)
 	info, err := svc.GetUpgradeInfo(ctx, clusterID)
 	if err != nil {
@@ -391,7 +391,7 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 	return ctrl.Result{RequeueAfter: defaultRequeue}, true
 }
 
-func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta1.CCEManagedControlPlane) (ctrl.Result, error) {
+func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta2.CCEManagedControlPlane) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
 
 	region, _, _, _, err := r.clusterNetwork(ctx, cluster, cp)
@@ -457,7 +457,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 // SetupWithManager registers the controller with the manager.
 func (r *CCEManagedControlPlaneReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
-		For(&controlplanev1beta1.CCEManagedControlPlane{}).
+		For(&controlplanev1beta2.CCEManagedControlPlane{}).
 		WithOptions(opts).
 		Named("ccemanagedcontrolplane").
 		Complete(r)
@@ -470,7 +470,7 @@ func (r *CCEManagedControlPlaneReconciler) SetupWithManager(ctx context.Context,
 // stored one is missing or its client certificate expires within the refresh
 // threshold, and refuses to overwrite a pre-existing Secret the provider
 // does not own (mirrors the ownership guard on the CAPI kubeconfig).
-func (r *CCEManagedControlPlaneReconciler) ensureKubeconfigSecret(ctx context.Context, cp *controlplanev1beta1.CCEManagedControlPlane, cluster *clusterv1.Cluster, svc cceService.Service, clusterID, secretName string, validityDays int32) error {
+func (r *CCEManagedControlPlaneReconciler) ensureKubeconfigSecret(ctx context.Context, cp *controlplanev1beta2.CCEManagedControlPlane, cluster *clusterv1.Cluster, svc cceService.Service, clusterID, secretName string, validityDays int32) error {
 	if !kubeconfigNeedsRefresh(ctx, r.Client, cp.Namespace, secretName, kubeconfigRefreshThresholdDays) {
 		return nil
 	}
@@ -514,11 +514,11 @@ func (r *CCEManagedControlPlaneReconciler) ensureKubeconfigSecret(ctx context.Co
 // official hostNetwork is required at cluster creation (A2, verified by
 // the real CCE smoke test). Managed subnets report their ResourceID; the
 // ENI subnets carry the neutron_subnet_id the eniNetwork API requires.
-func (r *CCEManagedControlPlaneReconciler) clusterNetwork(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta1.CCEManagedControlPlane) (region, vpcID, subnetID string, eniSubnets []string, err error) {
+func (r *CCEManagedControlPlaneReconciler) clusterNetwork(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta2.CCEManagedControlPlane) (region, vpcID, subnetID string, eniSubnets []string, err error) {
 	if cluster.Spec.InfrastructureRef.Name == "" {
 		return "", "", "", nil, errors.New("cluster has no infrastructureRef")
 	}
-	cceCluster := &infrav1beta1.CCECluster{}
+	cceCluster := &infrav1beta2.CCECluster{}
 	key := types.NamespacedName{Namespace: cp.Namespace, Name: cluster.Spec.InfrastructureRef.Name}
 	if err := r.Get(ctx, key, cceCluster); err != nil {
 		return "", "", "", nil, errors.Wrapf(err, "failed to get CCECluster %s", key)
@@ -557,7 +557,7 @@ func (r *CCEManagedControlPlaneReconciler) clusterNetwork(ctx context.Context, c
 // input. identityAgency (from a CCEClusterRoleIdentity, when one is
 // referenced) fills the cluster agency when the spec does not set it
 // explicitly - an explicit spec.agencyName always wins.
-func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane, vpcID, nodeSubnetID, identityAgency string, eniSubnets []string) cceService.CreateClusterInput {
+func toCreateClusterInput(cp *controlplanev1beta2.CCEManagedControlPlane, vpcID, nodeSubnetID, identityAgency string, eniSubnets []string) cceService.CreateClusterInput {
 	agency := cp.Spec.AgencyName
 	if agency == "" {
 		agency = identityAgency
@@ -589,7 +589,7 @@ func toCreateClusterInput(cp *controlplanev1beta1.CCEManagedControlPlane, vpcID,
 
 // toEncryptionConfigInput maps the spec to the service-layer input; nil
 // when the spec is unset (the CCE API then applies its Default).
-func toEncryptionConfigInput(spec *controlplanev1beta1.EncryptionConfigSpec) *cceService.EncryptionConfigInput {
+func toEncryptionConfigInput(spec *controlplanev1beta2.EncryptionConfigSpec) *cceService.EncryptionConfigInput {
 	if spec == nil {
 		return nil
 	}
@@ -598,7 +598,7 @@ func toEncryptionConfigInput(spec *controlplanev1beta1.EncryptionConfigSpec) *cc
 
 // toAuthenticationInput maps the spec to the service-layer input; nil when
 // the spec is unset (the CCE API then applies rbac).
-func toAuthenticationInput(spec *controlplanev1beta1.AuthenticationSpec) *cceService.AuthenticationInput {
+func toAuthenticationInput(spec *controlplanev1beta2.AuthenticationSpec) *cceService.AuthenticationInput {
 	if spec == nil {
 		return nil
 	}
@@ -645,7 +645,7 @@ func splitEndpointURL(raw string) (string, int32) {
 
 // reconcileAddons reconciles the declared addon set against the cloud: create
 // missing, upgrade version drift, delete those no longer listed.
-func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) error {
+func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta2.CCEManagedControlPlane) error {
 	if len(cp.Spec.Addons) == 0 {
 		return nil
 	}
@@ -657,7 +657,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, 
 	for _, a := range current {
 		cloudByName[a.Name] = a
 	}
-	specByName := map[string]controlplanev1beta1.AddonSpec{}
+	specByName := map[string]controlplanev1beta2.AddonSpec{}
 	for _, a := range cp.Spec.Addons {
 		specByName[a.Name] = a
 	}
@@ -693,7 +693,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, 
 
 // reconcilePodIdentityAssociations reconciles the declared pod-identity
 // associations against the cloud: create missing, delete removed.
-func (r *CCEManagedControlPlaneReconciler) reconcilePodIdentityAssociations(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) error {
+func (r *CCEManagedControlPlaneReconciler) reconcilePodIdentityAssociations(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta2.CCEManagedControlPlane) error {
 	if len(cp.Spec.PodIdentityAssociations) == 0 {
 		return nil
 	}
@@ -706,7 +706,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcilePodIdentityAssociations(ctx 
 	for _, a := range current {
 		cloudByKey[key(a.Namespace, a.ServiceAccount)] = a
 	}
-	specByKey := map[string]controlplanev1beta1.PodIdentityAssociationSpec{}
+	specByKey := map[string]controlplanev1beta2.PodIdentityAssociationSpec{}
 	for _, a := range cp.Spec.PodIdentityAssociations {
 		specByKey[key(a.Namespace, a.ServiceAccount)] = a
 	}
@@ -740,7 +740,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcilePodIdentityAssociations(ctx 
 // against the cloud (mirrors CAPA EKS Logging). Declarative: TTL + the exact
 // log item set, compared against ShowClusterConfig, applied via
 // UpdateClusterLogConfig on drift.
-func (r *CCEManagedControlPlaneReconciler) reconcileLogging(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) error {
+func (r *CCEManagedControlPlaneReconciler) reconcileLogging(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta2.CCEManagedControlPlane) error {
 	if cp.Spec.Logging == nil {
 		return nil
 	}
@@ -795,7 +795,7 @@ func logConfigEqual(a, b *cceService.LogConfigInfo) bool {
 // namespaces), delete those no longer listed. CCE access policies are account-
 // scoped (one policy may span many clusters), so they are keyed by name and
 // scoped to the owning cluster via clusters=[clusterID].
-func (r *CCEManagedControlPlaneReconciler) reconcileAccessPolicies(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta1.CCEManagedControlPlane) error {
+func (r *CCEManagedControlPlaneReconciler) reconcileAccessPolicies(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta2.CCEManagedControlPlane) error {
 	if len(cp.Spec.AccessPolicies) == 0 {
 		return nil
 	}
@@ -807,7 +807,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAccessPolicies(ctx context.C
 	for _, p := range current {
 		cloudByName[p.Name] = p
 	}
-	specByName := map[string]controlplanev1beta1.AccessPolicySpec{}
+	specByName := map[string]controlplanev1beta2.AccessPolicySpec{}
 	for _, p := range cp.Spec.AccessPolicies {
 		specByName[p.Name] = p
 	}
@@ -840,7 +840,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAccessPolicies(ctx context.C
 
 // toAccessPolicyInput maps a spec to the service input, scoping the policy to
 // the owning cluster.
-func toAccessPolicyInput(clusterID string, p controlplanev1beta1.AccessPolicySpec) cceService.AccessPolicyInput {
+func toAccessPolicyInput(clusterID string, p controlplanev1beta2.AccessPolicySpec) cceService.AccessPolicyInput {
 	return cceService.AccessPolicyInput{
 		Name:          p.Name,
 		ClusterID:     clusterID,
@@ -853,7 +853,7 @@ func toAccessPolicyInput(clusterID string, p controlplanev1beta1.AccessPolicySpe
 
 // accessPolicyDrifted reports whether a cloud access policy differs from the
 // declared spec (empty spec namespaces default to ["*"]).
-func accessPolicyDrifted(got cceService.AccessPolicyInfo, want controlplanev1beta1.AccessPolicySpec) bool {
+func accessPolicyDrifted(got cceService.AccessPolicyInfo, want controlplanev1beta2.AccessPolicySpec) bool {
 	if got.PolicyType != want.PolicyType || got.PrincipalType != want.PrincipalType {
 		return true
 	}

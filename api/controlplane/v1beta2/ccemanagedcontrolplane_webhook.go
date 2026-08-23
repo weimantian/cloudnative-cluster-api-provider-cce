@@ -4,7 +4,7 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-package v1beta1
+package v1beta2
 
 import (
 	"context"
@@ -24,8 +24,8 @@ func (c *CCEManagedControlPlane) SetupWebhookWithManager(mgr ctrl.Manager) error
 		Complete()
 }
 
-// +kubebuilder:webhook:path=/mutate-controlplane-cluster-x-k8s-io-v1beta1-ccemanagedcontrolplane,mutating=true,failurePolicy=fail,groups=controlplane.cluster.x-k8s.io,resources=ccemanagedcontrolplanes,verbs=create;update,versions=v1beta1,name=mutation.ccemanagedcontrolplane.controlplane.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1
-// +kubebuilder:webhook:path=/validate-controlplane-cluster-x-k8s-io-v1beta1-ccemanagedcontrolplane,mutating=false,failurePolicy=fail,groups=controlplane.cluster.x-k8s.io,resources=ccemanagedcontrolplanes,verbs=create;update,versions=v1beta1,name=validation.ccemanagedcontrolplane.controlplane.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-controlplane-cluster-x-k8s-io-v1beta2-ccemanagedcontrolplane,mutating=true,failurePolicy=fail,groups=controlplane.cluster.x-k8s.io,resources=ccemanagedcontrolplanes,verbs=create;update,versions=v1beta2,name=mutation.ccemanagedcontrolplane.controlplane.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-controlplane-cluster-x-k8s-io-v1beta2-ccemanagedcontrolplane,mutating=false,failurePolicy=fail,groups=controlplane.cluster.x-k8s.io,resources=ccemanagedcontrolplanes,verbs=create;update,versions=v1beta2,name=validation.ccemanagedcontrolplane.controlplane.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1
 
 var _ admission.Defaulter[*CCEManagedControlPlane] = &CCEManagedControlPlane{}
 

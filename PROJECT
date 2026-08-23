@@ -11,8 +11,8 @@ resources:
   domain: cluster.x-k8s.io
   group: infrastructure
   kind: CCECluster
-  path: github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1
-  version: v1beta1
+  path: github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2
+  version: v1beta2
 - api:
     crdVersion: v1
     namespaced: true
@@ -20,8 +20,8 @@ resources:
   domain: cluster.x-k8s.io
   group: controlplane
   kind: CCEManagedControlPlane
-  path: github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1
-  version: v1beta1
+  path: github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2
+  version: v1beta2
 - api:
     crdVersion: v1
     namespaced: true
@@ -29,6 +29,6 @@ resources:
   domain: cluster.x-k8s.io
   group: infrastructure
   kind: CCEManagedMachinePool
-  path: github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1
-  version: v1beta1
+  path: github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2
+  version: v1beta2
 version: "3"

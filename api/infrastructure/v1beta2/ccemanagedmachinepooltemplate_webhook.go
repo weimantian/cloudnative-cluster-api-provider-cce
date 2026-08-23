@@ -4,7 +4,7 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-package v1beta1
+package v1beta2
 
 import (
 	"context"
@@ -23,8 +23,8 @@ func (t *CCEManagedMachinePoolTemplate) SetupWebhookWithManager(mgr ctrl.Manager
 		Complete()
 }
 
-// +kubebuilder:webhook:path=/mutate-infrastructure-cluster-x-k8s-io-v1beta1-ccemanagedmachinepooltemplate,mutating=true,failurePolicy=fail,groups=infrastructure.cluster.x-k8s.io,resources=ccemanagedmachinepooltemplates,verbs=create;update,versions=v1beta1,name=mutation.ccemanagedmachinepooltemplate.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1
-// +kubebuilder:webhook:path=/validate-infrastructure-cluster-x-k8s-io-v1beta1-ccemanagedmachinepooltemplate,mutating=false,failurePolicy=fail,groups=infrastructure.cluster.x-k8s.io,resources=ccemanagedmachinepooltemplates,verbs=create;update,versions=v1beta1,name=validation.ccemanagedmachinepooltemplate.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/mutate-infrastructure-cluster-x-k8s-io-v1beta2-ccemanagedmachinepooltemplate,mutating=true,failurePolicy=fail,groups=infrastructure.cluster.x-k8s.io,resources=ccemanagedmachinepooltemplates,verbs=create;update,versions=v1beta2,name=mutation.ccemanagedmachinepooltemplate.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1
+// +kubebuilder:webhook:path=/validate-infrastructure-cluster-x-k8s-io-v1beta2-ccemanagedmachinepooltemplate,mutating=false,failurePolicy=fail,groups=infrastructure.cluster.x-k8s.io,resources=ccemanagedmachinepooltemplates,verbs=create;update,versions=v1beta2,name=validation.ccemanagedmachinepooltemplate.infrastructure.cluster.x-k8s.io,sideEffects=None,admissionReviewVersions=v1
 
 var _ admission.Defaulter[*CCEManagedMachinePoolTemplate] = &CCEManagedMachinePoolTemplate{}
 

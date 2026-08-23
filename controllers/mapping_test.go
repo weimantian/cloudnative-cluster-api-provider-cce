@@ -10,18 +10,18 @@ import (
 	"testing"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
-	controlplanev1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta1"
-	infrav1beta1 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta1"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
+	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
 
 // TestToCreateNodePoolInputSpotAndMultiAZ verifies spot (竞价) and extension
 // scale group (multi-AZ) fields are forwarded to the service layer.
 func TestToCreateNodePoolInputSpotAndMultiAZ(t *testing.T) {
-	pool := &infrav1beta1.CCEManagedMachinePool{
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+	pool := &infrav1beta2.CCEManagedMachinePool{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			Spot:      true,
 			SpotPrice: "0.5",
-			ExtensionScaleGroups: []infrav1beta1.ExtensionScaleGroupSpec{
+			ExtensionScaleGroups: []infrav1beta2.ExtensionScaleGroupSpec{
 				{Name: "az-b", Flavor: "c7.large.2", AvailabilityZone: "cn-north-4b"},
 				{Name: "az-c", Flavor: "c7.large.2", AvailabilityZone: "cn-north-4c"},
 			},
@@ -43,8 +43,8 @@ func TestToCreateNodePoolInputSpotAndMultiAZ(t *testing.T) {
 // volumes are forwarded to the service layer (previously only the first was
 // mapped and the webhook rejected more than one).
 func TestToCreateNodePoolInputMultipleDataVolumes(t *testing.T) {
-	pool := &infrav1beta1.CCEManagedMachinePool{
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+	pool := &infrav1beta2.CCEManagedMachinePool{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			DataVolumes: []common.NodeVolume{
 				{Size: 100, Type: "GPSSD"},
 				{Size: 500, Type: "SSD"},
@@ -63,7 +63,7 @@ func TestToCreateNodePoolInputMultipleDataVolumes(t *testing.T) {
 	}
 
 	// Empty data volumes -> empty slice (no data volume sent).
-	empty := toCreateNodePoolInput("cluster-1", &infrav1beta1.CCEManagedMachinePool{})
+	empty := toCreateNodePoolInput("cluster-1", &infrav1beta2.CCEManagedMachinePool{})
 	if len(empty.DataVolumes) != 0 {
 		t.Errorf("expected no data volumes, got %d", len(empty.DataVolumes))
 	}
@@ -73,8 +73,8 @@ func TestToCreateNodePoolInputMultipleDataVolumes(t *testing.T) {
 // analogues (ecsGroupId/faultDomain/dedicatedHostId) are forwarded to the
 // service layer.
 func TestToCreateNodePoolInputLaunchTemplate(t *testing.T) {
-	pool := &infrav1beta1.CCEManagedMachinePool{
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+	pool := &infrav1beta2.CCEManagedMachinePool{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			EcsGroupId:      "ecs-group-1",
 			FaultDomain:     "fault-domain-1",
 			DedicatedHostId: "dh-1",
@@ -92,7 +92,7 @@ func TestToCreateNodePoolInputLaunchTemplate(t *testing.T) {
 	}
 
 	// Empty launch-template fields -> empty strings (omitted by SDK mapping).
-	empty := toCreateNodePoolInput("cluster-1", &infrav1beta1.CCEManagedMachinePool{})
+	empty := toCreateNodePoolInput("cluster-1", &infrav1beta2.CCEManagedMachinePool{})
 	if empty.EcsGroupId != "" || empty.FaultDomain != "" || empty.DedicatedHostId != "" {
 		t.Errorf("expected empty launch-template fields, got %s/%s/%s",
 			empty.EcsGroupId, empty.FaultDomain, empty.DedicatedHostId)
@@ -102,10 +102,10 @@ func TestToCreateNodePoolInputLaunchTemplate(t *testing.T) {
 // TestToCreateClusterInputPublicAccessCIDRs verifies the public access
 // whitelist CIDRs are forwarded to the service layer.
 func TestToCreateClusterInputPublicAccessCIDRs(t *testing.T) {
-	cp := &controlplanev1beta1.CCEManagedControlPlane{
-		Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{
+	cp := &controlplanev1beta2.CCEManagedControlPlane{
+		Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{
 			ClusterName: "test-cluster",
-			EndpointAccess: controlplanev1beta1.EndpointAccessSpec{
+			EndpointAccess: controlplanev1beta2.EndpointAccessSpec{
 				Public: true,
 				CIDRs:  []string{"10.0.0.0/8", "172.16.0.0/12"},
 			},
@@ -120,10 +120,10 @@ func TestToCreateClusterInputPublicAccessCIDRs(t *testing.T) {
 	}
 
 	// No cidrs -> empty (platform default 0.0.0.0/0).
-	cp2 := &controlplanev1beta1.CCEManagedControlPlane{
-		Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{
+	cp2 := &controlplanev1beta2.CCEManagedControlPlane{
+		Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{
 			ClusterName:    "test-cluster",
-			EndpointAccess: controlplanev1beta1.EndpointAccessSpec{Public: true},
+			EndpointAccess: controlplanev1beta2.EndpointAccessSpec{Public: true},
 		},
 	}
 	if in2 := toCreateClusterInput(cp2, "vpc-1", "sub-1", "", nil); len(in2.PublicAccessCIDRs) != 0 {
@@ -134,10 +134,10 @@ func TestToCreateClusterInputPublicAccessCIDRs(t *testing.T) {
 // TestToCreateClusterInputSecondaryCIDR verifies the secondary container
 // CIDRs (model.ContainerNetwork.Cidrs) are forwarded to the service layer.
 func TestToCreateClusterInputSecondaryCIDR(t *testing.T) {
-	cp := &controlplanev1beta1.CCEManagedControlPlane{
-		Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{
+	cp := &controlplanev1beta2.CCEManagedControlPlane{
+		Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{
 			ClusterName: "test-cluster",
-			ContainerNetwork: controlplanev1beta1.ContainerNetworkSpec{
+			ContainerNetwork: controlplanev1beta2.ContainerNetworkSpec{
 				CIDR:  "10.0.0.0/16",
 				CIDRs: []string{"10.1.0.0/16", "10.2.0.0/16"},
 			},
@@ -152,10 +152,10 @@ func TestToCreateClusterInputSecondaryCIDR(t *testing.T) {
 	}
 
 	// No secondary CIDRs -> empty slice (single-CIDR cluster).
-	cp2 := &controlplanev1beta1.CCEManagedControlPlane{
-		Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{
+	cp2 := &controlplanev1beta2.CCEManagedControlPlane{
+		Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{
 			ClusterName:      "test-cluster",
-			ContainerNetwork: controlplanev1beta1.ContainerNetworkSpec{CIDR: "10.0.0.0/16"},
+			ContainerNetwork: controlplanev1beta2.ContainerNetworkSpec{CIDR: "10.0.0.0/16"},
 		},
 	}
 	if in2 := toCreateClusterInput(cp2, "vpc-1", "sub-1", "", nil); len(in2.ContainerNetworkCIDRs) != 0 {
@@ -167,11 +167,11 @@ func TestToCreateClusterInputSecondaryCIDR(t *testing.T) {
 // service network IPv6 CIDR are forwarded to the service layer.
 func TestToCreateClusterInputIPv6DualStack(t *testing.T) {
 	v := true
-	cp := &controlplanev1beta1.CCEManagedControlPlane{
-		Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{
+	cp := &controlplanev1beta2.CCEManagedControlPlane{
+		Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{
 			ClusterName: "test-cluster",
 			Ipv6Enable:  &v,
-			ServiceNetwork: controlplanev1beta1.ServiceNetworkSpec{
+			ServiceNetwork: controlplanev1beta2.ServiceNetworkSpec{
 				CIDR:     "10.247.0.0/16",
 				IPv6CIDR: "fd00::/108",
 			},
@@ -186,10 +186,10 @@ func TestToCreateClusterInputIPv6DualStack(t *testing.T) {
 	}
 
 	// No IPv6 -> nil enable, empty IPv6 CIDR.
-	cp2 := &controlplanev1beta1.CCEManagedControlPlane{
-		Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{
+	cp2 := &controlplanev1beta2.CCEManagedControlPlane{
+		Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{
 			ClusterName:    "test-cluster",
-			ServiceNetwork: controlplanev1beta1.ServiceNetworkSpec{CIDR: "10.247.0.0/16"},
+			ServiceNetwork: controlplanev1beta2.ServiceNetworkSpec{CIDR: "10.247.0.0/16"},
 		},
 	}
 	in2 := toCreateClusterInput(cp2, "vpc-1", "sub-1", "", nil)
@@ -205,8 +205,8 @@ func TestToCreateClusterInputIPv6DualStack(t *testing.T) {
 // is forwarded to the service layer.
 func TestToCreateClusterInputEnableAutopilot(t *testing.T) {
 	v := true
-	cp := &controlplanev1beta1.CCEManagedControlPlane{
-		Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{
+	cp := &controlplanev1beta2.CCEManagedControlPlane{
+		Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{
 			ClusterName:     "test-cluster",
 			EnableAutopilot: &v,
 		},
@@ -217,8 +217,8 @@ func TestToCreateClusterInputEnableAutopilot(t *testing.T) {
 	}
 
 	// Default -> nil flag.
-	cp2 := &controlplanev1beta1.CCEManagedControlPlane{
-		Spec: controlplanev1beta1.CCEManagedControlPlaneSpec{ClusterName: "test-cluster"},
+	cp2 := &controlplanev1beta2.CCEManagedControlPlane{
+		Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{ClusterName: "test-cluster"},
 	}
 	if in2 := toCreateClusterInput(cp2, "vpc-1", "sub-1", "", nil); in2.EnableAutopilot != nil {
 		t.Errorf("expected nil EnableAutopilot, got %v", *in2.EnableAutopilot)
@@ -230,8 +230,8 @@ func TestToCreateClusterInputEnableAutopilot(t *testing.T) {
 // forwarded to the service layer.
 func TestToCreateNodePoolInputLifecycleHooks(t *testing.T) {
 	wait := true
-	pool := &infrav1beta1.CCEManagedMachinePool{
-		Spec: infrav1beta1.CCEManagedMachinePoolSpec{
+	pool := &infrav1beta2.CCEManagedMachinePool{
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
 			PreInstall:            "cHJlLWluc3RhbGw=",
 			PostInstall:           "cG9zdC1pbnN0YWxs",
 			WaitPostInstallFinish: &wait,
@@ -249,7 +249,7 @@ func TestToCreateNodePoolInputLifecycleHooks(t *testing.T) {
 	}
 
 	// Empty lifecycle hooks -> empty strings, nil flag.
-	empty := toCreateNodePoolInput("cluster-1", &infrav1beta1.CCEManagedMachinePool{})
+	empty := toCreateNodePoolInput("cluster-1", &infrav1beta2.CCEManagedMachinePool{})
 	if empty.PreInstall != "" || empty.PostInstall != "" {
 		t.Errorf("expected empty lifecycle hooks, got %s/%s", empty.PreInstall, empty.PostInstall)
 	}

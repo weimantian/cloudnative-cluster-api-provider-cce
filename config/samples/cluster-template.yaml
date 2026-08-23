@@ -18,15 +18,15 @@ spec:
     services:
       cidrBlocks: ["10.247.0.0/16"]
   infrastructureRef:
-    apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
     kind: CCECluster
     name: my-cce-cluster
   controlPlaneRef:
-    apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta2
     kind: CCEManagedControlPlane
     name: my-cce-cluster-control-plane
 ---
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
 kind: CCECluster
 metadata:
   name: my-cce-cluster
@@ -42,7 +42,7 @@ spec:
       - id: VERIFY-SUBNET-ID # node subnet, same VPC as above
         availabilityZone: cn-north-4a
 ---
-apiVersion: controlplane.cluster.x-k8s.io/v1beta1
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
 kind: CCEManagedControlPlane
 metadata:
   name: my-cce-cluster-control-plane
@@ -85,11 +85,11 @@ spec:
         # CAPI v1.14+). Point it at a (possibly empty) Secret.
         dataSecretName: my-cce-cluster-bootstrap
       infrastructureRef:
-        apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
         kind: CCEManagedMachinePool
         name: my-cce-cluster-pool-0
 ---
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta1
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
 kind: CCEManagedMachinePool
 metadata:
   name: my-cce-cluster-pool-0
