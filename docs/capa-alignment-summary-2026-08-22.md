@@ -73,6 +73,13 @@
 - 接线：`internal/services/network/manager.go` 统一注入限流 transport；`throttle.go` + `throttle_test.go`（5 用例）。
 - 依赖：`golang.org/x/time` 提升为直接依赖。
 
+**G. API 版本收敛（v1beta1 → v1beta2 单版本，2026-08-23）**：
+- 移除 v1beta1：删除 `api/controlplane/v1beta1`、`api/infrastructure/v1beta1` 全部类型定义、`conversion.go`、`groupversion_info.go`、`zz_generated.deepcopy.go`。
+- 移除转换 webhook：删除 v1beta2 侧 `conversion.go` 及 Hub/Convertible 实现，取消 `/convert` 端点注册——单版本存储无需转换。
+- 收敛为单一 v1beta2 存储版本：13 个 webhook 文件从 v1beta1 移入 v1beta2；controllers / scope / cmd/main.go / e2e 全部改指 v1beta2。
+- 产物重生成：`make generate manifests` 输出 v1beta2-only CRD、RBAC、webhook manifests；samples 与 e2e 模板 apiVersion 更新为 v1beta2。
+- 验证：`go build ./...` / `go vet ./...` / `go test ./...` 全绿；provider 无残留 v1beta1 引用（CAPI 核心 `cluster.x-k8s.io/v1beta1` 与 kustomize `v1beta1` 保持不动）。
+
 ---
 
 ## 二、文档关系与状态澄清（重要）
@@ -165,7 +172,7 @@
 | 并发控制 flag | ✅ cce-cluster/control-plane/machine-pool-concurrency |
 | SDK client 缓存 | ✅ clientCache（按 region+ak+sk） |
 | 错误分类退避 | ✅ NotFound/Conflict/Throttle/Quota/PermissionDenied/ScaleNoOp，差异化退避 |
-| v1beta1/v1beta2 + 转换 webhook | ✅ 存储 Hub + 服务 + Convertible + /convert |
+| API 版本（单 v1beta2） | ✅ 单一存储版本 v1beta2，v1beta1 与转换 webhook 已移除 |
 | ClusterClass 模板三件套 | ✅ CCEClusterTemplate/CCEManagedControlPlaneTemplate/CCEManagedMachinePoolTemplate |
 | e2e（Ginkgo + flavors） | ✅（本次 #9）build tag `e2e` |
 | clusterctl 打包 | ✅ metadata.yaml + components |
