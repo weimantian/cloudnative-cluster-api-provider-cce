@@ -30,6 +30,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/controllers"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/metrics"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 )
 
@@ -127,6 +128,8 @@ func main() {
 		setupLog.Error(err, "unable to start manager")
 		os.Exit(1)
 	}
+
+	metrics.Register(mgr.GetClient())
 
 	if err := controllers.SetupControllers(mgr, controllers.ControllerConcurrency{
 		Cluster:      clusterConcurrency,
