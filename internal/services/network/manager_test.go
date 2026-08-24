@@ -9,6 +9,8 @@ package network
 import (
 	"testing"
 
+	vpcmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
+
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 )
 
@@ -61,5 +63,34 @@ func TestIsManaged(t *testing.T) {
 func TestOwnedTagKey(t *testing.T) {
 	if got := ownedTagKey("my-cluster"); got != "cluster-api-provider-cce.cluster.my-cluster" {
 		t.Errorf("ownedTagKey(my-cluster) = %q, want %q", got, "cluster-api-provider-cce.cluster.my-cluster")
+	}
+}
+
+// TestSecurityGroupRuleExists verifies the idempotent rule matching used by
+// ensureSecurityGroupRules (direction + protocol + port range + remote).
+func TestSecurityGroupRuleExists(t *testing.T) {
+	existing := []vpcmodel.SecurityGroupRule{
+		{Direction: "ingress", Protocol: "tcp", PortRangeMin: 22, PortRangeMax: 22, RemoteIpPrefix: "10.0.0.0/8"},
+		{Direction: "egress", Protocol: "", PortRangeMin: 0, PortRangeMax: 0, RemoteIpPrefix: "0.0.0.0/0"},
+	}
+	cases := []struct {
+		name      string
+		direction string
+		rule      common.SecurityGroupRuleSpec
+		want      bool
+	}{
+		{"exact match", "ingress", common.SecurityGroupRuleSpec{Protocol: "tcp", PortRangeMin: 22, PortRangeMax: 22, RemoteIPPrefix: "10.0.0.0/8"}, true},
+		{"protocol differs", "ingress", common.SecurityGroupRuleSpec{Protocol: "udp", PortRangeMin: 22, PortRangeMax: 22, RemoteIPPrefix: "10.0.0.0/8"}, false},
+		{"port differs", "ingress", common.SecurityGroupRuleSpec{Protocol: "tcp", PortRangeMin: 80, PortRangeMax: 80, RemoteIPPrefix: "10.0.0.0/8"}, false},
+		{"remote differs", "ingress", common.SecurityGroupRuleSpec{Protocol: "tcp", PortRangeMin: 22, PortRangeMax: 22, RemoteIPPrefix: "192.168.0.0/16"}, false},
+		{"direction differs", "egress", common.SecurityGroupRuleSpec{Protocol: "tcp", PortRangeMin: 22, PortRangeMax: 22, RemoteIPPrefix: "10.0.0.0/8"}, false},
+		{"all-protocol egress", "egress", common.SecurityGroupRuleSpec{RemoteIPPrefix: "0.0.0.0/0"}, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := securityGroupRuleExists(existing, tc.direction, tc.rule); got != tc.want {
+				t.Errorf("securityGroupRuleExists(%q, %+v) = %v, want %v", tc.direction, tc.rule, got, tc.want)
+			}
+		})
 	}
 }

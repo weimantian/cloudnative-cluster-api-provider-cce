@@ -27,7 +27,7 @@ func TestToCreateNodePoolInputSpotAndMultiAZ(t *testing.T) {
 			},
 		},
 	}
-	in := toCreateNodePoolInput("cluster-1", pool)
+	in := toCreateNodePoolInput("cluster-1", pool, nil)
 	if !in.Spot || in.SpotPrice != "0.5" {
 		t.Errorf("expected spot=true price=0.5, got spot=%v price=%s", in.Spot, in.SpotPrice)
 	}
@@ -51,7 +51,7 @@ func TestToCreateNodePoolInputMultipleDataVolumes(t *testing.T) {
 			},
 		},
 	}
-	in := toCreateNodePoolInput("cluster-1", pool)
+	in := toCreateNodePoolInput("cluster-1", pool, nil)
 	if len(in.DataVolumes) != 2 {
 		t.Fatalf("expected 2 data volumes, got %d", len(in.DataVolumes))
 	}
@@ -63,7 +63,7 @@ func TestToCreateNodePoolInputMultipleDataVolumes(t *testing.T) {
 	}
 
 	// Empty data volumes -> empty slice (no data volume sent).
-	empty := toCreateNodePoolInput("cluster-1", &infrav1beta2.CCEManagedMachinePool{})
+	empty := toCreateNodePoolInput("cluster-1", &infrav1beta2.CCEManagedMachinePool{}, nil)
 	if len(empty.DataVolumes) != 0 {
 		t.Errorf("expected no data volumes, got %d", len(empty.DataVolumes))
 	}
@@ -80,7 +80,7 @@ func TestToCreateNodePoolInputLaunchTemplate(t *testing.T) {
 			DedicatedHostId: "dh-1",
 		},
 	}
-	in := toCreateNodePoolInput("cluster-1", pool)
+	in := toCreateNodePoolInput("cluster-1", pool, nil)
 	if in.EcsGroupId != "ecs-group-1" {
 		t.Errorf("expected EcsGroupId=ecs-group-1, got %s", in.EcsGroupId)
 	}
@@ -92,7 +92,7 @@ func TestToCreateNodePoolInputLaunchTemplate(t *testing.T) {
 	}
 
 	// Empty launch-template fields -> empty strings (omitted by SDK mapping).
-	empty := toCreateNodePoolInput("cluster-1", &infrav1beta2.CCEManagedMachinePool{})
+	empty := toCreateNodePoolInput("cluster-1", &infrav1beta2.CCEManagedMachinePool{}, nil)
 	if empty.EcsGroupId != "" || empty.FaultDomain != "" || empty.DedicatedHostId != "" {
 		t.Errorf("expected empty launch-template fields, got %s/%s/%s",
 			empty.EcsGroupId, empty.FaultDomain, empty.DedicatedHostId)
@@ -237,7 +237,7 @@ func TestToCreateNodePoolInputLifecycleHooks(t *testing.T) {
 			WaitPostInstallFinish: &wait,
 		},
 	}
-	in := toCreateNodePoolInput("cluster-1", pool)
+	in := toCreateNodePoolInput("cluster-1", pool, nil)
 	if in.PreInstall != "cHJlLWluc3RhbGw=" {
 		t.Errorf("expected PreInstall=cHJlLWluc3RhbGw=, got %s", in.PreInstall)
 	}
@@ -249,7 +249,7 @@ func TestToCreateNodePoolInputLifecycleHooks(t *testing.T) {
 	}
 
 	// Empty lifecycle hooks -> empty strings, nil flag.
-	empty := toCreateNodePoolInput("cluster-1", &infrav1beta2.CCEManagedMachinePool{})
+	empty := toCreateNodePoolInput("cluster-1", &infrav1beta2.CCEManagedMachinePool{}, nil)
 	if empty.PreInstall != "" || empty.PostInstall != "" {
 		t.Errorf("expected empty lifecycle hooks, got %s/%s", empty.PreInstall, empty.PostInstall)
 	}

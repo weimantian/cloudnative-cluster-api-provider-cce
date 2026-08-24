@@ -42,8 +42,9 @@ const (
 	// (no fixed pollInterval needed); the backoff budget (~5m) bounds
 	// total wait. Kept here for downstream callers that read this value.
 	natActiveTimeout = 60 * time.Second
-	eipBandwidthSize  = 5
+	eipBandwidthSize = 5
 )
+
 // ownedTagPrefix mirrors cceService.OwnedTagPrefix ("cluster-api-provider-cce.cluster").
 // Kept local to avoid a network -> cce import for a single constant.
 const ownedTagPrefix = "cluster-api-provider-cce.cluster"
@@ -90,9 +91,13 @@ type ManagerInterface interface {
 	// ReconcileNatGateway ensures the NAT gateway + EIP + SNAT rules exist
 	// (no-op when natGateway is nil or disabled).
 	ReconcileNatGateway(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
+	// ReconcileSecurityGroup ensures the managed node security group + its
+	// declared ingress/egress rules exist (no-op when securityGroup is nil).
+	ReconcileSecurityGroup(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
 	// DeleteNetwork tears down the provider-managed network in dependency
-	// order (SNAT -> NAT -> EIP -> subnets -> VPC), aggregating per-resource
-	// errors so one failure does not block the rest. BYO specs are a no-op.
+	// order (SNAT -> NAT -> EIP -> security group -> subnets -> VPC),
+	// aggregating per-resource errors so one failure does not block the rest.
+	// BYO specs are a no-op.
 	DeleteNetwork(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
 }
 
@@ -178,6 +183,14 @@ func (m *Manager) ReconcileNatGateway(ctx context.Context, spec *common.NetworkS
 	return m.ensureNatGateway(ctx, spec, clusterName)
 }
 
+// ReconcileSecurityGroup implements ManagerInterface.
+func (m *Manager) ReconcileSecurityGroup(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {
+	if spec.SecurityGroup == nil {
+		return nil
+	}
+	return m.ensureSecurityGroup(ctx, spec, clusterName)
+}
+
 // DeleteNetwork implements ManagerInterface.
 func (m *Manager) DeleteNetwork(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {
 	if spec.VPC.ID != "" && !HasOwnedTag(spec.VPC.Tags, clusterName) {
@@ -223,6 +236,11 @@ func (m *Manager) DeleteNetwork(ctx context.Context, spec *common.NetworkSpec, c
 			if err := m.deleteEip(ctx, eipID); err != nil {
 				errs = append(errs, errors.Wrapf(err, "delete EIP %s", eipID))
 			}
+		}
+	}
+	if sg := spec.SecurityGroup; sg != nil && sg.ResourceID != "" {
+		if err := m.deleteSecurityGroup(ctx, sg.ResourceID); err != nil {
+			errs = append(errs, errors.Wrapf(err, "delete security group %s", sg.ResourceID))
 		}
 	}
 	for i := range spec.Subnets {
@@ -410,6 +428,108 @@ func (m *Manager) ensureSnatRules(ctx context.Context, spec *common.NetworkSpec,
 	return nil
 }
 
+// ensureSecurityGroup creates the managed node security group (or
+// re-discovers it by name) and backfills spec.SecurityGroup.ResourceID, then
+// applies the declared ingress/egress rules.
+func (m *Manager) ensureSecurityGroup(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {
+	sg := spec.SecurityGroup
+	name := sg.Name
+	if name == "" {
+		name = clusterName + "-node"
+	}
+	vpcID := spec.VPC.ResourceID
+	if vpcID == "" {
+		vpcID = spec.VPC.ID
+	}
+	if sg.ResourceID == "" {
+		if id := m.findSecurityGroupByName(ctx, name, vpcID); id != "" {
+			sg.ResourceID = id
+		}
+	}
+	if sg.ResourceID == "" {
+		resp, err := m.vpc.CreateSecurityGroup(&vpcmodel.CreateSecurityGroupRequest{
+			Body: &vpcmodel.CreateSecurityGroupRequestBody{
+				SecurityGroup: &vpcmodel.CreateSecurityGroupOption{
+					Name:  name,
+					VpcId: strPtr(vpcID),
+				},
+			},
+		})
+		if err != nil {
+			return errors.Wrapf(err, "CreateSecurityGroup %q failed", name)
+		}
+		if resp.SecurityGroup == nil || resp.SecurityGroup.Id == "" {
+			return errors.Errorf("CreateSecurityGroup %q returned no id", name)
+		}
+		sg.ResourceID = resp.SecurityGroup.Id
+	}
+	return m.ensureSecurityGroupRules(ctx, sg)
+}
+
+// ensureSecurityGroupRules applies the declared ingress/egress rules to the
+// security group, skipping rules that already exist (idempotent; matches on
+// direction + protocol + port range + remote).
+func (m *Manager) ensureSecurityGroupRules(ctx context.Context, sg *common.SecurityGroupSpec) error {
+	existing := m.listSecurityGroupRules(ctx, sg.ResourceID)
+	for _, r := range sg.Ingress {
+		if err := m.ensureSecurityGroupRule(ctx, sg.ResourceID, "ingress", r, existing); err != nil {
+			return err
+		}
+	}
+	for _, r := range sg.Egress {
+		if err := m.ensureSecurityGroupRule(ctx, sg.ResourceID, "egress", r, existing); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ensureSecurityGroupRule creates a single security group rule unless an
+// equivalent rule already exists.
+func (m *Manager) ensureSecurityGroupRule(ctx context.Context, sgID, direction string, rule common.SecurityGroupRuleSpec, existing []vpcmodel.SecurityGroupRule) error {
+	if securityGroupRuleExists(existing, direction, rule) {
+		return nil
+	}
+	opt := &vpcmodel.CreateSecurityGroupRuleOption{
+		SecurityGroupId: sgID,
+		Direction:       direction,
+		Description:     strPtr(rule.Description),
+		Protocol:        strPtr(rule.Protocol),
+		RemoteIpPrefix:  strPtr(rule.RemoteIPPrefix),
+		RemoteGroupId:   strPtr(rule.RemoteGroupID),
+	}
+	if rule.PortRangeMin != 0 || rule.PortRangeMax != 0 {
+		min := rule.PortRangeMin
+		max := rule.PortRangeMax
+		opt.PortRangeMin = &min
+		opt.PortRangeMax = &max
+	}
+	if _, err := m.vpc.CreateSecurityGroupRule(&vpcmodel.CreateSecurityGroupRuleRequest{
+		Body: &vpcmodel.CreateSecurityGroupRuleRequestBody{SecurityGroupRule: opt},
+	}); err != nil {
+		return errors.Wrapf(err, "CreateSecurityGroupRule on %s (%s) failed", sgID, direction)
+	}
+	return nil
+}
+
+// securityGroupRuleExists reports whether an equivalent rule (same direction,
+// protocol, port range and remote) is already present.
+func securityGroupRuleExists(existing []vpcmodel.SecurityGroupRule, direction string, rule common.SecurityGroupRuleSpec) bool {
+	for _, e := range existing {
+		if e.Direction != direction || e.Protocol != rule.Protocol {
+			continue
+		}
+		if e.PortRangeMin != rule.PortRangeMin || e.PortRangeMax != rule.PortRangeMax {
+			continue
+		}
+		if e.RemoteIpPrefix != rule.RemoteIPPrefix || e.RemoteGroupId != rule.RemoteGroupID {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
 // ---- cloud query helpers ----
 
 func (m *Manager) findVpcByName(ctx context.Context, name string) string {
@@ -432,6 +552,30 @@ func (m *Manager) listSubnets(ctx context.Context, vpcID string) []vpcmodel.Subn
 		return nil
 	}
 	return *resp.Subnets
+}
+
+// findSecurityGroupByName returns the security group ID with the given name
+// in the given VPC, or "" when none matches (or the VPC filter is empty).
+func (m *Manager) findSecurityGroupByName(ctx context.Context, name, vpcID string) string {
+	resp, err := m.vpc.ListSecurityGroups(&vpcmodel.ListSecurityGroupsRequest{VpcId: strPtr(vpcID)})
+	if err != nil || resp.SecurityGroups == nil {
+		return ""
+	}
+	for _, sg := range *resp.SecurityGroups {
+		if sg.Name == name {
+			return sg.Id
+		}
+	}
+	return ""
+}
+
+// listSecurityGroupRules returns the rules of a security group.
+func (m *Manager) listSecurityGroupRules(ctx context.Context, sgID string) []vpcmodel.SecurityGroupRule {
+	resp, err := m.vpc.ListSecurityGroupRules(&vpcmodel.ListSecurityGroupRulesRequest{SecurityGroupId: &sgID})
+	if err != nil || resp.SecurityGroupRules == nil {
+		return nil
+	}
+	return *resp.SecurityGroupRules
 }
 
 // findNatGatewayByName returns the NAT gateway ID with the given name, or
@@ -596,6 +740,28 @@ func (m *Manager) deleteEip(ctx context.Context, eipID string) error {
 		return err
 	}
 	_, err := m.eip.DeletePublicip(&eipmodel.DeletePublicipRequest{PublicipId: eipID})
+	if err != nil && clouderrors.IsNotFound(err) {
+		return nil
+	}
+	return err
+}
+
+// deleteSecurityGroup removes the managed node security group. Custom rules
+// are deleted first (a security group with rules cannot be removed);
+// NotFound is tolerated so deletion stays idempotent.
+func (m *Manager) deleteSecurityGroup(ctx context.Context, sgID string) error {
+	if _, err := m.vpc.ShowSecurityGroup(&vpcmodel.ShowSecurityGroupRequest{SecurityGroupId: sgID}); err != nil {
+		if clouderrors.IsNotFound(err) {
+			return nil
+		}
+		return err
+	}
+	for _, r := range m.listSecurityGroupRules(ctx, sgID) {
+		if _, err := m.vpc.DeleteSecurityGroupRule(&vpcmodel.DeleteSecurityGroupRuleRequest{SecurityGroupRuleId: r.Id}); err != nil && !clouderrors.IsNotFound(err) {
+			return err
+		}
+	}
+	_, err := m.vpc.DeleteSecurityGroup(&vpcmodel.DeleteSecurityGroupRequest{SecurityGroupId: sgID})
 	if err != nil && clouderrors.IsNotFound(err) {
 		return nil
 	}

@@ -113,6 +113,14 @@ type NetworkSpec struct {
 	// gateway + EIP + SNAT rule per managed subnet. Ignored in BYO mode.
 	// +optional
 	NatGateway *NatGatewaySpec `json:"natGateway,omitempty"`
+
+	// SecurityGroup declares a managed node security group the provider
+	// creates (with the declared ingress/egress rules) in the managed VPC and
+	// binds to node pools that do not specify their own securityGroups.
+	// Its mere presence enables managed security group creation (mirrors
+	// NatGatewaySpec). Managed mode only; ignored in BYO mode.
+	// +optional
+	SecurityGroup *SecurityGroupSpec `json:"securityGroup,omitempty"`
 }
 
 // NatGatewaySpec declares a managed NAT gateway for node egress. Its mere
@@ -132,6 +140,59 @@ type NatGatewaySpec struct {
 	// EIPResourceID records the created NAT EIP ID (provider-managed).
 	// +optional
 	EIPResourceID string `json:"eipResourceID,omitempty"`
+}
+
+// SecurityGroupSpec declares a managed node security group. Its mere
+// presence in NetworkSpec enables managed security group creation (mirrors
+// NatGatewaySpec): the provider creates the SG in the managed VPC and applies
+// the declared ingress/egress rules.
+type SecurityGroupSpec struct {
+	// Name of the security group to create. Empty = "<clusterName>-node".
+	// +optional
+	Name string `json:"name,omitempty"`
+
+	// Ingress rules applied to the security group (direction=ingress).
+	// +optional
+	Ingress []SecurityGroupRuleSpec `json:"ingress,omitempty"`
+
+	// Egress rules applied to the security group (direction=egress).
+	// +optional
+	Egress []SecurityGroupRuleSpec `json:"egress,omitempty"`
+
+	// ResourceID records the created security group ID (provider-managed).
+	// +optional
+	ResourceID string `json:"resourceID,omitempty"`
+}
+
+// SecurityGroupRuleSpec declares one security group rule. The direction is
+// implied by whether the rule appears in SecurityGroupSpec.Ingress or Egress.
+type SecurityGroupRuleSpec struct {
+	// Description of the rule.
+	// +optional
+	Description string `json:"description,omitempty"`
+
+	// Protocol of the rule: tcp, udp, icmp, or an IP protocol number. Empty
+	// matches all protocols.
+	// +optional
+	Protocol string `json:"protocol,omitempty"`
+
+	// PortRangeMin is the start port (inclusive, 1-65535). 0 = all ports.
+	// +optional
+	PortRangeMin int32 `json:"portRangeMin,omitempty"`
+
+	// PortRangeMax is the end port (inclusive, 1-65535). 0 = all ports.
+	// +optional
+	PortRangeMax int32 `json:"portRangeMax,omitempty"`
+
+	// RemoteIPPrefix is the source (ingress) / destination (egress) CIDR.
+	// Mutually exclusive with RemoteGroupID.
+	// +optional
+	RemoteIPPrefix string `json:"remoteIPPrefix,omitempty"`
+
+	// RemoteGroupID is a peer security group ID. Mutually exclusive with
+	// RemoteIPPrefix.
+	// +optional
+	RemoteGroupID string `json:"remoteGroupID,omitempty"`
 }
 
 // NodeVolume describes a root or data volume of a node.

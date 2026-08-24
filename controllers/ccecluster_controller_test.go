@@ -161,6 +161,59 @@ func TestCCEClusterReconcileManagedNetwork(t *testing.T) {
 	}
 }
 
+// TestCCEClusterReconcileManagedSecurityGroup verifies the managed security
+// group step: when spec.network.securityGroup is set, the manager creates it
+// and the SecurityGroupsReady condition is reported (mirrors CAPA).
+func TestCCEClusterReconcileManagedSecurityGroup(t *testing.T) {
+	ctx := context.Background()
+	ns := "ccecluster-test-managed-sg"
+	createNamespace(t, ns)
+
+	cluster, cceCluster, _ := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+
+	cceCluster.Spec.Network = common.NetworkSpec{
+		VPC:     common.VPC{CIDR: "10.10.0.0/16"},
+		Subnets: []common.Subnet{{Name: "nodes", CIDR: "10.10.0.0/24", Type: common.SubnetTypeNode}},
+		SecurityGroup: &common.SecurityGroupSpec{
+			Ingress: []common.SecurityGroupRuleSpec{{Protocol: "tcp", PortRangeMin: 22, PortRangeMax: 22, RemoteIPPrefix: "10.0.0.0/8"}},
+		},
+	}
+	if err := k8sClient.Update(ctx, cceCluster); err != nil {
+		t.Fatalf("failed to set managed network spec: %v", err)
+	}
+
+	fakeMgr := &fakes.FakeNetworkManager{}
+	r := &CCEClusterReconciler{
+		Client: k8sClient,
+		NetworkValidatorFactory: func(_ string, _ *credentials.Credentials) (network.ValidatorInterface, error) {
+			return fakes.NewFakeNetworkValidator(), nil
+		},
+		NetworkServiceFactory: func(_ string, _ *credentials.Credentials) (network.ManagerInterface, error) {
+			return fakeMgr, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cluster)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	// Vpc + Subnets + SecurityGroup = 3 steps (no NAT gateway).
+	if fakeMgr.ReconcileCalls != 3 {
+		t.Errorf("expected 3 step calls (Vpc+Subnets+SecurityGroup), got %d", fakeMgr.ReconcileCalls)
+	}
+
+	got := &infrav1beta2.CCECluster{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cluster), got); err != nil {
+		t.Fatalf("failed to get CCECluster: %v", err)
+	}
+	if got.Spec.Network.SecurityGroup == nil || got.Spec.Network.SecurityGroup.ResourceID == "" {
+		t.Error("expected spec.network.securityGroup.resourceID to be backfilled and persisted")
+	}
+	if c := capiconditions.Get(got, conditions.SecurityGroupsReadyCondition); c == nil || c.Status != metav1.ConditionTrue {
+		t.Errorf("expected SecurityGroupsReady=True, got %v", c)
+	}
+}
+
 // TestCCEClusterReconcileAdoptedNetwork verifies the adopt state: vpc.id set
 // WITH the owned tag is managed (subnets/NAT reconciled), unlike BYO.
 func TestCCEClusterReconcileAdoptedNetwork(t *testing.T) {

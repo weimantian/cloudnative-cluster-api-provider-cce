@@ -23,6 +23,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 	metricsserver "sigs.k8s.io/controller-runtime/pkg/metrics/server"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
@@ -277,6 +278,97 @@ func TestMachinePoolReconcileSuccess(t *testing.T) {
 	}
 	if len(fakeSvc.ScaleCalls) != 0 {
 		t.Errorf("expected no ScaleNodePool right after create (initialNodeCount already set the target), got %v", fakeSvc.ScaleCalls)
+	}
+}
+
+// TestMachinePoolAutoBindClusterSecurityGroup verifies P1-2 auto-binding: when
+// the pool declares no securityGroups but the CCECluster carries a managed
+// node security group (spec.network.securityGroup.resourceID), the pool is
+// created bound to that group.
+func TestMachinePoolAutoBindClusterSecurityGroup(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-autosg"
+	createNamespace(t, ns)
+
+	cluster, cceCluster, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+	cp.Status.ClusterID = "cluster-1"
+	cp.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+
+	// Attach a managed node security group to the CCECluster network spec.
+	cceCluster.Spec.Network.SecurityGroup = &common.SecurityGroupSpec{ResourceID: "sg-managed"}
+	if err := k8sClient.Update(ctx, cceCluster); err != nil {
+		t.Fatalf("failed to set cluster security group: %v", err)
+	}
+
+	mp := &clusterv1.MachinePool{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
+		Spec: clusterv1.MachinePoolSpec{
+			ClusterName: "test-cluster",
+			Replicas:    int32Ptr(3),
+			Template: clusterv1.MachineTemplateSpec{
+				Spec: clusterv1.MachineSpec{
+					ClusterName: "test-cluster",
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+						APIGroup: infrav1beta2.GroupVersion.Group,
+						Kind:     "CCEManagedMachinePool",
+						Name:     "test-cluster-pool-0",
+					},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, mp); err != nil {
+		t.Fatalf("failed to create MachinePool: %v", err)
+	}
+	// The pool declares NO securityGroups of its own.
+	pool := &infrav1beta2.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
+			ClusterName:  "test-cluster",
+			NodePoolName: "pool-0",
+			Flavor:       "c7.large.2",
+			Replicas:     3,
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create CCEManagedMachinePool: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pool)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+
+	if len(fakeSvc.CreatedNodePools) != 1 {
+		t.Fatalf("expected 1 created node pool, got %d", len(fakeSvc.CreatedNodePools))
+	}
+	if got := fakeSvc.CreatedNodePools[0].SecurityGroups; len(got) != 1 || got[0] != "sg-managed" {
+		t.Errorf("expected create node pool SecurityGroups [sg-managed], got %v", got)
+	}
+
+	got := &infrav1beta2.CCEManagedMachinePool{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
+		t.Fatalf("failed to get machine pool: %v", err)
+	}
+	if len(got.Status.LastAppliedSecurityGroups) != 1 || got.Status.LastAppliedSecurityGroups[0] != "sg-managed" {
+		t.Errorf("expected LastAppliedSecurityGroups [sg-managed], got %v", got.Status.LastAppliedSecurityGroups)
 	}
 }
 

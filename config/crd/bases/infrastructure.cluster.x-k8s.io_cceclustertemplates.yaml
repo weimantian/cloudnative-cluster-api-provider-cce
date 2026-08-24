@@ -85,6 +85,99 @@ spec:
                                   default), "2", "3", "4".'
                                 type: string
                             type: object
+                          securityGroup:
+                            description: |-
+                              SecurityGroup declares a managed node security group the provider
+                              creates (with the declared ingress/egress rules) in the managed VPC and
+                              binds to node pools that do not specify their own securityGroups.
+                              Its mere presence enables managed security group creation (mirrors
+                              NatGatewaySpec). Managed mode only; ignored in BYO mode.
+                            properties:
+                              egress:
+                                description: Egress rules applied to the security
+                                  group (direction=egress).
+                                items:
+                                  description: |-
+                                    SecurityGroupRuleSpec declares one security group rule. The direction is
+                                    implied by whether the rule appears in SecurityGroupSpec.Ingress or Egress.
+                                  properties:
+                                    description:
+                                      description: Description of the rule.
+                                      type: string
+                                    portRangeMax:
+                                      description: PortRangeMax is the end port (inclusive,
+                                        1-65535). 0 = all ports.
+                                      format: int32
+                                      type: integer
+                                    portRangeMin:
+                                      description: PortRangeMin is the start port
+                                        (inclusive, 1-65535). 0 = all ports.
+                                      format: int32
+                                      type: integer
+                                    protocol:
+                                      description: |-
+                                        Protocol of the rule: tcp, udp, icmp, or an IP protocol number. Empty
+                                        matches all protocols.
+                                      type: string
+                                    remoteGroupID:
+                                      description: |-
+                                        RemoteGroupID is a peer security group ID. Mutually exclusive with
+                                        RemoteIPPrefix.
+                                      type: string
+                                    remoteIPPrefix:
+                                      description: |-
+                                        RemoteIPPrefix is the source (ingress) / destination (egress) CIDR.
+                                        Mutually exclusive with RemoteGroupID.
+                                      type: string
+                                  type: object
+                                type: array
+                              ingress:
+                                description: Ingress rules applied to the security
+                                  group (direction=ingress).
+                                items:
+                                  description: |-
+                                    SecurityGroupRuleSpec declares one security group rule. The direction is
+                                    implied by whether the rule appears in SecurityGroupSpec.Ingress or Egress.
+                                  properties:
+                                    description:
+                                      description: Description of the rule.
+                                      type: string
+                                    portRangeMax:
+                                      description: PortRangeMax is the end port (inclusive,
+                                        1-65535). 0 = all ports.
+                                      format: int32
+                                      type: integer
+                                    portRangeMin:
+                                      description: PortRangeMin is the start port
+                                        (inclusive, 1-65535). 0 = all ports.
+                                      format: int32
+                                      type: integer
+                                    protocol:
+                                      description: |-
+                                        Protocol of the rule: tcp, udp, icmp, or an IP protocol number. Empty
+                                        matches all protocols.
+                                      type: string
+                                    remoteGroupID:
+                                      description: |-
+                                        RemoteGroupID is a peer security group ID. Mutually exclusive with
+                                        RemoteIPPrefix.
+                                      type: string
+                                    remoteIPPrefix:
+                                      description: |-
+                                        RemoteIPPrefix is the source (ingress) / destination (egress) CIDR.
+                                        Mutually exclusive with RemoteGroupID.
+                                      type: string
+                                  type: object
+                                type: array
+                              name:
+                                description: Name of the security group to create.
+                                  Empty = "<clusterName>-node".
+                                type: string
+                              resourceID:
+                                description: ResourceID records the created security
+                                  group ID (provider-managed).
+                                type: string
+                            type: object
                           subnets:
                             description: |-
                               Subnets referenced (BYO) or created (managed) by the cluster. When

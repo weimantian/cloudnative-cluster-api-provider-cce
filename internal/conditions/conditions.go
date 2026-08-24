@@ -31,6 +31,10 @@ const (
 	// NatGatewaysReadyCondition reports successful reconciliation of the
 	// managed NAT gateway + SNAT rules (mirrors CAPA NatGatewaysReadyCondition).
 	NatGatewaysReadyCondition = "NatGatewaysReady"
+	// SecurityGroupsReadyCondition reports successful reconciliation of the
+	// managed node security group + its ingress/egress rules (mirrors CAPA
+	// SecurityGroupsReadyCondition).
+	SecurityGroupsReadyCondition = "SecurityGroupsReady"
 )
 
 // CCEManagedControlPlane (ControlPlane) conditions.

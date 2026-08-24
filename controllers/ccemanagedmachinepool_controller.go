@@ -205,8 +205,18 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 
 	// Ensure the node pool exists.
 	clusterID := cp.Status.ClusterID
+	// Resolve the security groups to bind: explicit spec.securityGroups wins;
+	// otherwise fall back to the cluster's managed node security group (the
+	// CCECluster controller creates one when spec.network.securityGroup is set,
+	// and records its ID in spec.network.securityGroup.resourceID).
+	effectiveSGs := pool.Spec.SecurityGroups
+	if len(effectiveSGs) == 0 {
+		if sg := r.clusterNodeSecurityGroup(ctx, cluster, pool); sg != "" {
+			effectiveSGs = []string{sg}
+		}
+	}
 	if pool.Status.NodePoolID == "" {
-		id, err := svc.CreateNodePool(ctx, toCreateNodePoolInput(clusterID, pool))
+		id, err := svc.CreateNodePool(ctx, toCreateNodePoolInput(clusterID, pool, effectiveSGs))
 		if err != nil {
 			conditions.MarkFalse(pool,
 				conditions.NodePoolReadyCondition,
@@ -224,7 +234,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		// The create call already bound the security groups (and autoscaling
 		// when the gate is on), so record them as applied to avoid a redundant
 		// UpdateNodePool on the next reconcile.
-		pool.Status.LastAppliedSecurityGroups = append([]string(nil), pool.Spec.SecurityGroups...)
+		pool.Status.LastAppliedSecurityGroups = append([]string(nil), effectiveSGs...)
 		pool.Status.LastAppliedAutoscaling = pool.Spec.Autoscaling
 	}
 
@@ -270,7 +280,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	// the expected node count. UpdateNodePool omitting initialNodeCount
 	// defaults it to 0 and SHRINKS the pool (official cce_02_0356,
 	// questionnaire Q3), so IgnoreInitialNodeCount must be set.
-	attrsChanged := !slices.Equal(pool.Status.LastAppliedSecurityGroups, pool.Spec.SecurityGroups)
+	attrsChanged := !slices.Equal(pool.Status.LastAppliedSecurityGroups, effectiveSGs)
 	if features.Enabled(features.NodePoolAutoscaling) && pool.Spec.Autoscaling != pool.Status.LastAppliedAutoscaling {
 		attrsChanged = true
 	}
@@ -279,7 +289,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			ClusterID:              clusterID,
 			NodePoolID:             pool.Status.NodePoolID,
 			IgnoreInitialNodeCount: true,
-			CustomSecurityGroups:   append([]string(nil), pool.Spec.SecurityGroups...),
+			CustomSecurityGroups:   append([]string(nil), effectiveSGs...),
 		}
 		if features.Enabled(features.NodePoolAutoscaling) {
 			update.Autoscaling = toProviderAutoscaling(pool.Spec.Autoscaling)
@@ -315,7 +325,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 				conditions.NodePoolScaleFailedReason, err.Error())
 			return ctrl.Result{}, err
 		}
-		pool.Status.LastAppliedSecurityGroups = append([]string(nil), pool.Spec.SecurityGroups...)
+		pool.Status.LastAppliedSecurityGroups = append([]string(nil), effectiveSGs...)
 		pool.Status.LastAppliedAutoscaling = pool.Spec.Autoscaling
 		log.Info("Node pool attributes updated and rolled onto existing nodes", "nodePoolID", pool.Status.NodePoolID)
 	}
@@ -537,7 +547,27 @@ func (r *CCEManagedMachinePoolReconciler) clusterRegion(ctx context.Context, clu
 	return cceCluster.Spec.Region, nil
 }
 
-func toCreateNodePoolInput(clusterID string, pool *infrav1beta2.CCEManagedMachinePool) cceService.CreateNodePoolInput {
+// clusterNodeSecurityGroup returns the cluster's managed node security group
+// ID (spec.network.securityGroup.resourceID), or "" when the CCECluster
+// declares none (or cannot be read). Best-effort: the CCECluster was already
+// read successfully earlier in this reconcile (clusterRegion), so a failure
+// here simply disables auto-binding without failing the reconcile.
+func (r *CCEManagedMachinePoolReconciler) clusterNodeSecurityGroup(ctx context.Context, cluster *clusterv1.Cluster, pool *infrav1beta2.CCEManagedMachinePool) string {
+	if cluster.Spec.InfrastructureRef.Name == "" {
+		return ""
+	}
+	cceCluster := &infrav1beta2.CCECluster{}
+	key := types.NamespacedName{Namespace: pool.Namespace, Name: cluster.Spec.InfrastructureRef.Name}
+	if err := r.Get(ctx, key, cceCluster); err != nil {
+		return ""
+	}
+	if cceCluster.Spec.Network.SecurityGroup == nil {
+		return ""
+	}
+	return cceCluster.Spec.Network.SecurityGroup.ResourceID
+}
+
+func toCreateNodePoolInput(clusterID string, pool *infrav1beta2.CCEManagedMachinePool, securityGroups []string) cceService.CreateNodePoolInput {
 	in := cceService.CreateNodePoolInput{
 		ClusterID:             clusterID,
 		ClusterName:           pool.Spec.ClusterName,
@@ -552,7 +582,7 @@ func toCreateNodePoolInput(clusterID string, pool *infrav1beta2.CCEManagedMachin
 		SpotPrice:             pool.Spec.SpotPrice,
 		Taints:                pool.Spec.Taints,
 		Labels:                pool.Spec.Labels,
-		SecurityGroups:        pool.Spec.SecurityGroups,
+		SecurityGroups:        securityGroups,
 		EcsGroupId:            pool.Spec.EcsGroupId,
 		FaultDomain:           pool.Spec.FaultDomain,
 		DedicatedHostId:       pool.Spec.DedicatedHostId,

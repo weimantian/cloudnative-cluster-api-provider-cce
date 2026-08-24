@@ -395,6 +395,15 @@ func (r *CCEClusterReconciler) reconcileManagedNetwork(ctx context.Context, cceC
 		}
 		conditions.MarkTrue(cceCluster, conditions.NatGatewaysReadyCondition, "NatGatewayReconciled", "managed NAT gateway reconciled")
 	}
+	if spec.SecurityGroup != nil {
+		if err := svc.ReconcileSecurityGroup(ctx, spec, clusterName); err != nil {
+			conditions.MarkFalse(cceCluster,
+				conditions.SecurityGroupsReadyCondition,
+				conditions.NetworkReconciliationFailedReason, err.Error())
+			return err
+		}
+		conditions.MarkTrue(cceCluster, conditions.SecurityGroupsReadyCondition, "SecurityGroupsReconciled", "managed security group reconciled")
+	}
 	return nil
 }
 

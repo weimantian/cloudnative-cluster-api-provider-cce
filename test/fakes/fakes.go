@@ -319,9 +319,10 @@ func (f *FakeCredentialProvider) AssumeAgency(ctx context.Context, region, agenc
 type FakeNetworkManager struct {
 	// ReconcileVpcFn / ReconcileSubnetsFn / ReconcileNatGatewayFn override the
 	// corresponding step; when nil the step backfills deterministic ResourceIDs.
-	ReconcileVpcFn        func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
-	ReconcileSubnetsFn    func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
-	ReconcileNatGatewayFn func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
+	ReconcileVpcFn           func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
+	ReconcileSubnetsFn       func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
+	ReconcileNatGatewayFn    func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
+	ReconcileSecurityGroupFn func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
 	// DeleteFn is called by DeleteNetwork; when nil, deletion succeeds.
 	DeleteFn func(ctx context.Context, spec *common.NetworkSpec, clusterName string) error
 	// ReconcileCalls counts the total step invocations (Vpc+Subnets+NatGateway).
@@ -361,6 +362,17 @@ func (f *FakeNetworkManager) ReconcileNatGateway(ctx context.Context, spec *comm
 	if spec.NatGateway != nil && spec.NatGateway.ResourceID == "" {
 		spec.NatGateway.ResourceID = "nat-fake"
 		spec.NatGateway.EIPResourceID = "eip-fake"
+	}
+	return nil
+}
+
+func (f *FakeNetworkManager) ReconcileSecurityGroup(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {
+	f.ReconcileCalls++
+	if f.ReconcileSecurityGroupFn != nil {
+		return f.ReconcileSecurityGroupFn(ctx, spec, clusterName)
+	}
+	if spec.SecurityGroup != nil && spec.SecurityGroup.ResourceID == "" {
+		spec.SecurityGroup.ResourceID = "sg-managed-fake"
 	}
 	return nil
 }
