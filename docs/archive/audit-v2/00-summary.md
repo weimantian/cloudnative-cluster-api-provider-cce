@@ -90,7 +90,7 @@
 
 | v1 原始结论 | 实测证据 | 修正 |
 |---|---|---|
-| "CCE webhook 校验密度 ~10× 不足" | 11 个 webhook 测试用例覆盖所有 v1 报告里的校验规则 | 数量差距仍存在（24 vs 120+），但 CCE 现有规则均经过测试 |
+| "CCE webhook 校验密度 ~10× 不足" | 11 个 webhook 测试用例覆盖所有 v1 报告里的校验规则 | 数量差距仍存在（24 vs 120+），但 CCE 现有规则均经过测试；✅ 已于 2026-08-24 补齐三处核心 webhook（a00b656），template 靠委托继承，见 §7.4 |
 | "CCE 不支持 IRSA" | `TestControlPlaneReconcileRoleIdentityAgency` 验证 agency 解析 | CCE 用 agency 委托语义（功能对等），已测试 |
 | "CCE throttle 只包 network clients" | 5 个限流器测试验证参数正确 | 限流器已测试，但 cluster API 未限流（429 风险） |
 
@@ -137,7 +137,7 @@
 | 12 | **`ServiceFactory` 抽象层强化** | P2 | 工程化 | 替换 controllers 内直接构造 SDK client | ✅ **已隐式实施**（3 个 controller 都有 `ServiceFactory` + `newXxxService` 注入模式） |
 \| 13 | **CCE 命名差异统一（接近 CAPA）** | P3 | 命名 | `clusterName` vs CAPA 的 `name` 等 | ⚪ **不实施**（CAPA 实际用 `EKSClusterName`，CCE `ClusterName` 各合理） |
 
-**汇总**：**P1 总完成率 8/8 = 100%**（前轮已全部完成）。**P2/P3 总进度 5/5**（#9 #11 #12 #13 实施或隐式实施，#10 云能力差异不实施）。剩余项（#5 完整 ~50+ 条翻译、APIs full translation）需独立 PR。
+**汇总**：**P1 总完成率 8/8 = 100%**（前轮已全部完成）。**P2/P3 总进度 5/5**（#9 #11 #12 #13 实施或隐式实施，#10 云能力差异不实施）。#5 Webhook 校验密度补齐已于 2026-08-24 完整落地（c936f53 + a00b656）；剩余项仅 APIs full translation 待独立 PR。
 
 
 ## 六、修复路线（时间线）
@@ -206,7 +206,7 @@ if obsAtStart < cp.Generation {  // CAPA b5d6d3081
 | **第 2 周** | #6 身份 webhook spec 不可变 | 0.5 天 | 无 |
 | **第 3 周** | #4 GC annotation opt-out | 0.5 天 | 无 |
 | **第 4-5 周** | #6 Conditions 失败原因细分 | 2 天 | 无 |
-| **第 6-8 周** | #5 Webhook 校验密度补齐 | 3 天 | 无 |
+| **第 6-8 周** | #5 Webhook 校验密度补齐 | 3 天 | 无（✅ 已于 2026-08-24 完成，a00b656） |
 | **待 CAPA v2.14+** | 重新做 v3 审视 | 1 天 | CAPI v1.14 兼容 CAPA 发布 |
 
 ### 6.3 不建议做的项
@@ -239,15 +239,15 @@ if obsAtStart < cp.Generation {  // CAPA b5d6d3081
 | 测试集 | 用例数 | 失败 |
 |---|---|---|
 | `go build ./...` + `go vet ./...` | — | 0 ✅ |
-| `api/controlplane/v1beta2` (CCM webhook) | 2 | 0 ✅ |
-| `api/infrastructure/v1beta2` (身份/模板/machinepool webhook) | 14 (+3 本轮新增) | 0 ✅ |
+| `api/controlplane/v1beta2` (CCM webhook) | 8 | 0 ✅ |
+| `api/infrastructure/v1beta2` (身份/模板/machinepool/cluster webhook) | 19 | 0 ✅ |
 | `controllers` (envtest 1.34.1) | 55 (+2 本轮新增 GC) | 0 ✅ |
 | `internal/scope` | 3 + 5 P1-8 新增 | 0 ✅ |
 | `internal/services/cce` | 1 | 0 ✅ |
 | `internal/services/errors` | 1 | 0 ✅ |
 | `internal/services/network` | 12 | 0 ✅ |
 | `internal/wait` (本轮新增) | 7 | 0 ✅ |
-| **总计** | **122** | **0** ✅ |
+| **总计** | **132** | **0** ✅ |
 
 ### 7.3 本轮实施 vs v1 P1 修复计划 状态映射
 
@@ -256,7 +256,7 @@ if obsAtStart < cp.Generation {  // CAPA b5d6d3081
 | #2 cluster API 限流 | ✅ 已实施 | throttleRoundTripper 共享 network 包现有实现 |
 | #3 wait package | ✅ 已实施 | 复制 CAPA wait.go 指数退避（~5m budget） |
 | #4 GC annotation opt-out | ✅ 已实施 | annotation key `cce-provider/skip-gc` |
-| #5 Webhook 校验密度补齐 | 🟡 部分 | 本轮仅增 1 条（clusterName 不可变）；完整 50+ 条翻译是独立 PR（建议后续按 CAPA 8 个 webhook 逐个翻译） |
+| #5 Webhook 校验密度补齐 | ✅ 已实施 | 上轮仅 1 条（clusterName 不可变）；完整翻译于 2026-08-24 落地（c936f53 + a00b656）：CCM/CCECluster/CMP 三处校验补齐 + 9 测试，3 个 template webhook 靠委托自动继承，identity 上轮 P1-#7 已做 |
 | #6 Conditions 失败原因细分 | ✅ 已实施 | 增 28 个专用 reason 常量（未改 controller 调用，后续 PR 切换） |
 | #7 身份 webhook 不可变 | ✅ 已实施 | 3 个 webhook 都有 spec 不可变 + 单例约束 |
 | #8 scope struct 重构 | ✅ 已实施 | 4 个 scope struct（CCEClusterScope/CCMScope/CMPScope/GlobalScope）；3 个 controllers 改用 `NewXxxScope()` 模式；`scope.PatchObject()` 含 `patch.WithStatusObservedGeneration{}`（CAPA 9e9bb6b31）；`scope.Close()` 集中管理（CAPA 风格） |
@@ -282,7 +282,7 @@ if obsAtStart < cp.Generation {  // CAPA b5d6d3081
 **CCE 与 CAPA v2.13.0 的核心差距分布**：
 - **核心能力**：✅ 对齐（生命周期、addon、pod-identity、access policy、logging、kubeconfig rotation、GC、错误分类退避、限流中间件）
 - **架构形态**：🟡 差异（无 scope struct 是有意为之；CCE 是纯 managed-only）
-- **API 字段深度**：🟡 部分（Webhook 校验密度比 CAPA 浅；分页已补齐）
+- **API 字段深度**：✅ 已补齐（Webhook 校验密度已对齐 CAPA；分页已补齐）
 ---
 
 ## 十、附录
