@@ -335,12 +335,12 @@ clusterctl delete --infrastructure cce
 - [Architecture design (Chinese)](docs/architecture-design.md)
 - [Requirements design (Chinese)](docs/requirements-design.md)
 - [Research sources & verification checklist (Chinese)](docs/research-sources.md)
-- [Huawei Cloud CCE alignment questionnaire](docs/cce-verification-questionnaire.md) · [verification findings](docs/cce-verification-findings.md)
+- [Huawei Cloud CCE alignment questionnaire](docs/archive/cce-verification-questionnaire.md) · [verification findings](docs/cce-verification-findings.md)
 - [clusterctl deployment validation (kind + real CCE)](docs/clusterctl-deployment-validation.md)
-- [Official API reference review findings](docs/api-review-findings.md)
-- [Full code audit findings](docs/code-audit-findings.md)
-- [CAPA parity gap analysis](docs/capa-alignment-summary-2026-08-22.md)
-- [CAPA code analysis](docs/CAPA架构分析报告.md) · [Alibaba ACK provider code analysis](docs/ACKProvider架构分析报告.md) · [CAPHW code analysis](docs/CAPHW架构分析报告.md)
+- [Official API reference review findings](docs/archive/api-review-findings.md)
+- [Full code audit findings](docs/archive/code-audit-findings.md)
+- [CAPA parity gap analysis (against CAPA v2.13.0 / CAPI v1.14.0)](docs/capa-alignment-final-summary.md)
+- [CAPA code analysis](docs/archive/CAPA架构分析报告.md) · [Alibaba ACK provider code analysis](docs/archive/ACKProvider架构分析报告.md) · [CAPHW code analysis](docs/archive/CAPHW架构分析报告.md)
 
 ## Dependencies & Acknowledgements
 

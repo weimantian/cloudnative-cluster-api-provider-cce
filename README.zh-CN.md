@@ -299,12 +299,12 @@ clusterctl delete --infrastructure cce
 - [架构设计文档](docs/architecture-design.md)
 - [需求设计文档](docs/requirements-design.md)
 - [调研依据与事实清单(含验证清单)](docs/research-sources.md)
-- [华为云 CCE 对齐问卷](docs/cce-verification-questionnaire.md) · [验证结论记录](docs/cce-verification-findings.md)
+- [华为云 CCE 对齐问卷](docs/archive/cce-verification-questionnaire.md) · [验证结论记录](docs/cce-verification-findings.md)
 - [clusterctl 部署演练记录(kind + 真实 CCE)](docs/clusterctl-deployment-validation.md)
-- [官方 API 参考文档审查记录](docs/api-review-findings.md)
-- [全量代码审计记录](docs/code-audit-findings.md)
-- [CAPA 能力对标差距分析](docs/capa-alignment-summary-2026-08-22.md)
-- [CAPA 源码分析报告](docs/CAPA架构分析报告.md) · [阿里云 ACK Provider 源码分析报告](docs/ACKProvider架构分析报告.md) · [CAPHW 源码分析报告](docs/CAPHW架构分析报告.md)
+- [官方 API 参考文档审查记录](docs/archive/api-review-findings.md)
+- [全量代码审计记录](docs/archive/code-audit-findings.md)
+- [CAPA 能力对标差距分析（对标 CAPA v2.13.0 / CAPI v1.14.0）](docs/capa-alignment-final-summary.md)
+- [CAPA 源码分析报告](docs/archive/CAPA架构分析报告.md) · [阿里云 ACK Provider 源码分析报告](docs/archive/ACKProvider架构分析报告.md) · [CAPHW 源码分析报告](docs/archive/CAPHW架构分析报告.md)
 
 ## 依赖与致谢
 
