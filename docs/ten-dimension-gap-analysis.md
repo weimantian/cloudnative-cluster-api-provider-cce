@@ -79,7 +79,7 @@
 
 ## 四、网络与基础设施准备
 
-**结论：🟡 部分实现（VPC 双模式、API Server 公网、NAT 齐全；安全组自动创建缺失、VPC Endpoint 私网管理缺失）**
+**结论：🟡 部分实现（VPC 双模式、API Server 公网、NAT 齐全、安全组自动创建；VPC Endpoint 私网管理缺失）**
 
 ### 4.1 VPC 与子网
 
@@ -91,8 +91,8 @@
 | 文档要求 | 实现 | 状态 |
 |---|---|---|
 | 控制面 SG 自动创建 | CCE 平台自动创建（控制面托管，provider 无需创建）——符合 CCE 事实 | ✅（平台侧） |
-| 节点池 SG | `CCEManagedMachinePool.spec.securityGroups`（max 5，**用户传入引用**） | 🟡 |
-| 控制器支持指定/自动创建 SG | ❌ 无 SG 创建 API——`network/manager.go` 仅 VPC/EIP/NAT，`cce.go`/`interfaces.go` 无 SG 创建接口；SG 只能引用用户已有 | ❌ |
+| 节点池 SG | `CCEManagedMachinePool.spec.securityGroups`（max 5，显式引用；为空时自动绑定集群托管 node SG） | ✅ |
+| 控制器支持指定/自动创建 SG | ✅ `network/manager.go` `ReconcileSecurityGroup`（List → Create，幂等）+ 声明式 ingress/egress 规则（`spec.network.securityGroup`） | ✅ |
 
 ### 4.3 API Server 访问
 
@@ -104,12 +104,11 @@
 | **VPC Endpoint** | ❌ 未实现（华为云 VPC Endpoint 打通 CCE 私网 API Server） | ❌ |
 
 **缺口**：
-- **P1** — 安全组自动创建+规则配置（文档 §4.2 明确「控制器应支持指定或自动创建并配置规则」）。
 - **P2** — VPC Endpoint 私网访问管理；公网/私网/两者三态显式语义。
 
 ### 4.4 辅助资源创建者与生命周期（CAPA 一致性对照）
 
-按 CAPA 的「创建者 / 触发者」模型逐项核对 CCE provider：网络基础设施（VPC/子网/NAT/EIP）与节点/插件生命周期对齐；**安全组与 IAM Agency 两处自动创建缺失**。
+按 CAPA 的「创建者 / 触发者」模型逐项核对 CCE provider：网络基础设施（VPC/子网/NAT/EIP/安全组）与节点/插件生命周期对齐；**仅 IAM Agency 自动创建缺失**。
 
 | 资源 | CAPA（EKS）创建者 | CCE provider 现状 | 一致性 |
 |---|---|---|---|
@@ -118,7 +117,7 @@
 | 路由表 / Internet Gateway | CAPA 控制器创建 | N/A——华为云 VPC 创建即含默认路由，无独立 IGW/路由表资源需管理 | ✅（平台差异） |
 | NAT 网关 | CAPA 控制器创建 | `ensureNatGateway`（含 EIP + 每节点子网 SNAT 规则） | ✅ |
 | NAT 出站 EIP | CAPA 控制器创建 | `createEip`（`<cluster>-nat-eip`，带 owned tag 供 GC 回收） | ✅ |
-| 节点/自定义安全组 | CAPA 控制器创建（若未指定） | ❌ 不创建，仅引用 `CCEManagedMachinePool.spec.securityGroups`（max 5） | ❌ 不一致 |
+| 节点/自定义安全组 | CAPA 控制器创建（若未指定） | ✅ `ReconcileSecurityGroup` 创建托管 node SG + 规则；节点池 `spec.securityGroups` 为空时自动绑定 | ✅ 一致 |
 | 控制面安全组（`eks-cluster-sg-*`） | EKS 服务自动创建 | N/A——CCE 控制面托管，不暴露安全组 | ✅（平台差异） |
 | 集群/节点组 IAM 角色 | CAPA 创建（或用户提供 ARN 跳过） | ❌ 不创建 Agency，`CCEClusterRoleIdentity` 要求「agency 已存在」，`cce.go` 仅传 `agencyName` 引用 | ❌ 不一致 |
 | API Server ELB/NLB | EKS 服务自动创建（CAPA 触发） | CCE 服务自动创建（provider 仅传 `endpointAccess.public`） | ✅ |
@@ -126,7 +125,7 @@
 | 节点 EC2/ASG | EKS 服务自动创建（CAPA 触发） | CCE 节点池自动创建（provider 触发 `CreateNodePool`） | ✅ |
 | Fargate Profile / EKS addon | EKS 服务自动创建（CAPA 触发） | CCE addon（`CreateAddonInstance`）、PodIdentityAssociation | ✅ |
 
-**删除生命周期**：`DeleteNetwork` 按依赖顺序聚合清理 SNAT → NAT → EIP → 子网 → VPC（BYO 规格为 no-op），与 CAPA 的 describe-based 删除对齐；CCE 集群删除时平台自动回收 ELB/EIP/节点。
+**删除生命周期**：`DeleteNetwork` 按依赖顺序聚合清理 SNAT → NAT → EIP → 安全组 → 子网 → VPC（BYO 规格为 no-op），与 CAPA 的 describe-based 删除对齐；CCE 集群删除时平台自动回收 ELB/EIP/节点。
 
 ---
 
@@ -253,7 +252,6 @@
 | 优先级 | 维度 | 缺口 |
 |---|---|---|
 | **P1** | §三 | STS 临时凭证刷新（仅长期 AK/SK，无短期凭证轮换） |
-| **P1** | §四 | 安全组自动创建 + 规则配置（当前仅用户引用，无 SG 创建 API） |
 | **P1** | §三 | IAM 委托（Agency）自动创建缺失——仅引用已存在 agency，无创建委托/信任策略 |
 | P2 | §四 | VPC Endpoint 私网访问；公网/私网/两者三态显式语义 |
 | P2 | §二 | `spec.region` 位置差异（文档挂 ControlPlane，实际在 CCECluster）需文档标注 |
@@ -263,4 +261,4 @@
 | P2 | §八 | 官方 CAPI e2e 框架 + 正式 CI 配置 |
 | P2 | §十 | 自定义 Prometheus 业务指标、provider 操作审计日志 |
 
-**总体结论**：项目在架构（§一/§二）、集群生命周期（§六）、文档与 UX（§九）已高度对齐规划文档；凭证（§三）、网络（§四）、弹性伸缩（§五）三处存在生产级安全/自动化缺口（STS 刷新、Agency 自动创建、SG 自动创建），为最高优先级；其余为命名/文档对齐与可观测性增强（P2）。
+**总体结论**：项目在架构（§一/§二）、集群生命周期（§六）、文档与 UX（§九）已高度对齐规划文档；凭证（§三）存在生产级安全/自动化缺口（STS 刷新、Agency 自动创建），为最高优先级；网络（§四）安全组自动创建已补齐；其余为命名/文档对齐与可观测性增强（P2）。
