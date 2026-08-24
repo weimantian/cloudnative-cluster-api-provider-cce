@@ -67,7 +67,7 @@ const (
 	NodePoolScalingCondition = "NodePoolScaling"
 )
 
-// Reasons (shared).
+// Reasons (shared, used when no condition-specific reason applies).
 const (
 	ReconciliationInProgressReason        = "ReconciliationInProgress"
 	ReconciliationFailedReason            = "ReconciliationFailed"
@@ -83,6 +83,71 @@ const (
 	// UpgradeTargetUnavailableReason reports that the requested target version
 	// is not among the platform-offered upgrade targets.
 	UpgradeTargetUnavailableReason = "UpgradeTargetUnavailable"
+)
+
+// Per-condition reason constants. Mirrors the CAPA v2.13.0 pattern of one
+// dedicated reason per condition so downstream tooling (kubectl describe,
+// status dashboards) can disambiguate failure modes without parsing the
+// free-form Message field. The shared Reconciliation{Failed,InProgress}
+// reasons remain valid for unexpected failures that fall outside these
+// categories.
+
+// Network condition reasons (CCECluster / VpcReady / SubnetsReady /
+// NatGatewaysReady).
+const (
+	NetworkValidationFailedReason     = "NetworkValidationFailed"     // CIDR/overlap/subnet-ownership check failed
+	NetworkReconciliationFailedReason = "NetworkReconciliationFailed"  // managed VPC/subnet/NAT create/update failed
+)
+
+// Credentials condition reasons.
+const (
+	CredentialsResolutionFailedReason = "CredentialsResolutionFailed" // identityRef/secret/Secret not found
+	CredentialsInvalidReason          = "CredentialsInvalid"          // AK/SK rejected by the cloud
+)
+
+// CCEClusterReady condition reasons.
+const (
+	CCEClusterNotFoundReason = "CCEClusterNotFound" // out-of-band delete, recreate path
+	CCEClusterCreatingReason = "CCEClusterCreating" // cluster is being created
+)
+
+// KubeconfigReady condition reasons.
+const (
+	KubeconfigGenerationFailedReason = "KubeconfigGenerationFailed" // GetClusterKubeconfig API failed
+)
+
+// AddonsConfigured condition reasons.
+const (
+	AddonInstallFailedReason   = "AddonInstallFailed"   // CreateAddonInstance failed
+	AddonUpgradeFailedReason   = "AddonUpgradeFailed"   // UpdateAddonInstance failed (version drift)
+	AddonDeleteFailedReason    = "AddonDeleteFailed"    // DeleteAddonInstance failed (stale addon not removed)
+)
+
+// PodIdentityAssociationsConfigured condition reasons.
+const (
+	PodIdentityCreationFailedReason = "PodIdentityCreationFailed" // CreatePodIdentityAssociation failed
+	PodIdentityDeletionFailedReason = "PodIdentityDeletionFailed" // DeletePodIdentityAssociation failed
+)
+
+// LoggingConfigured condition reasons.
+const (
+	LogConfigUpdateFailedReason = "LogConfigUpdateFailed" // UpdateClusterLogConfig failed
+)
+
+// AccessPoliciesConfigured condition reasons.
+const (
+	AccessPolicyCreateFailedReason = "AccessPolicyCreateFailed" // CreateAccessPolicy failed
+	AccessPolicyUpdateFailedReason = "AccessPolicyUpdateFailed" // UpdateAccessPolicy (drift) failed
+	AccessPolicyDeleteFailedReason = "AccessPolicyDeleteFailed" // DeleteAccessPolicy (stale) failed
+)
+
+// NodePoolReady / NodePoolScaling condition reasons.
+const (
+	NodePoolCreationFailedReason = "NodePoolCreationFailed"  // CreateNodePool failed
+	NodePoolUpdateFailedReason   = "NodePoolUpdateFailed"    // UpdateNodePool (attribute drift) failed
+	NodePoolScaleFailedReason    = "NodePoolScaleFailed"     // ScaleNodePool failed
+	NodePoolDeleteFailedReason   = "NodePoolDeleteFailed"    // DeleteNodePool failed
+	NodePoolReplicasExternallyManagedReason = "ReplicasExternallyManaged" // external autoscaler owns replicas
 )
 
 // MarkTrue sets a condition to True.
