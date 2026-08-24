@@ -260,13 +260,14 @@ if obsAtStart < cp.Generation {  // CAPA b5d6d3081
 | #6 Conditions 失败原因细分 | ✅ 已实施 | 增 28 个专用 reason 常量（未改 controller 调用，后续 PR 切换） |
 | #7 身份 webhook 不可变 | ✅ 已实施 | 3 个 webhook 都有 spec 不可变 + 单例约束 |
 | #8 scope struct 重构 | ✅ 已实施 | 4 个 scope struct（CCEClusterScope/CCMScope/CMPScope/GlobalScope）；3 个 controllers 改用 `NewXxxScope()` 模式；`scope.PatchObject()` 含 `patch.WithStatusObservedGeneration{}`（CAPA 9e9bb6b31）；`scope.Close()` 集中管理（CAPA 风格） |
-### 7.4 后续建议
+### 7.4 后续建议（实施进度 2026-08-24）
 
-1. **#5 完整翻译**：独立 PR，从 CAPA 8 个 webhook 文件逐个翻译关键校验（CIDR 严格性、不可变字段、access entry 合法性、launch template 等）— 预计 2-3 个工作日。
-2. **#6 应用**：在 controller 里把 `MarkFalse(..., ReconciliationFailedReason, ...)` 改为 `MarkFalse(..., AddonInstallFailedReason, ...)` 等专用 reason — 预计 1 个工作日。
-3. **P2 跟进**：GC API paging 核实、EnclaveOptions 评估、ServiceFactory 抽象 — 详见 §五.3。
-4. **v3 审视**：等 CAPA v2.14+（CAPI v1.14 兼容）发布。
-4. **v3 审视**：等 CAPA v2.14+（CAPI v1.14 兼容）发布。
+| # | 项 | 状态 | 说明 |
+|---|---|---|---|
+| 1 | **#5 完整翻译** | 🟡 部分 | ✅ 已做 CCM CIDR + semver 校验（c936f53）；剩余 ~45 条（access-entry 合法性、secondary CIDR、launch-template AMI/disk 等）独立 PR |
+| 2 | **#6 应用** | ✅ 已完成 | ✅ 32 处通用 reason → 专用 reason（ef81703） |
+| 3 | **P2 跟进** | ✅ 已完成 | ✅ P2-9 GC paging（888008a）、P2-11 字段语义（f642695）、P2-12/13 已评估 |
+| 4 | **v3 审视** | ⏳ 待办 | 等 CAPA v2.14+（CAPI v1.14 兼容）发布 |
 
 ---
 
