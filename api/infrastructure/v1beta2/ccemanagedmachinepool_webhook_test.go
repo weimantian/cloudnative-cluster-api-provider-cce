@@ -156,3 +156,55 @@ func TestMachinePoolExtensionScaleGroupValidation(t *testing.T) {
 		t.Errorf("expected valid group to pass, got %v", err)
 	}
 }
+
+// TestMachinePoolAutoscalingValidation verifies autoscaling bounds are only
+// checked when autoscaling is enabled (P1-#5).
+func TestMachinePoolAutoscalingValidation(t *testing.T) {
+	// Disabled autoscaling with bogus counts must not be rejected.
+	disabled := validPool()
+	disabled.Spec.Autoscaling = AutoscalingSpec{Enable: false, MinNodeCount: -1, MaxNodeCount: -5}
+	if err := disabled.validate(); err != nil {
+		t.Errorf("expected disabled autoscaling to skip bounds checks, got %v", err)
+	}
+
+	// Enabled: negative min rejected.
+	negMin := validPool()
+	negMin.Spec.Autoscaling = AutoscalingSpec{Enable: true, MinNodeCount: -1, MaxNodeCount: 5}
+	if err := negMin.validate(); err == nil {
+		t.Error("expected negative minNodeCount to be rejected")
+	}
+
+	// Enabled: max < min rejected.
+	badOrder := validPool()
+	badOrder.Spec.Autoscaling = AutoscalingSpec{Enable: true, MinNodeCount: 5, MaxNodeCount: 2}
+	if err := badOrder.validate(); err == nil {
+		t.Error("expected maxNodeCount < minNodeCount to be rejected")
+	}
+
+	// Enabled: valid bounds accepted.
+	ok := validPool()
+	ok.Spec.Autoscaling = AutoscalingSpec{Enable: true, MinNodeCount: 2, MaxNodeCount: 5}
+	if err := ok.validate(); err != nil {
+		t.Errorf("expected valid autoscaling bounds to pass, got %v", err)
+	}
+}
+
+// TestMachinePoolNodePoolNameImmutability verifies NodePoolName cannot change
+// after creation (P1-#5).
+func TestMachinePoolNodePoolNameImmutability(t *testing.T) {
+	ctx := context.Background()
+
+	old := validPool()
+	old.Spec.NodePoolName = "pool-a"
+	new := validPool()
+	new.Spec.NodePoolName = "pool-b"
+	if _, err := old.ValidateUpdate(ctx, old, new); err == nil {
+		t.Error("expected NodePoolName change to be rejected")
+	}
+
+	same := validPool()
+	same.Spec.NodePoolName = "pool-a"
+	if _, err := old.ValidateUpdate(ctx, old, same); err != nil {
+		t.Errorf("expected unchanged NodePoolName to pass, got %v", err)
+	}
+}

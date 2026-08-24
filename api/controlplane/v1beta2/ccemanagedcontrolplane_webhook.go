@@ -18,6 +18,17 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
 )
 
+const (
+	// minKubeVersionForIPv6 is the minimum Kubernetes version that supports
+	// IPv6 dual-stack (official CCE constraint).
+	minKubeVersionForIPv6 = "v1.21.0"
+)
+
+// ipv6Enabled reports whether the ipv6enable flag is explicitly true.
+func ipv6Enabled(b *bool) bool {
+	return b != nil && *b
+}
+
 // SetupWebhookWithManager registers the CCEManagedControlPlane webhook.
 func (c *CCEManagedControlPlane) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return builder.WebhookManagedBy(mgr, &CCEManagedControlPlane{}).
@@ -88,6 +99,32 @@ func (c *CCEManagedControlPlane) ValidateUpdate(_ context.Context, oldObj, newOb
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "authentication", "mode"),
 			newObj.Spec.Authentication.Mode, "field is immutable after creation"))
 	}
+	// Version downgrade is rejected (official: in-place upgrades only).
+	if oldObj.Spec.Version != "" && newObj.Spec.Version != "" {
+		oldV, oldErr := k8sSemver.ParseSemantic(oldObj.Spec.Version)
+		newV, newErr := k8sSemver.ParseSemantic(newObj.Spec.Version)
+		if oldErr == nil && newErr == nil && newV.LessThan(oldV) {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "version"),
+				newObj.Spec.Version, "version cannot be downgraded"))
+		}
+	}
+	// Encryption config cannot be removed once set (etcd encryption is
+	// irreversible on CCE).
+	if oldObj.Spec.EncryptionConfig != nil && newObj.Spec.EncryptionConfig == nil {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "encryptionConfig"),
+			"encryptionConfig cannot be removed once set"))
+	}
+	// Identity reference cannot be cleared once set.
+	if oldObj.Spec.IdentityRef != nil && newObj.Spec.IdentityRef == nil {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "identityRef"),
+			"identityRef cannot be removed once set"))
+	}
+	// IPv6 enablement is immutable (changing the IP family of a live cluster
+	// is not supported).
+	if ipv6Enabled(oldObj.Spec.Ipv6Enable) != ipv6Enabled(newObj.Spec.Ipv6Enable) {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "ipv6enable"),
+			newObj.Spec.Ipv6Enable, "field is immutable after creation"))
+	}
 	if err := newObj.validate(); err != nil {
 		return nil, err
 	}
@@ -151,6 +188,54 @@ var allErrs field.ErrorList
 		if _, err := k8sSemver.ParseSemantic(c.Spec.Version); err != nil {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "version"),
 				c.Spec.Version, "must be a semver (e.g. v1.30.1 or v1.30.1-rc.1)"))
+		}
+	}
+	// IPv6 dual-stack requires Kubernetes v1.21.0+ (official CCE constraint).
+	if ipv6Enabled(c.Spec.Ipv6Enable) && c.Spec.Version != "" {
+		v, err := k8sSemver.ParseSemantic(c.Spec.Version)
+		if err == nil {
+			minV, _ := k8sSemver.ParseSemantic(minKubeVersionForIPv6)
+			if v.LessThan(minV) {
+				allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "version"),
+					c.Spec.Version, "IPv6 dual-stack requires Kubernetes v1.21.0 or later"))
+			}
+		}
+	}
+	// Service network CIDR format.
+	if c.Spec.ServiceNetwork.CIDR != "" {
+		if _, _, err := net.ParseCIDR(c.Spec.ServiceNetwork.CIDR); err != nil {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "serviceNetwork", "cidr"),
+				c.Spec.ServiceNetwork.CIDR, "must be a valid IPv4/IPv6 CIDR (e.g. 10.247.0.0/16)"))
+		}
+	}
+	// IPv6 service network CIDR is required when ipv6enable is true.
+	if ipv6Enabled(c.Spec.Ipv6Enable) && c.Spec.ServiceNetwork.IPv6CIDR == "" {
+		allErrs = append(allErrs, field.Required(field.NewPath("spec", "serviceNetwork", "ipv6CIDR"),
+			"ipv6CIDR is required when ipv6enable is true"))
+	}
+	// IPv6 service network CIDR format.
+	if c.Spec.ServiceNetwork.IPv6CIDR != "" {
+		if _, _, err := net.ParseCIDR(c.Spec.ServiceNetwork.IPv6CIDR); err != nil {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "serviceNetwork", "ipv6CIDR"),
+				c.Spec.ServiceNetwork.IPv6CIDR, "must be a valid IPv6 CIDR (e.g. fd00::/112)"))
+		}
+	}
+	// Additional container network CIDRs must be valid and distinct from the
+	// primary CIDR (official: container CIDRs must be unique per VPC).
+	for i, cidr := range c.Spec.ContainerNetwork.CIDRs {
+		p := field.NewPath("spec", "containerNetwork", "cidrs").Index(i)
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			allErrs = append(allErrs, field.Invalid(p, cidr, "must be a valid IPv4/IPv6 CIDR"))
+		}
+		if c.Spec.ContainerNetwork.CIDR != "" && cidr == c.Spec.ContainerNetwork.CIDR {
+			allErrs = append(allErrs, field.Invalid(p, cidr, "must not be equal to the primary container network CIDR"))
+		}
+	}
+	// Endpoint access whitelist CIDRs must be valid.
+	for i, cidr := range c.Spec.EndpointAccess.CIDRs {
+		p := field.NewPath("spec", "endpointAccess", "cidrs").Index(i)
+		if _, _, err := net.ParseCIDR(cidr); err != nil {
+			allErrs = append(allErrs, field.Invalid(p, cidr, "must be a valid IPv4/IPv6 CIDR"))
 		}
 	}
 	if len(allErrs) == 0 {

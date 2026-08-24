@@ -63,8 +63,21 @@ func (m *CCEManagedMachinePool) ValidateCreate(_ context.Context, obj *CCEManage
 }
 
 // ValidateUpdate implements admission.Validator.
-func (m *CCEManagedMachinePool) ValidateUpdate(_ context.Context, _, newObj *CCEManagedMachinePool) (admission.Warnings, error) {
-	return nil, newObj.validate()
+func (m *CCEManagedMachinePool) ValidateUpdate(_ context.Context, oldObj, newObj *CCEManagedMachinePool) (admission.Warnings, error) {
+	var allErrs field.ErrorList
+	// NodePoolName is immutable: it is the CCE node pool identity and cannot
+	// change after creation (renaming would orphan the cloud node pool).
+	if oldObj.Spec.NodePoolName != newObj.Spec.NodePoolName {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "nodePoolName"),
+			newObj.Spec.NodePoolName, "field is immutable after creation"))
+	}
+	if err := newObj.validate(); err != nil {
+		return nil, err
+	}
+	if len(allErrs) > 0 {
+		return nil, apierrors.NewInvalid(m.GroupVersionKind().GroupKind(), m.Name, allErrs)
+	}
+	return nil, nil
 }
 
 // ValidateDelete implements admission.Validator.
@@ -137,6 +150,21 @@ func (m *CCEManagedMachinePool) validate() error {
 	if mu := m.Spec.UpdateConfig.MaxUnavailable; mu != 0 && (mu < 1 || mu > 20) {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "updateConfig", "maxUnavailable"),
 			mu, "maxUnavailable must be within [1, 20]"))
+	}
+	// Autoscaling bounds (only meaningful when enabled).
+	if m.Spec.Autoscaling.Enable {
+		if m.Spec.Autoscaling.MinNodeCount < 0 {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "autoscaling", "minNodeCount"),
+				m.Spec.Autoscaling.MinNodeCount, "must be greater than or equal to 0"))
+		}
+		if m.Spec.Autoscaling.MaxNodeCount < 0 {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "autoscaling", "maxNodeCount"),
+				m.Spec.Autoscaling.MaxNodeCount, "must be greater than or equal to 0"))
+		}
+		if m.Spec.Autoscaling.MaxNodeCount < m.Spec.Autoscaling.MinNodeCount {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "autoscaling", "maxNodeCount"),
+				m.Spec.Autoscaling.MaxNodeCount, "must be greater than or equal to minNodeCount"))
+		}
 	}
 	if len(allErrs) == 0 {
 		return nil

@@ -264,7 +264,7 @@ if obsAtStart < cp.Generation {  // CAPA b5d6d3081
 
 | # | 项 | 状态 | 说明 |
 |---|---|---|---|
-| 1 | **#5 完整翻译** | 🟡 部分 | ✅ 已做 CCM CIDR + semver 校验（c936f53）；剩余 ~45 条（access-entry 合法性、secondary CIDR、launch-template AMI/disk 等）独立 PR |
+| 1 | **#5 完整翻译** | ✅ 已完成 | ✅ 三处 webhook 校验补齐：CCM（版本降级、IPv6 最小版本 v1.21.0 + IPv6CIDR 必填、service/container/endpoint CIDR 格式、加密与身份引用不可变、ipv6enable 不可变）；CCECluster（region + VPC ID 不可变、VPC/subnet CIDR）；CMP（NodePoolName 不可变、autoscaling 边界）。新增 9 个测试（`TestCCEManagedControlPlaneValidate*`、`TestCCEClusterValidate*`、`TestMachinePoolAutoscalingValidation`、`TestMachinePoolNodePoolNameImmutability`）。剩余：access-entry 合法性、launch-template AMI/disk 已由 CRD kubebuilder marker + 既有 webhook（OS/rootVolume 范围）覆盖，无需单独 webhook |
 | 2 | **#6 应用** | ✅ 已完成 | ✅ 32 处通用 reason → 专用 reason（ef81703） |
 | 3 | **P2 跟进** | ✅ 已完成 | ✅ P2-9 GC paging（888008a）、P2-11 字段语义（f642695）、P2-12/13 已评估 |
 | 4 | **v3 审视** | ⏳ 待办 | 等 CAPA v2.14+（CAPI v1.14 兼容）发布 |
