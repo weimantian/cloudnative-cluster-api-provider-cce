@@ -27,7 +27,12 @@ type CCEClusterSpec struct {
 	Network common.NetworkSpec `json:"network,omitempty"`
 }
 
-// CCEClusterStatus defines the observed state of CCECluster.
+// CCEClusterStatus defines the observed state of CCECluster. Two distinct
+// readiness flags (P2-11 audit): Ready is cloud-side readiness, consumed
+// by CAPI core to flip Cluster.Status.InfrastructureReady;
+// Initialization.Provisioned is the CAPI v1beta2 contract path that the
+// CAPI Cluster controller gates Cluster.Status.Initialization.
+// InfrastructureProvisioned on. The two must not be conflated.
 type CCEClusterStatus struct {
 	// Ready indicates the cluster infrastructure (network validation) is
 	// complete; consumed by CAPI core to flip Cluster.Status.InfrastructureReady.
