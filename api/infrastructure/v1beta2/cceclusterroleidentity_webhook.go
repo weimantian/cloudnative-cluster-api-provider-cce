@@ -32,8 +32,21 @@ func (c *CCEClusterRoleIdentity) ValidateCreate(_ context.Context, obj *CCEClust
 	return nil, obj.validate()
 }
 
-// ValidateUpdate implements admission.Validator.
-func (c *CCEClusterRoleIdentity) ValidateUpdate(_ context.Context, _, newObj *CCEClusterRoleIdentity) (admission.Warnings, error) {
+// ValidateUpdate implements admission.Validator. agencyName is immutable —
+// switching agency mid-flight would change the trust principal every
+// reconcile loop holds a cached token for. Mirrors CAPA's
+// AWSClusterRoleIdentity webhook behavior (the analogous field
+// sourceIdentityRef is immutable there).
+func (c *CCEClusterRoleIdentity) ValidateUpdate(_ context.Context, oldObj, newObj *CCEClusterRoleIdentity) (admission.Warnings, error) {
+	if newObj.Spec.AgencyName != oldObj.Spec.AgencyName {
+		return nil, apierrors.NewInvalid(
+			newObj.GroupVersionKind().GroupKind(), newObj.Name,
+			field.ErrorList{field.Invalid(
+				field.NewPath("spec", "agencyName"), oldObj.Spec.AgencyName,
+				"agencyName is immutable on update",
+			)},
+		)
+	}
 	return nil, newObj.validate()
 }
 

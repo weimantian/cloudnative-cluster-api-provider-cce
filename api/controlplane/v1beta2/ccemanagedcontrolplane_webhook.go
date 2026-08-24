@@ -56,6 +56,12 @@ func (c *CCEManagedControlPlane) ValidateUpdate(_ context.Context, oldObj, newOb
 	// Immutable fields: the CCE cluster network config cannot change after
 	// creation (official: container network CIDR/mode are immutable). Accepting
 	// a change silently would drift spec from the cloud.
+	// Region is on the sibling CCECluster and is not replicated here; the
+	// CCECluster webhook enforces region immutability.
+	if oldObj.Spec.ClusterName != newObj.Spec.ClusterName {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "clusterName"),
+			newObj.Spec.ClusterName, "field is immutable after creation"))
+	}
 	if oldObj.Spec.ContainerNetwork.CIDR != newObj.Spec.ContainerNetwork.CIDR {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "containerNetwork", "cidr"),
 			newObj.Spec.ContainerNetwork.CIDR, "field is immutable after creation"))
@@ -95,7 +101,7 @@ func (c *CCEManagedControlPlane) ValidateDelete(_ context.Context, _ *CCEManaged
 }
 
 func (c *CCEManagedControlPlane) validate() error {
-	var allErrs field.ErrorList
+var allErrs field.ErrorList
 
 	if c.Spec.ClusterName == "" {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "clusterName"), "clusterName is required"))

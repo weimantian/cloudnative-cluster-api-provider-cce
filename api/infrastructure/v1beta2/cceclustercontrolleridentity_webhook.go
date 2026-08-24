@@ -8,6 +8,7 @@ package v1beta2
 
 import (
 	"context"
+	"reflect"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -28,13 +29,47 @@ func (c *CCEClusterControllerIdentity) SetupWebhookWithManager(mgr ctrl.Manager)
 
 var _ admission.Validator[*CCEClusterControllerIdentity] = &CCEClusterControllerIdentity{}
 
-// ValidateCreate implements admission.Validator.
+// ValidateCreate implements admission.Validator. Enforces singleton
+// semantics: the CCEClusterControllerIdentity must be named "default"
+// because controller-runtime looks it up by that exact name. Mirrors
+// CAPA's AWSClusterControllerIdentity singleton enforcement.
 func (c *CCEClusterControllerIdentity) ValidateCreate(_ context.Context, obj *CCEClusterControllerIdentity) (admission.Warnings, error) {
+	if obj.Name != "default" {
+		return nil, apierrors.NewInvalid(
+			obj.GroupVersionKind().GroupKind(), obj.Name,
+			field.ErrorList{field.Invalid(
+				field.NewPath("metadata", "name"), obj.Name,
+				`CCEClusterControllerIdentity must be named "default"`,
+			)},
+		)
+	}
 	return nil, obj.validate()
 }
 
-// ValidateUpdate implements admission.Validator.
-func (c *CCEClusterControllerIdentity) ValidateUpdate(_ context.Context, _, newObj *CCEClusterControllerIdentity) (admission.Warnings, error) {
+// ValidateUpdate implements admission.Validator. Both name and Spec are
+// immutable: the singleton identity must stay at "default", and any change
+// to the spec (e.g. allowedNamespaces selector) would silently rotate the
+// controller's shared credentials. Mirrors CAPA's
+// AWSClusterControllerIdentity immutability.
+func (c *CCEClusterControllerIdentity) ValidateUpdate(_ context.Context, oldObj, newObj *CCEClusterControllerIdentity) (admission.Warnings, error) {
+	if newObj.Name != oldObj.Name {
+		return nil, apierrors.NewInvalid(
+			newObj.GroupVersionKind().GroupKind(), newObj.Name,
+			field.ErrorList{field.Invalid(
+				field.NewPath("metadata", "name"), newObj.Name,
+				"name is immutable on update",
+			)},
+		)
+	}
+	if !reflect.DeepEqual(newObj.Spec, oldObj.Spec) {
+		return nil, apierrors.NewInvalid(
+			newObj.GroupVersionKind().GroupKind(), newObj.Name,
+			field.ErrorList{field.Invalid(
+				field.NewPath("spec"), oldObj.Spec,
+				"spec is immutable on update",
+			)},
+		)
+	}
 	return nil, newObj.validate()
 }
 
