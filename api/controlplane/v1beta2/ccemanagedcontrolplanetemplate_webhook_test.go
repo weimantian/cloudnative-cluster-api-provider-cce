@@ -51,3 +51,48 @@ func TestCCEManagedControlPlaneTemplateDefault(t *testing.T) {
 		t.Errorf("expected defaults applied, got %+v", tmpl.Spec.Template.Spec)
 	}
 }
+
+// TestCCEManagedControlPlaneTemplateValidateCIDRAndSemver covers the two new
+// validations added in P1-#5: ContainerNetwork.CIDR format and Version
+// semver format. k8s ParseSemantic only accepts full vMAJOR.MINOR.PATCH forms
+// (and their pre-release variants), so all test cases use that format.
+func TestCCEManagedControlPlaneTemplateValidateCIDRAndSemver(t *testing.T) {
+	cases := []struct {
+		name  string
+		cidr  string
+		ver   string
+		valid bool
+	}{
+		{"validIPv4AndSemver", "10.0.0.0/16", "v1.30.1", true},
+		{"validIPv6AndPrerelease", "2001:db8::/64", "v1.30.1-rc.1", true},
+		{"emptyCIDRUsesDefault", "", "v1.30.0", true},
+		{"invalidCIDROutOfRange", "10.0.0.999/16", "v1.30.0", false},
+		{"invalidCIDRNoSlash", "10.0.0.0", "v1.30.0", false},
+		{"invalidSemverNoPatch", "10.0.0.0/16", "v1.30", false},
+		{"invalidSemverSuffix", "10.0.0.0/16", "v1.30.0!", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := &CCEManagedControlPlane{
+				ObjectMeta: metav1.ObjectMeta{Name: "cp1", Namespace: "default"},
+				Spec: CCEManagedControlPlaneSpec{
+					ClusterName: "test",
+					Category:    "Turbo",
+					ContainerNetwork: ContainerNetworkSpec{
+						Mode: "eni",
+						CIDR: tc.cidr,
+					},
+					Version: tc.ver,
+				},
+			}
+			cp.Spec.ContainerNetwork.ENISubnets = []string{"subnet-1"}
+			err := cp.validate()
+			if tc.valid && err != nil {
+				t.Errorf("expected valid, got err: %v", err)
+			}
+			if !tc.valid && err == nil {
+				t.Errorf("expected invalid, got nil")
+			}
+		})
+	}
+}

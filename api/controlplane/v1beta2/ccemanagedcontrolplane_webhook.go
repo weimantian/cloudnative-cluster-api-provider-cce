@@ -8,7 +8,9 @@ package v1beta2
 
 import (
 	"context"
+	"net"
 
+	k8sSemver "k8s.io/apimachinery/pkg/util/version"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -135,6 +137,20 @@ var allErrs field.ErrorList
 		if ap == nil || ap.CA == "" || ap.Cert == "" || ap.PrivateKey == "" {
 			allErrs = append(allErrs, field.Required(field.NewPath("spec", "authentication", "authenticatingProxy"),
 				"authenticating_proxy mode requires ca, cert and privateKey"))
+		}
+	}
+	// CIDR format check: ContainerNetwork.CIDR must be a valid IPv4/IPv6 CIDR.
+	if c.Spec.ContainerNetwork.CIDR != "" {
+		if _, _, err := net.ParseCIDR(c.Spec.ContainerNetwork.CIDR); err != nil {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "containerNetwork", "cidr"),
+				c.Spec.ContainerNetwork.CIDR, "must be a valid IPv4/IPv6 CIDR (e.g. 10.0.0.0/16)"))
+		}
+	}
+	// Version format check: k8s semver (vMAJOR.MINOR.PATCH with optional -prerelease).
+	if c.Spec.Version != "" {
+		if _, err := k8sSemver.ParseSemantic(c.Spec.Version); err != nil {
+			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "version"),
+				c.Spec.Version, "must be a semver (e.g. v1.30.1 or v1.30.1-rc.1)"))
 		}
 	}
 	if len(allErrs) == 0 {
