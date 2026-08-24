@@ -15,8 +15,12 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/client/fake"
 
+	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
 
@@ -186,5 +190,133 @@ func TestResolveIdentityControllerEnforcesAllowedNamespaces(t *testing.T) {
 	}
 	if creds.AccessKey != "envAK" {
 		t.Errorf("expected env creds, got %+v", creds)
+	}
+}
+
+// ===== P1-8 scope struct tests =====
+
+func newCluster() *clusterv1.Cluster {
+	return &clusterv1.Cluster{ObjectMeta: metav1.ObjectMeta{Name: "c1", Namespace: "ns1"}}
+}
+
+func newCCECluster() *infrav1beta2.CCECluster {
+	return &infrav1beta2.CCECluster{ObjectMeta: metav1.ObjectMeta{Name: "cce1", Namespace: "ns1"}}
+}
+
+func newCCM() *controlplanev1beta2.CCEManagedControlPlane {
+	return &controlplanev1beta2.CCEManagedControlPlane{ObjectMeta: metav1.ObjectMeta{Name: "cp1", Namespace: "ns1"}}
+}
+
+func newCMP() *infrav1beta2.CCEManagedMachinePool {
+	return &infrav1beta2.CCEManagedMachinePool{ObjectMeta: metav1.ObjectMeta{Name: "mp1", Namespace: "ns1"}}
+}
+
+func newFakeClient() client.Client {
+	scheme := runtime.NewScheme()
+	_ = clusterv1.AddToScheme(scheme)
+	_ = infrav1beta2.AddToScheme(scheme)
+	_ = controlplanev1beta2.AddToScheme(scheme)
+	return fake.NewClientBuilder().WithScheme(scheme).Build()
+}
+
+func TestNewCCEClusterScope_RejectsNil(t *testing.T) {
+	cases := map[string]func() error{
+		"nil cluster": func() error {
+			_, err := NewCCEClusterScope(CCEClusterScopeParams{Client: newFakeClient(), Cluster: nil, CCECluster: newCCECluster(), ControllerName: "x"})
+			return err
+		},
+		"nil CCECluster": func() error {
+			_, err := NewCCEClusterScope(CCEClusterScopeParams{Client: newFakeClient(), Cluster: newCluster(), CCECluster: nil, ControllerName: "x"})
+			return err
+		},
+		"empty controllerName": func() error {
+			_, err := NewCCEClusterScope(CCEClusterScopeParams{Client: newFakeClient(), Cluster: newCluster(), CCECluster: newCCECluster(), ControllerName: ""})
+			return err
+		},
+		"nil client": func() error {
+			_, err := NewCCEClusterScope(CCEClusterScopeParams{Client: nil, Cluster: newCluster(), CCECluster: newCCECluster(), ControllerName: "x"})
+			return err
+		},
+	}
+	for name, fn := range cases {
+		if err := fn(); err == nil {
+			t.Errorf("%s: expected error, got nil", name)
+		}
+	}
+}
+
+func TestNewCCEClusterScope_HappyPath(t *testing.T) {
+	s, err := NewCCEClusterScope(CCEClusterScopeParams{
+		Client: newFakeClient(), Cluster: newCluster(), CCECluster: newCCECluster(),
+		ControllerName: "ccecluster",
+	})
+	if err != nil {
+		t.Fatalf("NewCCEClusterScope: %v", err)
+	}
+	if s.Name() != "cce1" || s.Namespace() != "ns1" {
+		t.Errorf("Name/Namespace: got %s/%s", s.Name(), s.Namespace())
+	}
+	if s.ControllerName() != "ccecluster" {
+		t.Errorf("ControllerName: %s", s.ControllerName())
+	}
+	if s.InfraClusterName() != "c1" {
+		t.Errorf("InfraClusterName: %s", s.InfraClusterName())
+	}
+	if err := s.Close(context.Background()); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+}
+
+func TestNewCCMScope_HappyPath(t *testing.T) {
+	s, err := NewCCEManagedControlPlaneScope(CCEManagedControlPlaneScopeParams{
+		Client: newFakeClient(), Cluster: newCluster(), CCEManagedControlPlane: newCCM(),
+		ControllerName: "ccm",
+	})
+	if err != nil {
+		t.Fatalf("NewCCMScope: %v", err)
+	}
+	if s.Name() != "cp1" {
+		t.Errorf("Name: %s", s.Name())
+	}
+	if err := s.Close(context.Background()); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+}
+
+func TestNewCMPScope_HappyPath(t *testing.T) {
+	s, err := NewCCEManagedMachinePoolScope(CCEManagedMachinePoolScopeParams{
+		Client: newFakeClient(), Cluster: newCluster(), CCEManagedMachinePool: newCMP(),
+		ControllerName: "cmp",
+	})
+	if err != nil {
+		t.Fatalf("NewCMPScope: %v", err)
+	}
+	if s.Name() != "mp1" {
+		t.Errorf("Name: %s", s.Name())
+	}
+	if err := s.Close(context.Background()); err != nil {
+		t.Errorf("Close: %v", err)
+	}
+}
+
+func TestNewGlobalScope_RejectsNil(t *testing.T) {
+	if _, err := NewGlobalScope(GlobalScopeParams{Region: "", ControllerName: "x"}); err == nil {
+		t.Error("expected error for empty region")
+	}
+	if _, err := NewGlobalScope(GlobalScopeParams{Region: "cn-north-4", ControllerName: ""}); err == nil {
+		t.Error("expected error for empty controllerName")
+	}
+}
+
+func TestNewGlobalScope_HappyPath(t *testing.T) {
+	s, err := NewGlobalScope(GlobalScopeParams{Region: "cn-north-4", ControllerName: "gc"})
+	if err != nil {
+		t.Fatalf("NewGlobalScope: %v", err)
+	}
+	if s.Region() != "cn-north-4" {
+		t.Errorf("Region: %s", s.Region())
+	}
+	if s.ControllerName() != "gc" {
+		t.Errorf("ControllerName: %s", s.ControllerName())
 	}
 }
