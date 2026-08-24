@@ -166,10 +166,9 @@
 ### 6.4 状态监控
 
 - `GET /clusters/{id}` 轮询 + `status.conditions` 落库 ✅。
-- **conditions 命名差异**：文档 `ClusterReady/ControlPlaneReady/NetworkReady/NodePoolsReady` ↔ 仓库实际 `CredentialsReady`、`CCEClusterReady`（`ClusterAvailable`）、`KubeconfigReady`、`AddonsConfigured`、`PodIdentityAssociationsConfigured`、`LoggingConfigured`、`AccessPoliciesConfigured`、`UpgradeReady`（README「Expected conditions」）。
-  - 仓库命名更细粒度（对齐 CAPA condition 命名习惯），但**无 `NetworkReady`/`NodePoolsReady` 两个文档明确要求的 condition**。
+- **conditions 命名差异**：文档 `ClusterReady/ControlPlaneReady/NetworkReady/NodePoolsReady` ↔ 仓库 `CCEClusterReady`、`NetworkReady`、per-pool `NodePoolReady` 等更细粒度 condition（对齐 CAPA 命名习惯，README「Conditions」对齐表）。
 
-**缺口（P2）**：conditions 命名与文档对齐表需在用户文档提供；评估是否补 `NetworkReady`/`NodePoolsReady` 语义（当前网络/节点池状态隐含于 `CCEClusterReady` 与 machine pool conditions）。
+**评估结论（原 P2）**：`NetworkReady` 已存在（CCECluster，BYO 验证/managed reconcile）；`NodePoolsReady` 不补聚合——仓库用 per-pool `NodePoolReady`（对齐 CAPA per-nodegroup 语义），CAPI MachinePool 层已聚合就绪。README「Conditions」对齐表已提供。
 
 ---
 
@@ -241,7 +240,6 @@
 
 | 优先级 | 维度 | 缺口 |
 |---|---|---|
-| P2 | §六 | conditions 命名对齐表 + 补 `NetworkReady`/`NodePoolsReady` 语义 |
 | P2 | §七 | 退避为固定延迟，非文档要求的指数退避 |
 | P2 | §八 | 官方 CAPI e2e 框架 + 正式 CI 配置 |
 | P2 | §十 | 自定义 Prometheus 业务指标、provider 操作审计日志 |

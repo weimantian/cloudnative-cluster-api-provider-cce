@@ -256,6 +256,18 @@ kubectl --kubeconfig my-cluster.kubeconfig get nodes
 
 Expected result: `kubectl get nodes` shows the number of nodes equal to `MachinePool.spec.replicas`, all `Ready`.
 
+### Conditions (planning-doc naming → provider)
+
+The provider reports finer-grained, CAPA-style conditions than the planning
+doc's four aggregate conditions. Mapping:
+
+| Planning doc | Provider condition(s) | Where |
+|---|---|---|
+| `ClusterReady` | `CCEClusterReady` (`ClusterAvailable`) | CCEManagedControlPlane |
+| `ControlPlaneReady` | `CredentialsReady` → `CCEClusterReady` → `KubeconfigReady` → `AddonsConfigured` → `PodIdentityAssociationsConfigured` → `LoggingConfigured` → `AccessPoliciesConfigured` → `UpgradeReady` | CCEManagedControlPlane |
+| `NetworkReady` | `NetworkReady` (plus `VpcReady`/`SubnetsReady`/`NatGatewaysReady`/`SecurityGroupsReady`) | CCECluster |
+| `NodePoolsReady` | per-pool `NodePoolReady` (no aggregate — CAPI aggregates MachinePool readiness) | CCEManagedMachinePool |
+
 ### Cluster upgrades (FR-1.7)
 
 Set `CCEManagedControlPlane.spec.version` to a higher Kubernetes version; the
