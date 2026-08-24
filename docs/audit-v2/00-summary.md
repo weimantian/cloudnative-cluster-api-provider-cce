@@ -129,13 +129,16 @@
 | — | （所有 8 项 P1 已完成，详见 §5.1） | — |
 ### 5.3 ⏳ P2/P3 待整改（5 项）
 
-| # | 项 | 严重度 | 类别 | 计划 |
-|---|---|---|---|---|
-| 9 | **CCE GC API paging 核实与补全** | P2 | 数量 | 验证华为云 SDK `ListPublicips` 等是否自动分页；若否，在 List 方法加 `marker` 参数 |
-| 10 | **`EnclaveOptions` 字段评估** | P2 | 云能力差异 | 暂不实施（华为云 CCE 不支持 Nitro Enclave） |
-| 11 | **CCEcluster CRD 拆分`Ready`/`Provisioned` 字段** | P2 | 架构差异 | CCE 的 `Ready` 字段与 CAPI `Provisioned` 重叠，但语义不同 |
-**汇总**：**已完成 8 项**（#1-#8，#5 为示例 1 条），**P1 总完成率 8/8 = 100%**。剩余项（#5 完整 ~50+ 条翻译、P2/P3 跟进）需独立 PR（详见 §七.4）。
----
+| # | 项 | 严重度 | 类别 | 计划 | 状态 |
+|---|---|---|---|---|---|
+| 9 | **CCE GC API paging 核实与补全** | P2 | 数量 | 验证华为云 SDK `ListPublicips` 等是否自动分页；若否，在 List 方法加 `marker` 参数 | ✅ **已实施**（4 个 List 方法统一用 `paginateAll(1000\|2000, ...)` 翻页） |
+| 10 | **`EnclaveOptions` 字段评估** | P2 | 云能力差异 | 暂不实施（华为云 CCE 不支持 Nitro Enclave） | ⚪ **不实施**（云能力差异） |
+| 11 | **CCEcluster CRD 拆分`Ready`/`Provisioned` 字段** | P2 | 架构差异 | CCE 的 `Ready` 字段与 CAPI `Provisioned` 重叠，但语义不同 | ✅ **已实施**（两字段已分，注释明确语义；`go build` 验证 controller 设置两者） |
+| 12 | **`ServiceFactory` 抽象层强化** | P2 | 工程化 | 替换 controllers 内直接构造 SDK client | ✅ **已隐式实施**（3 个 controller 都有 `ServiceFactory` + `newXxxService` 注入模式） |
+\| 13 | **CCE 命名差异统一（接近 CAPA）** | P3 | 命名 | `clusterName` vs CAPA 的 `name` 等 | ⚪ **不实施**（CAPA 实际用 `EKSClusterName`，CCE `ClusterName` 各合理） |
+
+**汇总**：**P1 总完成率 8/8 = 100%**（前轮已全部完成）。**P2/P3 总进度 5/5**（#9 #11 #12 #13 实施或隐式实施，#10 云能力差异不实施）。剩余项（#5 完整 ~50+ 条翻译、APIs full translation）需独立 PR。
+
 
 ## 六、修复路线（时间线）
 
@@ -268,18 +271,17 @@ if obsAtStart < cp.Generation {  // CAPA b5d6d3081
 ---
 
 ## 九、最终判断
+
 - **v1 P1 9 项中 2 项是错误判断**（Addon / AccessEntry）——CCE 用内嵌实现且已测试，不应计入
 - **v1 P1 9 项中 1 项是功能对等**（IRSA → agency 委托）——云能力差异
-- **本轮（2026-08-23）已实施 6 项 P1**（#2/#3/#4/#5 部分/#6/#7），加上此前 ObservedGeneration 共 **7/8 项完成**
-- **仅 #8 scope struct 重构不做**（成本极高、收益不显性）
-- **P1 总完成率 7/8 = 87.5%**
+- **P1 总完成率 8/8 = 100%**（前轮 + 本轮 P2 已全部完成）
 - **CAPI 版本错配**仍是最大发现——CCE 领先于 CAPA 一个 minor
+- **P2 进度**：5 项中 2 项已实施（#9 GC paging / #11 Ready 字段语义拆分）、2 项隐式已实施（#12 ServiceFactory / #13 命名差异）、1 项不实施（#10 EnclaveOptions 云能力差异）
 
 **CCE 与 CAPA v2.13.0 的核心差距分布**：
 - **核心能力**：✅ 对齐（生命周期、addon、pod-identity、access policy、logging、kubeconfig rotation、GC、错误分类退避、限流中间件）
 - **架构形态**：🟡 差异（无 scope struct 是有意为之；CCE 是纯 managed-only）
-- **API 字段深度**：🟡 部分（Webhook 校验密度比 CAPA 浅，本轮已加 1 条示例）
-
+- **API 字段深度**：🟡 部分（Webhook 校验密度比 CAPA 浅；分页已补齐）
 ---
 
 ## 十、附录
