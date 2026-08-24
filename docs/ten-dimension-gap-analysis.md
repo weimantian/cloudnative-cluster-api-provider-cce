@@ -187,16 +187,14 @@
 
 ## 八、测试策略
 
-**结论：🟡 部分实现（单测/envtest/mock 齐全；官方 CAPI e2e 框架缺失）**
+**结论：✅ 已实现（单测/envtest/mock、e2e 框架、CI 配置齐全）**
 
 | 文档要求 | 实现 | 状态 |
 |---|---|---|
 | 单元测试（gomock/testify） | `*_test.go`：controllers（含 requeue/coalesced 变更/升级/删除）、services、webhooks、`errors_test.go`、`throttle_test.go` | ✅ |
 | 集成测试（沙箱/mock） | `controllers/suite_test.go` envtest + `test/fakes/fakes.go`（fake service/validator/manager） | ✅ |
-| e2e | 真机冒烟（`docs/cce-verification-findings.md` Q1–Q14：创建→Available、扩缩容、kubeconfig 轮换、删除清理、EIP、限流） | 🟡（冒烟而非官方 e2e 框架） |
-| CI | CI 单测+静态检查（README build passing badge） | 🟡（无正式 CI 配置证据/定期冒烟） |
-
-**缺口（P2）**：官方 CAPI e2e 框架（`test/e2e`）未落地；真机冒烟依赖账户余额不可持续自动化。
+| e2e | `test/e2e/`（`//go:build e2e` Ginkgo 套件，镜像 CAPA 套件形状）：完整生命周期（创建 → control plane Ready → node pool Ready → 删除），环境门控（`E2E_MANAGEMENT_KUBECONFIG`/`CCE_*` env） | ✅ |
+| CI | `.github/workflows/`：`go-build-test.yml`（build+vet+envtest 单测+generate check）、`dco-check`、`iac-validate`、`markdown-lint`、`secret-scan` | ✅ |
 
 ---
 
@@ -238,7 +236,6 @@
 
 | 优先级 | 维度 | 缺口 |
 |---|---|---|
-| P2 | §八 | 官方 CAPI e2e 框架 + 正式 CI 配置 |
 | P2 | §十 | 自定义 Prometheus 业务指标、provider 操作审计日志 |
 
 **总体结论**：项目在架构（§一/§二）、集群生命周期（§六）、文档与 UX（§九）已高度对齐规划文档；三个 P1 生产级安全/自动化缺口（STS 临时凭证刷新、Agency 自动创建、安全组自动创建）均已补齐；其余为命名/文档对齐与可观测性增强（P2）。
