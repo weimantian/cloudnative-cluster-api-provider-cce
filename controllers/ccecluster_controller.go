@@ -91,6 +91,11 @@ func (r *CCEClusterReconciler) newNetworkService(regionID string, creds *credent
 // per-reconcile CCEClusterScope (CAPA pkg/cloud/scope pattern).
 func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
+	defer func() {
+		if reterr == nil && !res.Requeue && res.RequeueAfter == 0 {
+			resetBackoff(req.NamespacedName)
+		}
+	}()
 
 	cceCluster := &infrav1beta2.CCECluster{}
 	if err := r.Get(ctx, req.NamespacedName, cceCluster); err != nil {
@@ -143,6 +148,7 @@ func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 
 func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, cceCluster *infrav1beta2.CCECluster) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
+	key := client.ObjectKeyFromObject(cceCluster)
 
 	controllerutil.AddFinalizer(cceCluster, CCEClusterFinalizer)
 
@@ -172,7 +178,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 			conditions.MarkFalse(cceCluster,
 					conditions.NetworkReadyCondition,
 					conditions.NetworkValidationFailedReason, rerr.Error())
-			return ctrl.Result{RequeueAfter: requeueAfterForError(rerr)}, nil
+			return ctrl.Result{RequeueAfter: requeueAfterForError(key, rerr)}, nil
 		}
 		// Managed network mode (vpc.id empty): create the VPC/subnets/(NAT)
 		// first, then validate the result. BYO mode validates the referenced
@@ -183,14 +189,14 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 				conditions.MarkFalse(cceCluster,
 				conditions.NetworkReadyCondition,
 				conditions.NetworkValidationFailedReason, serr.Error())
-				return ctrl.Result{RequeueAfter: requeueAfterForError(serr)}, nil
+				return ctrl.Result{RequeueAfter: requeueAfterForError(key, serr)}, nil
 			}
 			if rerr := r.reconcileManagedNetwork(ctx, cceCluster, cluster.Name, svc); rerr != nil {
 				conditions.MarkFalse(cceCluster,
 				conditions.NetworkReadyCondition,
 				conditions.NetworkValidationFailedReason, rerr.Error())
 				recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "ManagedNetworkFailed", "%v", rerr)
-				return ctrl.Result{RequeueAfter: requeueAfterForError(rerr)}, nil
+				return ctrl.Result{RequeueAfter: requeueAfterForError(key, rerr)}, nil
 			}
 			recordEvent(r.Recorder, cceCluster, corev1.EventTypeNormal, "ManagedNetworkReconciled",
 				"managed network reconciled (VPC %s)", cceCluster.Spec.Network.VPC.ResourceID)
@@ -200,7 +206,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 			conditions.MarkFalse(cceCluster,
 				conditions.NetworkReadyCondition,
 				conditions.NetworkValidationFailedReason, verr.Error())
-			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, nil
+			return ctrl.Result{RequeueAfter: requeueAfterForError(key, verr)}, nil
 		}
 		// Read the container/service CIDR from the control plane spec.
 		containerMode, containerCIDR, serviceCIDR, eniSubnets := "", "", "", []string{}
@@ -225,7 +231,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 			conditions.MarkFalse(cceCluster,
 				conditions.NetworkReadyCondition,
 				conditions.NetworkValidationFailedReason, verr.Error())
-			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, nil
+			return ctrl.Result{RequeueAfter: requeueAfterForError(key, verr)}, nil
 		}
 		var hardMsgs []string
 		for _, i := range issues {

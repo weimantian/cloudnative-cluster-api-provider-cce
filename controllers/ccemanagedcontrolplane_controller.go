@@ -102,6 +102,11 @@ func (r *CCEManagedControlPlaneReconciler) newIAMService(regionID string, creds 
 // commit 9e9bb6b31).
 func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
+	defer func() {
+		if reterr == nil && !res.Requeue && res.RequeueAfter == 0 {
+			resetBackoff(req.NamespacedName)
+		}
+	}()
 
 	cp := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := r.Get(ctx, req.NamespacedName, cp); err != nil {
@@ -256,7 +261,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 			conditions.MarkFalse(cp,
 				conditions.CCEClusterReadyCondition,
 				conditions.CCEClusterNotFoundReason, err.Error())
-			return resultAfterError(err)
+			return resultAfterError(client.ObjectKeyFromObject(cp), err)
 		}
 		clusterID = id
 		cp.Status.ClusterID = id
@@ -279,7 +284,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		conditions.MarkFalse(cp,
 				conditions.CCEClusterReadyCondition,
 				conditions.CCEClusterNotFoundReason, err.Error())
-		return resultAfterError(err)
+		return resultAfterError(client.ObjectKeyFromObject(cp), err)
 	}
 	if info.Phase != "Available" {
 		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
@@ -402,7 +407,7 @@ func (r *CCEManagedControlPlaneReconciler) pollUpgradeTask(ctx context.Context, 
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, true
+		return ctrl.Result{RequeueAfter: requeueAfterForError(client.ObjectKeyFromObject(cp), err)}, true
 	}
 	switch phase {
 	case cceService.UpgradeTaskPhaseSuccess:
@@ -440,7 +445,7 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, true
+		return ctrl.Result{RequeueAfter: requeueAfterForError(client.ObjectKeyFromObject(cp), err)}, true
 	}
 	if len(info.TargetVersions) == 0 {
 		// Platform currently offers no upgrade target — normal state, not an
@@ -472,7 +477,7 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 	if err != nil {
 		conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
 			conditions.ReconciliationFailedReason, err.Error())
-		return ctrl.Result{RequeueAfter: requeueAfterForError(err)}, true
+		return ctrl.Result{RequeueAfter: requeueAfterForError(client.ObjectKeyFromObject(cp), err)}, true
 	}
 	cp.Status.UpgradeTaskID = taskID
 	conditions.MarkFalse(cp, conditions.UpgradeReadyCondition,
