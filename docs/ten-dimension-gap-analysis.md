@@ -134,7 +134,7 @@
 
 ### 5.2 弹性伸缩
 
-- `spec.autoscaling`（enable/min/max）✅ 已建模，**但受 `NodePoolAutoscaling` feature gate 控制（Alpha，默认 false，`internal/features/features.go`）**。
+- `spec.autoscaling`（enable/min/max）✅ 已建模，受 `NodePoolAutoscaling` feature gate 控制（Alpha，默认 false，`internal/features/features.go`；默认关为有意设计，见下评估结论）。
 - Cluster Autoscaler 集成：🟡 走 CCE 原生弹性伸缩（HPA/CA 由 CCE 托管），非 provider 部署 CA。
 
 ### 5.3 节点初始化
@@ -143,7 +143,7 @@
 - 标签/污点：`spec.labels` / `spec.taints`（max 20）✅；启动脚本经 pre/postInstall。
 
 **缺口**：
-- **P2** — `NodePoolAutoscaling` 默认关：文档未提及需 feature gate，应在用户文档标注并评估是否转 Beta/默认开。
+- **评估结论（原 P2）**：保持 Alpha + 默认关，**不转 Beta/默认开**。节点数默认由 CAPI `MachinePool.spec.replicas` 单一驱动（可预测）；开启 autoscaling 交由 CCE CA 负载驱动，与 replicas 并存（实测 Q3/B3 不冲突）但需 external-autoscaler annotation（`cluster.x-k8s.io/replicas-managed-by`）协调，避免双驱动打架。README「Node pool autoscaling」一节已标注。
 
 ---
 
@@ -241,7 +241,6 @@
 
 | 优先级 | 维度 | 缺口 |
 |---|---|---|
-| P2 | §五 | `NodePoolAutoscaling` 默认关，需文档标注/评估转默认开 |
 | P2 | §六 | conditions 命名对齐表 + 补 `NetworkReady`/`NodePoolsReady` 语义 |
 | P2 | §七 | 退避为固定延迟，非文档要求的指数退避 |
 | P2 | §八 | 官方 CAPI e2e 框架 + 正式 CI 配置 |

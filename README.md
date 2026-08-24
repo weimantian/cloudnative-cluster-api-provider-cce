@@ -274,6 +274,14 @@ when the `NodePoolAutoscaling` feature gate is on:
 manager --feature-gates=NodePoolAutoscaling=true
 ```
 
+It stays Alpha + off-by-default on purpose: node count is normally driven
+solely by CAPI `MachinePool.spec.replicas` (a single, predictable source of
+truth). Enabling autoscaling hands load-based scaling to CCE's cluster
+autoscaler, which coexists with `replicas` (verified Q3/B3) but requires the
+external-autoscaler annotation (`cluster.x-k8s.io/replicas-managed-by`) on the
+MachinePool so the provider reverse-syncs `replicas` from the cloud instead of
+fighting the autoscaler.
+
 ### Flavor allowlist (webhook)
 
 `CCEManagedMachinePool.spec.flavor` is validated against the ECS flavor naming
