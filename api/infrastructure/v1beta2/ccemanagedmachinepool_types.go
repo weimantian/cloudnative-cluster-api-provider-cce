@@ -245,6 +245,15 @@ type CCEManagedMachinePoolStatus struct {
 	// +optional
 	LastAppliedAutoscaling AutoscalingSpec `json:"lastAppliedAutoscaling,omitempty"`
 
+	// ObservedGeneration is the latest generation observed by the controller.
+	// Used to prevent missed spec changes when controller-runtime event coalescing
+	// causes a status patch and an external spec patch to land in the same work
+	// queue window. Matches CAPA v2.13.0 commits 9e9bb6b31 / b5d6d3081 (applied
+	// to CCEManagedControlPlane; same pattern extended to CCEManagedMachinePool
+	// because machine pools can also miss spec changes during long reconciles).
+	// +optional
+	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
+
 	// Conditions defines current service state.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

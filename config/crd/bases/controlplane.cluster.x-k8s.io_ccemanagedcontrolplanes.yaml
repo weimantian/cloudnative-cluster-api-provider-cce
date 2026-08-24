@@ -523,6 +523,14 @@ spec:
               kubeconfigSecretName:
                 description: KubeconfigSecretName of the generated kubeconfig Secret.
                 type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the latest generation observed by the controller.
+                  Used to prevent missed spec changes when controller-runtime event coalescing
+                  causes a status patch and an external spec patch to land in the same work
+                  queue window. Matches CAPA v2.13.0 commits 9e9bb6b31 / b5d6d3081.
+                format: int64
+                type: integer
               ready:
                 description: Ready indicates the CCE control plane is available.
                 type: boolean
