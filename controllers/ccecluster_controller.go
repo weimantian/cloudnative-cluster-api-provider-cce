@@ -141,9 +141,9 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 	controllerutil.AddFinalizer(cceCluster, CCEClusterFinalizer)
 
 	if cceCluster.Spec.Region == "" {
-		conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
-			conditions.ReconciliationFailedReason,
-			"spec.region is required")
+		conditions.MarkFalse(cceCluster,
+				conditions.NetworkReadyCondition,
+				conditions.NetworkValidationFailedReason, "spec.region is required")
 		recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "NetworkValidationFailed", "spec.region is required")
 		return ctrl.Result{}, errors.New("spec.region is required")
 	}
@@ -155,8 +155,9 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 	// credentials resolution FAILURE must not silently skip validation.
 	creds, credErr := r.resolveClusterCredentials(ctx, cluster, cceCluster)
 	if credErr != nil {
-		conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
-			conditions.ReconciliationFailedReason, credErr.Error())
+		conditions.MarkFalse(cceCluster,
+				conditions.NetworkReadyCondition,
+				conditions.NetworkValidationFailedReason, credErr.Error())
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 	if creds != nil {
@@ -166,13 +167,15 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		if network.IsManaged(&cceCluster.Spec.Network, cluster.Name) {
 			svc, serr := r.newNetworkService(cceCluster.Spec.Region, creds.AccessKey, creds.SecretKey)
 			if serr != nil {
-				conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
-					conditions.ReconciliationFailedReason, serr.Error())
+				conditions.MarkFalse(cceCluster,
+				conditions.NetworkReadyCondition,
+				conditions.NetworkValidationFailedReason, serr.Error())
 				return ctrl.Result{RequeueAfter: requeueAfterForError(serr)}, nil
 			}
 			if rerr := r.reconcileManagedNetwork(ctx, cceCluster, cluster.Name, svc); rerr != nil {
-				conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
-					conditions.ReconciliationFailedReason, rerr.Error())
+				conditions.MarkFalse(cceCluster,
+				conditions.NetworkReadyCondition,
+				conditions.NetworkValidationFailedReason, rerr.Error())
 				recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "ManagedNetworkFailed", "%v", rerr)
 				return ctrl.Result{RequeueAfter: requeueAfterForError(rerr)}, nil
 			}
@@ -181,8 +184,9 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		}
 		validator, verr := r.newNetworkValidator(cceCluster.Spec.Region, creds.AccessKey, creds.SecretKey)
 		if verr != nil {
-			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
-				conditions.ReconciliationFailedReason, verr.Error())
+			conditions.MarkFalse(cceCluster,
+				conditions.NetworkReadyCondition,
+				conditions.NetworkValidationFailedReason, verr.Error())
 			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, nil
 		}
 		// Read the container/service CIDR from the control plane spec.
@@ -205,8 +209,9 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 			ENISubnetIDs:  eniSubnets,
 		})
 		if verr != nil {
-			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
-				conditions.ReconciliationFailedReason, verr.Error())
+			conditions.MarkFalse(cceCluster,
+				conditions.NetworkReadyCondition,
+				conditions.NetworkValidationFailedReason, verr.Error())
 			return ctrl.Result{RequeueAfter: requeueAfterForError(verr)}, nil
 		}
 		var hardMsgs []string
@@ -218,8 +223,9 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 			hardMsgs = append(hardMsgs, i.Field+": "+i.Message)
 		}
 		if len(hardMsgs) > 0 {
-			conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
-				conditions.ReconciliationFailedReason, strings.Join(hardMsgs, "; "))
+			conditions.MarkFalse(cceCluster,
+				conditions.NetworkReadyCondition,
+				conditions.NetworkValidationFailedReason, strings.Join(hardMsgs, "; "))
 			recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "NetworkValidationFailed", "%s", strings.Join(hardMsgs, "; "))
 			// Persist the failure condition (status subresource ignores
 			// r.Update).
@@ -304,9 +310,9 @@ func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clu
 		if cceCluster.Spec.Network.VPC.ResourceID != "" {
 			creds, cerr := r.resolveClusterCredentials(ctx, cluster, cceCluster)
 			if cerr != nil || creds == nil {
-				conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
-					conditions.ReconciliationFailedReason,
-					"managed network deletion requires credentials: "+errStr(cerr))
+				conditions.MarkFalse(cceCluster,
+				conditions.NetworkReadyCondition,
+				conditions.NetworkValidationFailedReason, "managed network deletion requires credentials: "+errStr(cerr))
 				return ctrl.Result{}, errors.New("managed network deletion requires credentials")
 			}
 			svc, serr := r.newNetworkService(cceCluster.Spec.Region, creds.AccessKey, creds.SecretKey)
@@ -314,8 +320,9 @@ func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clu
 				return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 			}
 			if derr := svc.DeleteNetwork(ctx, &cceCluster.Spec.Network, cluster.Name); derr != nil {
-				conditions.MarkFalse(cceCluster, conditions.NetworkReadyCondition,
-					conditions.ReconciliationFailedReason, derr.Error())
+				conditions.MarkFalse(cceCluster,
+				conditions.NetworkReadyCondition,
+				conditions.NetworkValidationFailedReason, derr.Error())
 				recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "ManagedNetworkDeleteFailed", "%v", derr)
 				return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 			}
@@ -348,21 +355,24 @@ func (r *CCEClusterReconciler) resolveClusterCredentials(ctx context.Context, cl
 func (r *CCEClusterReconciler) reconcileManagedNetwork(ctx context.Context, cceCluster *infrav1beta2.CCECluster, clusterName string, svc network.ManagerInterface) error {
 	spec := &cceCluster.Spec.Network
 	if err := svc.ReconcileVpc(ctx, spec, clusterName); err != nil {
-		conditions.MarkFalse(cceCluster, conditions.VpcReadyCondition,
-			conditions.ReconciliationFailedReason, err.Error())
+		conditions.MarkFalse(cceCluster,
+				conditions.VpcReadyCondition,
+				conditions.NetworkReconciliationFailedReason, err.Error())
 		return err
 	}
 	conditions.MarkTrue(cceCluster, conditions.VpcReadyCondition, "VpcReconciled", "managed VPC reconciled")
 	if err := svc.ReconcileSubnets(ctx, spec, clusterName); err != nil {
-		conditions.MarkFalse(cceCluster, conditions.SubnetsReadyCondition,
-			conditions.ReconciliationFailedReason, err.Error())
+		conditions.MarkFalse(cceCluster,
+				conditions.SubnetsReadyCondition,
+				conditions.NetworkReconciliationFailedReason, err.Error())
 		return err
 	}
 	conditions.MarkTrue(cceCluster, conditions.SubnetsReadyCondition, "SubnetsReconciled", "managed subnets reconciled")
 	if spec.NatGateway != nil {
 		if err := svc.ReconcileNatGateway(ctx, spec, clusterName); err != nil {
-			conditions.MarkFalse(cceCluster, conditions.NatGatewaysReadyCondition,
-				conditions.ReconciliationFailedReason, err.Error())
+			conditions.MarkFalse(cceCluster,
+				conditions.NatGatewaysReadyCondition,
+				conditions.NetworkReconciliationFailedReason, err.Error())
 			return err
 		}
 		conditions.MarkTrue(cceCluster, conditions.NatGatewaysReadyCondition, "NatGatewayReconciled", "managed NAT gateway reconciled")
