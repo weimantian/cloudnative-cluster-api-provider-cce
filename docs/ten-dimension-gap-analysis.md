@@ -94,12 +94,12 @@
 | 文档要求 | 实现 | 状态 |
 |---|---|---|
 | 公网访问 | `spec.endpointAccess.public` + EIP/ELB 绑定（已真机验证） | ✅ |
-| 私网访问 | CCE 默认暴露 VPC 内部端点（`public=false` 时 kubeconfig server 为内网 IP，README 已注明需 bastion） | 🟡（平台默认，无显式私网管理） |
-| 公网+私网两者 | 🟡 无显式「两者」开关语义 |
+| 私网访问 | `spec.endpointAccess.private`（默认 true，对齐 CAPA）；CCE 平台常开 VPC 内部端点（`public=false` 时 kubeconfig server 为内网 IP，README 已注明需 bastion） | ✅ |
+| 公网+私网两者 | `public`+`private` 三态显式：private 常开（不可关），`public=true` 即「两者」、`public=false` 即「仅私网」 | ✅ |
 | **VPC Endpoint** | ❌ 未实现（华为云 VPC Endpoint 打通 CCE 私网 API Server） | ❌ |
 
 **缺口**：
-- **P2** — VPC Endpoint 私网访问管理；公网/私网/两者三态显式语义。
+- **P2** — VPC Endpoint 私网访问管理（跨 VPC/Region 私网打通，需调研 VPCEP 对 CCE API Server 的适用性）。
 
 ### 4.4 辅助资源创建者与生命周期（CAPA 一致性对照）
 
@@ -246,7 +246,7 @@
 
 | 优先级 | 维度 | 缺口 |
 |---|---|---|
-| P2 | §四 | VPC Endpoint 私网访问；公网/私网/两者三态显式语义 |
+| P2 | §四 | VPC Endpoint 私网访问管理（跨 VPC/Region 私网打通，需调研 VPCEP 适用性） |
 | P2 | §二 | `spec.region` 位置差异（文档挂 ControlPlane，实际在 CCECluster）需文档标注 |
 | P2 | §五 | `NodePoolAutoscaling` 默认关，需文档标注/评估转默认开 |
 | P2 | §六 | conditions 命名对齐表 + 补 `NetworkReady`/`NodePoolsReady` 语义 |
