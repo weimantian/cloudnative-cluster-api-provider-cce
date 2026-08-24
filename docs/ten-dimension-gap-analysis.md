@@ -52,15 +52,15 @@
 
 ## 三、凭证管理与 IAM 集成
 
-**结论：🟡 部分实现（AK/SK、Agency、Workload Identity 齐全；STS 临时凭证刷新缺失）**
+**结论：✅ 已实现（AK/SK、Agency、STS 临时凭证刷新、Workload Identity 齐全）**
 
 ### 3.1 凭证获取
 
 | 文档要求 | 实现 | 状态 |
 |---|---|---|
 | AK/SK | `CCEClusterStaticIdentity`（`SecretRef` → Secret `accessKey`/`secretKey`）+ 控制器默认 `CLOUD_SDK_AK/SK` 环境（`identity_types.go`、`scope.go`） | ✅ |
-| IAM 委托 Agency | `CCEClusterRoleIdentity`（`spec.agencyName`，对应 CAPA AssumeRole 身份） | ✅ |
-| **STS 临时凭证刷新** | ❌ 无真实实现——grep `STS` 仅命中引用/常量，`scope.go` 仅长期 AK/SK，无临时凭证刷新/轮换逻辑 | ❌ |
+| IAM 委托 Agency | `CCEClusterRoleIdentity`（`spec.agencyName`，对应 CAPA AssumeRole 身份）；`spec.agencyTrustPolicy` 声明信任策略后由 provider 自动创建（`internal/services/iam` `EnsureAgency`） | ✅ |
+| **STS 临时凭证刷新** | ✅ `internal/credentials` `Provider.AssumeAgency`（STS v1）→ `credentials.Resolve` 产出临时 AK/SK/SecurityToken；静态 AK/SK 缓存、SecurityToken 不缓存 | ✅ |
 
 ### 3.2 IAM 角色与策略
 
@@ -69,11 +69,6 @@
 | 控制器权限 | RBAC manifest + IAM 权限清单（`docs/smoke-test-checklist.md` §2） | ✅ |
 | 每集群独立 IAM 角色 | `identityRef` 每集群引用（对齐 CAPA 三身份），权限策略经 `accessPolicies` 映射 CCE 角色 | ✅ |
 | Workload Identity | `spec.podIdentityAssociations`（CCE pod 级 IAM，EKS Pod Identity/IRSA 等价物） | ✅ |
-
-**缺口**：
-- **P1** — STS 临时凭证刷新（`credentialType: sts` / AssumeRole 临时 AK/SK/SecurityToken）未实现，仅支持长期密钥。生产安全实践要求短期凭证轮换。
-- 文档 §3.1 的「STS 临时凭证刷新」与仓库 `CCEClusterRoleIdentity`（Agency）语义需在文档澄清：Agency 是身份委托（role identity），STS 是临时凭证获取机制，二者非同一层。
-- **P1** — IAM 委托（Agency）自动创建：CAPA 会自动创建集群/节点组 IAM 角色（或用户提供 ARN 跳过）；CCE provider 不创建 Agency，`CCEClusterRoleIdentity` 仅引用「必须已存在」的 `agencyName`（`cce.go` 仅传 `spec.AgencyName`），无创建委托 + 信任策略逻辑。
 
 ---
 
@@ -108,7 +103,7 @@
 
 ### 4.4 辅助资源创建者与生命周期（CAPA 一致性对照）
 
-按 CAPA 的「创建者 / 触发者」模型逐项核对 CCE provider：网络基础设施（VPC/子网/NAT/EIP/安全组）与节点/插件生命周期对齐；**仅 IAM Agency 自动创建缺失**。
+按 CAPA 的「创建者 / 触发者」模型逐项核对 CCE provider：网络基础设施（VPC/子网/NAT/EIP/安全组）与节点/插件生命周期对齐；IAM Agency 自动创建亦已对齐。
 
 | 资源 | CAPA（EKS）创建者 | CCE provider 现状 | 一致性 |
 |---|---|---|---|
@@ -119,7 +114,7 @@
 | NAT 出站 EIP | CAPA 控制器创建 | `createEip`（`<cluster>-nat-eip`，带 owned tag 供 GC 回收） | ✅ |
 | 节点/自定义安全组 | CAPA 控制器创建（若未指定） | ✅ `ReconcileSecurityGroup` 创建托管 node SG + 规则；节点池 `spec.securityGroups` 为空时自动绑定 | ✅ 一致 |
 | 控制面安全组（`eks-cluster-sg-*`） | EKS 服务自动创建 | N/A——CCE 控制面托管，不暴露安全组 | ✅（平台差异） |
-| 集群/节点组 IAM 角色 | CAPA 创建（或用户提供 ARN 跳过） | ❌ 不创建 Agency，`CCEClusterRoleIdentity` 要求「agency 已存在」，`cce.go` 仅传 `agencyName` 引用 | ❌ 不一致 |
+| 集群/节点组 IAM 角色 | CAPA 创建（或用户提供 ARN 跳过） | ✅ `internal/services/iam` `EnsureAgency`（List → Create，IAM v5）按 `spec.agencyTrustPolicy` 自动创建信任委托 | ✅ 一致 |
 | API Server ELB/NLB | EKS 服务自动创建（CAPA 触发） | CCE 服务自动创建（provider 仅传 `endpointAccess.public`） | ✅ |
 | API Server 公网 EIP | N/A（AWS NLB 自带公网 IP） | CCE 公网 ELB 绑定 EIP（平台自动；`hack/bind-eip` 为手动脚本，生产不直接绑定） | ✅（平台差异） |
 | 节点 EC2/ASG | EKS 服务自动创建（CAPA 触发） | CCE 节点池自动创建（provider 触发 `CreateNodePool`） | ✅ |
@@ -251,8 +246,6 @@
 
 | 优先级 | 维度 | 缺口 |
 |---|---|---|
-| **P1** | §三 | STS 临时凭证刷新（仅长期 AK/SK，无短期凭证轮换） |
-| **P1** | §三 | IAM 委托（Agency）自动创建缺失——仅引用已存在 agency，无创建委托/信任策略 |
 | P2 | §四 | VPC Endpoint 私网访问；公网/私网/两者三态显式语义 |
 | P2 | §二 | `spec.region` 位置差异（文档挂 ControlPlane，实际在 CCECluster）需文档标注 |
 | P2 | §五 | `NodePoolAutoscaling` 默认关，需文档标注/评估转默认开 |
@@ -261,4 +254,4 @@
 | P2 | §八 | 官方 CAPI e2e 框架 + 正式 CI 配置 |
 | P2 | §十 | 自定义 Prometheus 业务指标、provider 操作审计日志 |
 
-**总体结论**：项目在架构（§一/§二）、集群生命周期（§六）、文档与 UX（§九）已高度对齐规划文档；凭证（§三）存在生产级安全/自动化缺口（STS 刷新、Agency 自动创建），为最高优先级；网络（§四）安全组自动创建已补齐；其余为命名/文档对齐与可观测性增强（P2）。
+**总体结论**：项目在架构（§一/§二）、集群生命周期（§六）、文档与 UX（§九）已高度对齐规划文档；三个 P1 生产级安全/自动化缺口（STS 临时凭证刷新、Agency 自动创建、安全组自动创建）均已补齐；其余为命名/文档对齐与可观测性增强（P2）。
