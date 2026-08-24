@@ -103,6 +103,7 @@ const (
 const (
 	CredentialsResolutionFailedReason = "CredentialsResolutionFailed" // identityRef/secret/Secret not found
 	CredentialsInvalidReason          = "CredentialsInvalid"          // AK/SK rejected by the cloud
+	AgencyCreationFailedReason        = "AgencyCreationFailed"        // EnsureAgency (List/Create trust agency) failed
 )
 
 // CCEClusterReady condition reasons.

@@ -23,6 +23,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
+	iamService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/iam"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
 
@@ -647,6 +648,139 @@ func TestControlPlaneReconcileRoleIdentityAgency(t *testing.T) {
 	}
 	if got := fakeSvc2.CreatedClusters[0].AgencyName; got != "explicit-agency" {
 		t.Errorf("expected explicit spec.agencyName to win, got %q", got)
+	}
+}
+
+// validTrustPolicy is a minimal IAM v5 trust-policy document (trusts the CCE
+// service to assume the agency). Used by the agency auto-creation tests.
+const validTrustPolicy = `{
+	"Version": "5.0",
+	"Statement": [{
+		"Effect": "Allow",
+		"Principal": {"Service": ["cce"]},
+		"Action": ["sts:agencies:assume"]
+	}]
+}`
+
+// TestControlPlaneReconcileAgencyAutoCreation verifies the P1-3 trust-agency
+// auto-creation path: a role identity + non-empty spec.agencyTrustPolicy
+// triggers EnsureAgency with the identity agency name and the policy, before
+// the STS assume. An invalid policy fails the reconcile; a static identity
+// (no agency) skips creation entirely.
+func TestControlPlaneReconcileAgencyAutoCreation(t *testing.T) {
+	t.Setenv("CLOUD_SDK_AK", "envAK")
+	t.Setenv("CLOUD_SDK_SK", "envSK")
+	ctx := context.Background()
+
+	roleID := &infrav1beta2.CCEClusterRoleIdentity{
+		ObjectMeta: metav1.ObjectMeta{Name: "agency-create"},
+		Spec:       infrav1beta2.CCEClusterRoleIdentitySpec{AgencyName: "delegated-agency"},
+	}
+	if err := k8sClient.Create(ctx, roleID); err != nil {
+		t.Fatalf("failed to create CCEClusterRoleIdentity: %v", err)
+	}
+
+	// Case 1: valid trust policy -> EnsureAgency called, cluster still created.
+	ns := "cp-test-agency-create"
+	createNamespace(t, ns)
+	cluster, _, cp := newTestCluster(t, ns)
+	markInfrastructureProvisioned(t, cluster)
+	cp.Spec.IdentityRef = &corev1.ObjectReference{Kind: "CCEClusterRoleIdentity", Name: "agency-create"}
+	cp.Spec.AgencyTrustPolicy = validTrustPolicy
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set identityRef/agencyTrustPolicy: %v", err)
+	}
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeIAM := fakes.NewFakeIAMService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client:             k8sClient,
+		CredentialProvider: fakes.NewFakeCredentialProvider(),
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+		IAMServiceFactory: func(_ string, _ *credentials.Credentials) (iamService.Service, error) {
+			return fakeIAM, nil
+		},
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("initial reconcile failed: %v", err)
+	}
+	if len(fakeIAM.EnsuredAgencies) != 1 {
+		t.Fatalf("expected 1 EnsureAgency call, got %d", len(fakeIAM.EnsuredAgencies))
+	}
+	if got := fakeIAM.EnsuredAgencies[0].AgencyName; got != "delegated-agency" {
+		t.Errorf("expected EnsureAgency agency %q, got %q", "delegated-agency", got)
+	}
+	if got := fakeIAM.EnsuredAgencies[0].TrustPolicy; got != validTrustPolicy {
+		t.Errorf("expected EnsureAgency trustPolicy to be passed through, got %q", got)
+	}
+	if len(fakeSvc.CreatedClusters) != 1 {
+		t.Fatalf("expected 1 created cluster after agency creation, got %d", len(fakeSvc.CreatedClusters))
+	}
+
+	// Case 2: invalid trust policy -> reconcile fails, no cluster created.
+	ns2 := "cp-test-agency-bad-policy"
+	createNamespace(t, ns2)
+	cluster2, _, cp2 := newTestCluster(t, ns2)
+	markInfrastructureProvisioned(t, cluster2)
+	cp2.Spec.IdentityRef = &corev1.ObjectReference{Kind: "CCEClusterRoleIdentity", Name: "agency-create"}
+	cp2.Spec.AgencyTrustPolicy = `{"Version": "1.0"}`
+	if err := k8sClient.Update(ctx, cp2); err != nil {
+		t.Fatalf("failed to set identityRef/bad agencyTrustPolicy: %v", err)
+	}
+	fakeSvc2 := fakes.NewFakeCCEService()
+	fakeIAM2 := fakes.NewFakeIAMService()
+	r2 := &CCEManagedControlPlaneReconciler{
+		Client:             k8sClient,
+		CredentialProvider: fakes.NewFakeCredentialProvider(),
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc2, nil
+		},
+		IAMServiceFactory: func(_ string, _ *credentials.Credentials) (iamService.Service, error) {
+			return fakeIAM2, nil
+		},
+	}
+	if _, err := r2.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp2)}); err == nil {
+		t.Fatal("expected reconcile to fail on an invalid trust policy")
+	}
+	if len(fakeIAM2.EnsuredAgencies) != 0 {
+		t.Errorf("expected no EnsureAgency call for an invalid policy, got %d", len(fakeIAM2.EnsuredAgencies))
+	}
+	if len(fakeSvc2.CreatedClusters) != 0 {
+		t.Errorf("expected no cluster created for an invalid policy, got %d", len(fakeSvc2.CreatedClusters))
+	}
+
+	// Case 3: static identity (no agency) + trust policy -> creation skipped.
+	createStaticIdentity(t, "agency-create-static")
+	ns3 := "cp-test-agency-skip-static"
+	createNamespace(t, ns3)
+	cluster3, _, cp3 := newTestCluster(t, ns3)
+	markInfrastructureProvisioned(t, cluster3)
+	cp3.Spec.IdentityRef = &corev1.ObjectReference{Kind: "CCEClusterStaticIdentity", Name: "agency-create-static"}
+	cp3.Spec.AgencyTrustPolicy = validTrustPolicy
+	if err := k8sClient.Update(ctx, cp3); err != nil {
+		t.Fatalf("failed to set static identityRef: %v", err)
+	}
+	fakeSvc3 := fakes.NewFakeCCEService()
+	fakeIAM3 := fakes.NewFakeIAMService()
+	r3 := &CCEManagedControlPlaneReconciler{
+		Client:             k8sClient,
+		CredentialProvider: fakes.NewFakeCredentialProvider(),
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc3, nil
+		},
+		IAMServiceFactory: func(_ string, _ *credentials.Credentials) (iamService.Service, error) {
+			return fakeIAM3, nil
+		},
+	}
+	if _, err := r3.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp3)}); err != nil {
+		t.Fatalf("static-identity reconcile failed: %v", err)
+	}
+	if len(fakeIAM3.EnsuredAgencies) != 0 {
+		t.Errorf("expected no EnsureAgency call for a static identity, got %d", len(fakeIAM3.EnsuredAgencies))
+	}
+	if len(fakeSvc3.CreatedClusters) != 1 {
+		t.Fatalf("expected 1 created cluster for a static identity, got %d", len(fakeSvc3.CreatedClusters))
 	}
 }
 

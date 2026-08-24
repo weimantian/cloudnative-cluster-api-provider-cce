@@ -138,6 +138,17 @@ spec:
                         description: AgencyName used by the cluster (1.27+; empty
                           uses the system agency).
                         type: string
+                      agencyTrustPolicy:
+                        description: |-
+                          AgencyTrustPolicy is the IAM v5 trust-policy JSON document used to
+                          auto-create the trust agency (信任委托) referenced by the role identity
+                          (identityRef -> CCEClusterRoleIdentity.spec.agencyName) when that agency
+                          does not already exist. Mirrors CAPA auto-creating the cluster IAM role:
+                          a non-empty policy + a role identity triggers EnsureAgency (List -> Create
+                          when absent); an existing agency is adopted (never overwritten). When the
+                          identity has no agency (controller/static identity), creation is skipped.
+                          The document must declare "Version": "5.0".
+                        type: string
                       authentication:
                         description: |-
                           Authentication controls the API server authentication mode (mirrors

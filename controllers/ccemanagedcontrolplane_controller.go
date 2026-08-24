@@ -33,6 +33,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
+	iamService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/iam"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 )
 
@@ -56,6 +57,11 @@ type CCEManagedControlPlaneReconciler struct {
 	// (see SetupControllers).
 	ServiceFactory func(regionID string, creds *credentials.Credentials) (cceService.Service, error)
 
+	// IAMServiceFactory builds the IAM trust-agency service for a region/
+	// credential pair. Overridden in tests with a fake; defaults to
+	// iamService.NewClient (see newIAMService).
+	IAMServiceFactory func(regionID string, creds *credentials.Credentials) (iamService.Service, error)
+
 	// CredentialProvider resolves temporary security credentials for an
 	// agency-based identity. Nil means agency identities cannot be assumed
 	// (static AK/SK only). Injected in SetupControllers; nil in tests.
@@ -69,6 +75,15 @@ func (r *CCEManagedControlPlaneReconciler) newCCEService(regionID string, creds 
 		return r.ServiceFactory(regionID, creds)
 	}
 	return cceService.NewClient(regionID, creds)
+}
+
+// newIAMService returns an IAM service via the injected factory, or the real
+// implementation when no factory is set.
+func (r *CCEManagedControlPlaneReconciler) newIAMService(regionID string, creds *credentials.Credentials) (iamService.Service, error) {
+	if r.IAMServiceFactory != nil {
+		return r.IAMServiceFactory(regionID, creds)
+	}
+	return iamService.NewClient(regionID, creds)
 }
 
 // +kubebuilder:rbac:groups=controlplane.cluster.x-k8s.io,resources=ccemanagedcontrolplanes,verbs=get;list;watch;create;update;patch;delete
@@ -182,6 +197,33 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		return ctrl.Result{}, err
 	}
 	conditions.MarkTrue(cp, conditions.CredentialsReadyCondition, "CredentialsResolved", "CCE credentials resolved")
+
+	// P1-3 IAM trust-agency auto-creation: when the role identity carries an
+	// agency AND the spec declares a v5 trust policy, ensure the agency exists
+	// (List -> Create when absent) before assuming it via STS. Creation must use
+	// static AK/SK — it cannot assume the very agency it is about to create.
+	if cp.Spec.AgencyTrustPolicy != "" && identityAgency != "" {
+		if err := iamService.ValidateTrustPolicy(cp.Spec.AgencyTrustPolicy); err != nil {
+			conditions.MarkFalse(cp, conditions.CredentialsReadyCondition,
+				conditions.AgencyCreationFailedReason, err.Error())
+			recordEvent(r.Recorder, cp, corev1.EventTypeWarning, "AgencyCreationFailed", "%v", err)
+			return ctrl.Result{}, err
+		}
+		staticCreds := &credentials.Credentials{AccessKey: creds.AccessKey, SecretKey: creds.SecretKey}
+		iamSvc, err := r.newIAMService(region, staticCreds)
+		if err != nil {
+			conditions.MarkFalse(cp, conditions.CredentialsReadyCondition,
+				conditions.AgencyCreationFailedReason, err.Error())
+			recordEvent(r.Recorder, cp, corev1.EventTypeWarning, "AgencyCreationFailed", "%v", err)
+			return ctrl.Result{}, err
+		}
+		if err := iamSvc.EnsureAgency(ctx, identityAgency, cp.Spec.AgencyTrustPolicy); err != nil {
+			conditions.MarkFalse(cp, conditions.CredentialsReadyCondition,
+				conditions.AgencyCreationFailedReason, err.Error())
+			recordEvent(r.Recorder, cp, corev1.EventTypeWarning, "AgencyCreationFailed", "%v", err)
+			return ctrl.Result{}, err
+		}
+	}
 
 	resolved, err := credentials.Resolve(ctx, r.CredentialProvider, region, identityAgency, creds.AccessKey, creds.SecretKey)
 	if err != nil {

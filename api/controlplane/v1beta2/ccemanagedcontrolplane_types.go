@@ -67,6 +67,17 @@ type CCEManagedControlPlaneSpec struct {
 	// +optional
 	AgencyName string `json:"agencyName,omitempty"`
 
+	// AgencyTrustPolicy is the IAM v5 trust-policy JSON document used to
+	// auto-create the trust agency (信任委托) referenced by the role identity
+	// (identityRef -> CCEClusterRoleIdentity.spec.agencyName) when that agency
+	// does not already exist. Mirrors CAPA auto-creating the cluster IAM role:
+	// a non-empty policy + a role identity triggers EnsureAgency (List -> Create
+	// when absent); an existing agency is adopted (never overwritten). When the
+	// identity has no agency (controller/static identity), creation is skipped.
+	// The document must declare "Version": "5.0".
+	// +optional
+	AgencyTrustPolicy string `json:"agencyTrustPolicy,omitempty"`
+
 	// IdentityRef references a CCECluster*Identity (Controller/Static/Role).
 	// Empty means the controller default identity (CLOUD_SDK_AK/SK env).
 	// +optional

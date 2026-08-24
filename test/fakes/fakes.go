@@ -16,6 +16,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
+	iamService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/iam"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
 )
 
@@ -260,6 +261,36 @@ func NewFakeNetworkValidator() *FakeNetworkValidator {
 // Validate implements network.ValidatorInterface.
 func (f *FakeNetworkValidator) Validate(_ context.Context, _ network.ValidateInput) ([]network.Issue, error) {
 	return f.Issues, nil
+}
+
+// FakeIAMService is a scriptable iamService.Service for the trust-agency
+// auto-creation path. Defaults to a no-op (agency exists / created).
+type FakeIAMService struct {
+	EnsureAgencyFn func(ctx context.Context, agencyName, trustPolicy string) error
+	// EnsuredAgencies records EnsureAgency calls for assertions.
+	EnsuredAgencies []struct {
+		AgencyName  string
+		TrustPolicy string
+	}
+}
+
+// NewFakeIAMService returns a fake that records calls and succeeds.
+func NewFakeIAMService() *FakeIAMService {
+	return &FakeIAMService{}
+}
+
+var _ iamService.Service = (*FakeIAMService)(nil)
+
+// EnsureAgency implements iamService.Service.
+func (f *FakeIAMService) EnsureAgency(ctx context.Context, agencyName, trustPolicy string) error {
+	f.EnsuredAgencies = append(f.EnsuredAgencies, struct {
+		AgencyName  string
+		TrustPolicy string
+	}{agencyName, trustPolicy})
+	if f.EnsureAgencyFn != nil {
+		return f.EnsureAgencyFn(ctx, agencyName, trustPolicy)
+	}
+	return nil
 }
 
 // FakeCredentialProvider is a scriptable credentials.Provider that returns
