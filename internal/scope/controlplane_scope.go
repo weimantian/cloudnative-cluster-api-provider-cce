@@ -11,20 +11,20 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util/patch"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 )
 
 // CCEManagedControlPlaneScopeParams is the input for NewCCEManagedControlPlaneScope.
 type CCEManagedControlPlaneScopeParams struct {
-	Client                   client.Client
-	Cluster                  *clusterv1.Cluster
-	CCEManagedControlPlane   *controlplanev1beta2.CCEManagedControlPlane
-	ControllerName           string
+	Client                 client.Client
+	Cluster                *clusterv1.Cluster
+	CCEManagedControlPlane *controlplanev1beta2.CCEManagedControlPlane
+	ControllerName         string
 }
 
 // CCEManagedControlPlaneScope is the per-reconcile context for the
@@ -32,12 +32,12 @@ type CCEManagedControlPlaneScopeParams struct {
 // and carries the WithStatusObservedGeneration patch option to write
 // status.observedGeneration atomically (CAPA b5d6d3081).
 type CCEManagedControlPlaneScope struct {
-	log                      logr.Logger
-	client                   client.Client
-	patchHelper              *patch.Helper
-	Cluster                  *clusterv1.Cluster
-	CCEManagedControlPlane   *controlplanev1beta2.CCEManagedControlPlane
-	controllerName           string
+	log                    logr.Logger
+	client                 client.Client
+	patchHelper            *patch.Helper
+	Cluster                *clusterv1.Cluster
+	CCEManagedControlPlane *controlplanev1beta2.CCEManagedControlPlane
+	controllerName         string
 	// observedGenerationAtStart is captured at scope build time so the
 	// controller can detect spec changes that arrived after the Get and
 	// were coalesced into the in-flight work-queue entry.
@@ -94,12 +94,16 @@ func (s *CCEManagedControlPlaneScope) ControllerName() string { return s.control
 func (s *CCEManagedControlPlaneScope) InfraClusterName() string { return s.Cluster.Name }
 
 // GenerationAtStart returns the spec.generation observed at scope build.
-func (s *CCEManagedControlPlaneScope) GenerationAtStart() int64 { return s.CCEManagedControlPlane.Generation }
+func (s *CCEManagedControlPlaneScope) GenerationAtStart() int64 {
+	return s.CCEManagedControlPlane.Generation
+}
 
 // ObservedGenerationAtStart returns the persisted status.observedGeneration
 // at scope build, used to detect spec changes coalesced into the in-flight
 // work-queue entry.
-func (s *CCEManagedControlPlaneScope) ObservedGenerationAtStart() int64 { return s.observedGenerationAtStart }
+func (s *CCEManagedControlPlaneScope) ObservedGenerationAtStart() int64 {
+	return s.observedGenerationAtStart
+}
 
 // PatchObject persists the CCEManagedControlPlane (spec + status). The
 // status.observedGeneration field is atomically updated to match

@@ -31,10 +31,10 @@ import (
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
 	iamService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/iam"
-	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 )
 
 // ControlPlaneFinalizer ensures the CCE cluster is deleted before the object.
@@ -103,7 +103,7 @@ func (r *CCEManagedControlPlaneReconciler) newIAMService(regionID string, creds 
 func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 	defer func() {
-		if reterr == nil && !res.Requeue && res.RequeueAfter == 0 {
+		if reterr == nil && res.RequeueAfter == 0 {
 			resetBackoff(req.NamespacedName)
 		}
 	}()
@@ -128,7 +128,7 @@ func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ct
 		res, err := r.reconcileDelete(ctx, cluster, cp)
 		return res, err
 	}
-if cluster == nil {
+	if cluster == nil {
 		log.Info("Cluster controller has not yet set OwnerRef")
 		return ctrl.Result{}, nil
 	}
@@ -184,8 +184,8 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	region, vpcID, nodeSubnetID, eniSubnets, err := r.clusterNetwork(ctx, cluster, cp)
 	if err != nil {
 		conditions.MarkFalse(cp,
-				conditions.CCEClusterReadyCondition,
-				conditions.CCEClusterNotFoundReason, err.Error())
+			conditions.CCEClusterReadyCondition,
+			conditions.CCEClusterNotFoundReason, err.Error())
 		return ctrl.Result{}, err
 	}
 
@@ -196,8 +196,8 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	creds, identityAgency, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
 	if err != nil {
 		conditions.MarkFalse(cp,
-				conditions.CredentialsReadyCondition,
-				conditions.CredentialsResolutionFailedReason, err.Error())
+			conditions.CredentialsReadyCondition,
+			conditions.CredentialsResolutionFailedReason, err.Error())
 		recordEvent(r.Recorder, cp, corev1.EventTypeWarning, "CredentialsFailed", "%v", err)
 		return ctrl.Result{}, err
 	}
@@ -233,16 +233,16 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	resolved, err := credentials.Resolve(ctx, r.CredentialProvider, region, identityAgency, creds.AccessKey, creds.SecretKey)
 	if err != nil {
 		conditions.MarkFalse(cp,
-				conditions.CredentialsReadyCondition,
-				conditions.CredentialsResolutionFailedReason, err.Error())
+			conditions.CredentialsReadyCondition,
+			conditions.CredentialsResolutionFailedReason, err.Error())
 		recordEvent(r.Recorder, cp, corev1.EventTypeWarning, "CredentialsFailed", "%v", err)
 		return ctrl.Result{}, err
 	}
 	svc, err := r.newCCEService(region, resolved)
 	if err != nil {
 		conditions.MarkFalse(cp,
-				conditions.CredentialsReadyCondition,
-				conditions.CredentialsResolutionFailedReason, err.Error())
+			conditions.CredentialsReadyCondition,
+			conditions.CredentialsResolutionFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 
@@ -282,8 +282,8 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 			return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 		}
 		conditions.MarkFalse(cp,
-				conditions.CCEClusterReadyCondition,
-				conditions.CCEClusterNotFoundReason, err.Error())
+			conditions.CCEClusterReadyCondition,
+			conditions.CCEClusterNotFoundReason, err.Error())
 		return resultAfterError(client.ObjectKeyFromObject(cp), err)
 	}
 	if info.Phase != "Available" {
@@ -318,8 +318,8 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	// missing, upgrade version drift, remove those no longer listed.
 	if err := r.reconcileAddons(ctx, svc, clusterID, cp); err != nil {
 		conditions.MarkFalse(cp,
-				conditions.AddonsConfiguredCondition,
-				conditions.AddonInstallFailedReason, err.Error())
+			conditions.AddonsConfiguredCondition,
+			conditions.AddonInstallFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	conditions.MarkTrue(cp, conditions.AddonsConfiguredCondition, "AddonsConfigured", "CCE addons reconciled")
@@ -327,8 +327,8 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	// Pod-identity associations (declarative set, mirrors EKS Pod Identity).
 	if err := r.reconcilePodIdentityAssociations(ctx, svc, clusterID, cp); err != nil {
 		conditions.MarkFalse(cp,
-				conditions.PodIdentityAssociationsConfiguredCondition,
-				conditions.PodIdentityCreationFailedReason, err.Error())
+			conditions.PodIdentityAssociationsConfiguredCondition,
+			conditions.PodIdentityCreationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	conditions.MarkTrue(cp, conditions.PodIdentityAssociationsConfiguredCondition, "PodIdentityAssociationsConfigured", "CCE pod-identity associations reconciled")
@@ -336,8 +336,8 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	// Control-plane log collection (mirrors CAPA EKS Logging).
 	if err := r.reconcileLogging(ctx, svc, clusterID, cp); err != nil {
 		conditions.MarkFalse(cp,
-				conditions.LoggingConfiguredCondition,
-				conditions.LogConfigUpdateFailedReason, err.Error())
+			conditions.LoggingConfiguredCondition,
+			conditions.LogConfigUpdateFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	conditions.MarkTrue(cp, conditions.LoggingConfiguredCondition, "LoggingConfigured", "CCE control-plane log config reconciled")
@@ -345,8 +345,8 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	// CCE access policies (mirrors EKS access entries): declarative set.
 	if err := r.reconcileAccessPolicies(ctx, svc, clusterID, cp); err != nil {
 		conditions.MarkFalse(cp,
-				conditions.AccessPoliciesConfiguredCondition,
-				conditions.AccessPolicyCreateFailedReason, err.Error())
+			conditions.AccessPoliciesConfiguredCondition,
+			conditions.AccessPolicyCreateFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	conditions.MarkTrue(cp, conditions.AccessPoliciesConfiguredCondition, "AccessPoliciesConfigured", "CCE access policies reconciled")
@@ -377,15 +377,15 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	// are cleaned up on delete.
 	if err := r.ensureKubeconfigSecret(ctx, cp, cluster, svc, clusterID, cp.Spec.ClusterName+"-kubeconfig", kubeconfigValidityDays); err != nil {
 		conditions.MarkFalse(cp,
-				conditions.KubeconfigReadyCondition,
-				conditions.KubeconfigGenerationFailedReason, err.Error())
+			conditions.KubeconfigReadyCondition,
+			conditions.KubeconfigGenerationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	cp.Status.KubeconfigSecretName = cp.Spec.ClusterName + "-kubeconfig"
 	if err := r.ensureKubeconfigSecret(ctx, cp, cluster, svc, clusterID, cp.Spec.ClusterName+"-user-kubeconfig", kubeconfigValidityDays); err != nil {
 		conditions.MarkFalse(cp,
-				conditions.KubeconfigReadyCondition,
-				conditions.KubeconfigGenerationFailedReason, err.Error())
+			conditions.KubeconfigReadyCondition,
+			conditions.KubeconfigGenerationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	conditions.MarkTrue(cp, conditions.KubeconfigReadyCondition, "KubeconfigGenerated", "kubeconfig Secrets generated")

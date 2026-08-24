@@ -27,7 +27,7 @@ func validCP() *CCEManagedControlPlane {
 				CIDR:       "10.0.0.0/16",
 				ENISubnets: []string{"subnet-1"},
 			},
-			Version: "v1.30.0",
+			Version:        "v1.30.0",
 			EndpointAccess: EndpointAccessSpec{Private: true},
 		},
 	}

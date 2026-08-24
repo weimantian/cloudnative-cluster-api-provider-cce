@@ -11,33 +11,33 @@ import (
 
 	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
-	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util/patch"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
 
 // CCEManagedMachinePoolScopeParams is the input for NewCCEManagedMachinePoolScope.
 type CCEManagedMachinePoolScopeParams struct {
-	Client                    client.Client
-	Cluster                   *clusterv1.Cluster
-	CCEManagedMachinePool     *infrav1beta2.CCEManagedMachinePool
-	ControllerName            string
+	Client                client.Client
+	Cluster               *clusterv1.Cluster
+	CCEManagedMachinePool *infrav1beta2.CCEManagedMachinePool
+	ControllerName        string
 }
 
 // CCEManagedMachinePoolScope is the per-reconcile context for the
 // CCEManagedMachinePool controller. Mirrors CAPA's MachinePoolScope with
 // WithStatusObservedGeneration patch option (CAPA 9e9bb6b31 family).
 type CCEManagedMachinePoolScope struct {
-	log                        logr.Logger
-	client                     client.Client
-	patchHelper                *patch.Helper
-	Cluster                    *clusterv1.Cluster
-	CCEManagedMachinePool      *infrav1beta2.CCEManagedMachinePool
-	controllerName             string
-	observedGenerationAtStart  int64
+	log                       logr.Logger
+	client                    client.Client
+	patchHelper               *patch.Helper
+	Cluster                   *clusterv1.Cluster
+	CCEManagedMachinePool     *infrav1beta2.CCEManagedMachinePool
+	controllerName            string
+	observedGenerationAtStart int64
 }
 
 // NewCCEManagedMachinePoolScope builds a new scope for one reconcile iteration.
@@ -90,11 +90,15 @@ func (s *CCEManagedMachinePoolScope) ControllerName() string { return s.controll
 func (s *CCEManagedMachinePoolScope) InfraClusterName() string { return s.Cluster.Name }
 
 // GenerationAtStart returns the spec.generation observed at scope build.
-func (s *CCEManagedMachinePoolScope) GenerationAtStart() int64 { return s.CCEManagedMachinePool.Generation }
+func (s *CCEManagedMachinePoolScope) GenerationAtStart() int64 {
+	return s.CCEManagedMachinePool.Generation
+}
 
 // ObservedGenerationAtStart returns the persisted status.observedGeneration
 // at scope build.
-func (s *CCEManagedMachinePoolScope) ObservedGenerationAtStart() int64 { return s.observedGenerationAtStart }
+func (s *CCEManagedMachinePoolScope) ObservedGenerationAtStart() int64 {
+	return s.observedGenerationAtStart
+}
 
 // PatchObject persists the CCEManagedMachinePool (spec + status). Atomically
 // updates status.observedGeneration via patch.WithStatusObservedGeneration.

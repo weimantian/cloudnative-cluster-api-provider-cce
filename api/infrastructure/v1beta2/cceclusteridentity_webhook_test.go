@@ -87,6 +87,7 @@ func TestClusterControllerIdentityValidate(t *testing.T) {
 		t.Error("expected error for malformed namespace selector")
 	}
 }
+
 // TestClusterControllerIdentitySingletonName verifies that
 // CCEClusterControllerIdentity can only be created with name "default".
 func TestClusterControllerIdentitySingletonName(t *testing.T) {

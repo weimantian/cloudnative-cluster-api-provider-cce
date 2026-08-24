@@ -12,10 +12,10 @@ import (
 	"github.com/go-logr/logr"
 
 	"github.com/pkg/errors"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
-	"sigs.k8s.io/controller-runtime/pkg/client"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util/patch"
+	"sigs.k8s.io/controller-runtime/pkg/client"
+	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
@@ -91,8 +91,6 @@ func (s *CCEClusterScope) InfraClusterName() string { return s.Cluster.Name }
 
 // PatchObject persists the CCECluster (spec + status).
 // start of reconcile (so the controller can compare against GenerationAtStart
-
-
 
 // PatchObject persists the CCECluster (spec + status). Note: CCECluster
 // does not yet carry a status.observedGeneration field (added in CAPA v2.13

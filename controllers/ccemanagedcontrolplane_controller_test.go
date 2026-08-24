@@ -609,8 +609,8 @@ func TestControlPlaneReconcileRoleIdentityAgency(t *testing.T) {
 	}
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedControlPlaneReconciler{
-		Client:              k8sClient,
-		CredentialProvider:  fakes.NewFakeCredentialProvider(),
+		Client:             k8sClient,
+		CredentialProvider: fakes.NewFakeCredentialProvider(),
 		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},

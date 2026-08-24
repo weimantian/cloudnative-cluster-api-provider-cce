@@ -28,8 +28,8 @@ import (
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/controllers"
-	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/metrics"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 )
@@ -148,7 +148,7 @@ func main() {
 			ServiceFactory: func(regionID string, creds *credentials.Credentials) (cceService.Service, error) {
 				return cceService.NewClient(regionID, creds)
 			},
-			GlobalScope: nil, // populated below if --gc-region is set; GarbageCollector.region() falls back to Region.
+			GlobalScope:   nil, // populated below if --gc-region is set; GarbageCollector.region() falls back to Region.
 			Interval:      gcInterval,
 			ResourceTypes: gcResourceTypes,
 			Log:           ctrl.Log.WithName("garbage-collector"),

@@ -7,6 +7,7 @@ Licensed under the MIT No Attribution (MIT-0) License.
 package v1beta2
 
 import (
+	"context"
 	"testing"
 
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
@@ -43,7 +44,7 @@ func TestCCEManagedControlPlaneTemplateDefault(t *testing.T) {
 			Spec: CCEManagedControlPlaneSpec{},
 		}},
 	}
-	if err := tmpl.Default(nil, tmpl); err != nil {
+	if err := tmpl.Default(context.TODO(), tmpl); err != nil {
 		t.Fatalf("Default returned error: %v", err)
 	}
 	if tmpl.Spec.Template.Spec.Category != "Turbo" ||
@@ -83,7 +84,7 @@ func TestCCEManagedControlPlaneTemplateValidateCIDRAndSemver(t *testing.T) {
 						Mode: "eni",
 						CIDR: tc.cidr,
 					},
-					Version: tc.ver,
+					Version:        tc.ver,
 					EndpointAccess: EndpointAccessSpec{Private: true},
 				},
 			}

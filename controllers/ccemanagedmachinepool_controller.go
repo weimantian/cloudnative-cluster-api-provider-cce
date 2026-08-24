@@ -32,8 +32,8 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
-	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
+	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 )
 
 // MachinePoolFinalizer ensures the CCE node pool is deleted before the object.
@@ -113,10 +113,10 @@ func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctr
 	// Build the per-reconcile scope (constructor builds the patchHelper and
 	// snapshots Status.ObservedGeneration for coalesced-event detection).
 	scope, err := scope.NewCCEManagedMachinePoolScope(scope.CCEManagedMachinePoolScopeParams{
-		Client:                 r.Client,
-		Cluster:                cluster,
+		Client:                r.Client,
+		Cluster:               cluster,
 		CCEManagedMachinePool: pool,
-		ControllerName:         "ccemanagedmachinepool",
+		ControllerName:        "ccemanagedmachinepool",
 	})
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "failed to build CMP scope")
@@ -167,8 +167,8 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	region, err := r.clusterRegion(ctx, cluster, pool)
 	if err != nil {
 		conditions.MarkFalse(pool,
-				conditions.NodePoolReadyCondition,
-				conditions.NodePoolCreationFailedReason, err.Error())
+			conditions.NodePoolReadyCondition,
+			conditions.NodePoolCreationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	// Credentials come from the control plane's identity chain (identityRef
@@ -178,28 +178,28 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	creds, identityAgency, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
 	if err != nil {
 		conditions.MarkFalse(pool,
-				conditions.NodePoolReadyCondition,
-				conditions.NodePoolCreationFailedReason, err.Error())
+			conditions.NodePoolReadyCondition,
+			conditions.NodePoolCreationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	resolved, err := credentials.Resolve(ctx, r.CredentialProvider, region, identityAgency, creds.AccessKey, creds.SecretKey)
 	if err != nil {
 		conditions.MarkFalse(pool,
-				conditions.NodePoolReadyCondition,
-				conditions.NodePoolCreationFailedReason, err.Error())
+			conditions.NodePoolReadyCondition,
+			conditions.NodePoolCreationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	svc, err := r.newCCEService(region, resolved)
 	if err != nil {
 		conditions.MarkFalse(pool,
-				conditions.NodePoolReadyCondition,
-				conditions.NodePoolCreationFailedReason, err.Error())
+			conditions.NodePoolReadyCondition,
+			conditions.NodePoolCreationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	if err != nil {
 		conditions.MarkFalse(pool,
-				conditions.NodePoolReadyCondition,
-				conditions.NodePoolCreationFailedReason, err.Error())
+			conditions.NodePoolReadyCondition,
+			conditions.NodePoolCreationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 
@@ -335,8 +335,8 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	pools, err := svc.ListNodePools(ctx, clusterID)
 	if err != nil {
 		conditions.MarkFalse(pool,
-				conditions.NodePoolReadyCondition,
-				conditions.NodePoolCreationFailedReason, err.Error())
+			conditions.NodePoolReadyCondition,
+			conditions.NodePoolCreationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	// Replicas should reflect the ACTUAL node count, not the desired target
@@ -368,8 +368,8 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	}
 	if !found {
 		conditions.MarkFalse(pool,
-				conditions.NodePoolReadyCondition,
-				conditions.NodePoolCreationFailedReason, "node pool not found in cloud, recreating")
+			conditions.NodePoolReadyCondition,
+			conditions.NodePoolCreationFailedReason, "node pool not found in cloud, recreating")
 		pool.Status.NodePoolID = ""
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
@@ -382,8 +382,8 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	providerIDs, err := svc.ListNodes(ctx, clusterID, pool.Status.NodePoolID)
 	if err != nil {
 		conditions.MarkFalse(pool,
-				conditions.NodePoolReadyCondition,
-				conditions.NodePoolCreationFailedReason, err.Error())
+			conditions.NodePoolReadyCondition,
+			conditions.NodePoolCreationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
 	slices.Sort(providerIDs)

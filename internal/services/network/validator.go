@@ -23,14 +23,15 @@ import (
 	"net/netip"
 	"strconv"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
 	vpcv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
 	vpcRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/region"
 	"github.com/pkg/errors"
-	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 )
+
 // maxENISubnets is the conservative official limit for eni container subnets
 // (older versions <=20; newer versions <=100 — questionnaire Q4).
 const maxENISubnets = 20

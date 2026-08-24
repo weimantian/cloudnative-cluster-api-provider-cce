@@ -8,9 +8,9 @@ package cce
 
 import (
 	"errors"
+	"k8s.io/client-go/tools/clientcmd"
 	"strings"
 	"testing"
-	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/model"

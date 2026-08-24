@@ -252,8 +252,8 @@ func TestGarbageCollectorSweepSkipsOptedOutCluster(t *testing.T) {
 		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
-		Region: "cn-north-4",
-		Interval: 1,
+		Region:        "cn-north-4",
+		Interval:      1,
 		ResourceTypes: []string{"eip"},
 	}
 	t.Setenv("CLOUD_SDK_AK", "test-ak")
@@ -269,7 +269,7 @@ func TestGarbageCollectorSweepSkipsOptedOutCluster(t *testing.T) {
 	if fakeSvc.DeletedClusters[0].ClusterID != "orphan-1" {
 		t.Errorf("expected orphan-1 deleted, got %+v", fakeSvc.DeletedClusters[0])
 	}
-if len(fakeSvc.DeletedEips) != 1 {
+	if len(fakeSvc.DeletedEips) != 1 {
 		t.Fatalf("expected exactly 1 deleted EIP, got %d (%+v)",
 			len(fakeSvc.DeletedEips), fakeSvc.DeletedEips)
 	}

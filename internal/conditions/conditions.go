@@ -100,7 +100,7 @@ const (
 // NatGatewaysReady).
 const (
 	NetworkValidationFailedReason     = "NetworkValidationFailed"     // CIDR/overlap/subnet-ownership check failed
-	NetworkReconciliationFailedReason = "NetworkReconciliationFailed"  // managed VPC/subnet/NAT create/update failed
+	NetworkReconciliationFailedReason = "NetworkReconciliationFailed" // managed VPC/subnet/NAT create/update failed
 )
 
 // Credentials condition reasons.
@@ -123,9 +123,9 @@ const (
 
 // AddonsConfigured condition reasons.
 const (
-	AddonInstallFailedReason   = "AddonInstallFailed"   // CreateAddonInstance failed
-	AddonUpgradeFailedReason   = "AddonUpgradeFailed"   // UpdateAddonInstance failed (version drift)
-	AddonDeleteFailedReason    = "AddonDeleteFailed"    // DeleteAddonInstance failed (stale addon not removed)
+	AddonInstallFailedReason = "AddonInstallFailed" // CreateAddonInstance failed
+	AddonUpgradeFailedReason = "AddonUpgradeFailed" // UpdateAddonInstance failed (version drift)
+	AddonDeleteFailedReason  = "AddonDeleteFailed"  // DeleteAddonInstance failed (stale addon not removed)
 )
 
 // PodIdentityAssociationsConfigured condition reasons.
@@ -148,10 +148,10 @@ const (
 
 // NodePoolReady / NodePoolScaling condition reasons.
 const (
-	NodePoolCreationFailedReason = "NodePoolCreationFailed"  // CreateNodePool failed
-	NodePoolUpdateFailedReason   = "NodePoolUpdateFailed"    // UpdateNodePool (attribute drift) failed
-	NodePoolScaleFailedReason    = "NodePoolScaleFailed"     // ScaleNodePool failed
-	NodePoolDeleteFailedReason   = "NodePoolDeleteFailed"    // DeleteNodePool failed
+	NodePoolCreationFailedReason            = "NodePoolCreationFailed"    // CreateNodePool failed
+	NodePoolUpdateFailedReason              = "NodePoolUpdateFailed"      // UpdateNodePool (attribute drift) failed
+	NodePoolScaleFailedReason               = "NodePoolScaleFailed"       // ScaleNodePool failed
+	NodePoolDeleteFailedReason              = "NodePoolDeleteFailed"      // DeleteNodePool failed
 	NodePoolReplicasExternallyManagedReason = "ReplicasExternallyManaged" // external autoscaler owns replicas
 )
 

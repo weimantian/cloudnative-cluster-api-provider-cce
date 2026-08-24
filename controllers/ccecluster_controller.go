@@ -92,7 +92,7 @@ func (r *CCEClusterReconciler) newNetworkService(regionID string, creds *credent
 func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 	defer func() {
-		if reterr == nil && !res.Requeue && res.RequeueAfter == 0 {
+		if reterr == nil && res.RequeueAfter == 0 {
 			resetBackoff(req.NamespacedName)
 		}
 	}()
@@ -154,8 +154,8 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 
 	if cceCluster.Spec.Region == "" {
 		conditions.MarkFalse(cceCluster,
-				conditions.NetworkReadyCondition,
-				conditions.NetworkValidationFailedReason, "spec.region is required")
+			conditions.NetworkReadyCondition,
+			conditions.NetworkValidationFailedReason, "spec.region is required")
 		recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "NetworkValidationFailed", "spec.region is required")
 		return ctrl.Result{}, errors.New("spec.region is required")
 	}
@@ -168,16 +168,16 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 	creds, agency, credErr := r.resolveClusterCredentials(ctx, cluster, cceCluster)
 	if credErr != nil {
 		conditions.MarkFalse(cceCluster,
-				conditions.NetworkReadyCondition,
-				conditions.NetworkValidationFailedReason, credErr.Error())
+			conditions.NetworkReadyCondition,
+			conditions.NetworkValidationFailedReason, credErr.Error())
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 	if creds != nil {
 		resolved, rerr := credentials.Resolve(ctx, r.CredentialProvider, cceCluster.Spec.Region, agency, creds.AccessKey, creds.SecretKey)
 		if rerr != nil {
 			conditions.MarkFalse(cceCluster,
-					conditions.NetworkReadyCondition,
-					conditions.NetworkValidationFailedReason, rerr.Error())
+				conditions.NetworkReadyCondition,
+				conditions.NetworkValidationFailedReason, rerr.Error())
 			return ctrl.Result{RequeueAfter: requeueAfterForError(key, rerr)}, nil
 		}
 		// Managed network mode (vpc.id empty): create the VPC/subnets/(NAT)
@@ -187,14 +187,14 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 			svc, serr := r.newNetworkService(cceCluster.Spec.Region, resolved)
 			if serr != nil {
 				conditions.MarkFalse(cceCluster,
-				conditions.NetworkReadyCondition,
-				conditions.NetworkValidationFailedReason, serr.Error())
+					conditions.NetworkReadyCondition,
+					conditions.NetworkValidationFailedReason, serr.Error())
 				return ctrl.Result{RequeueAfter: requeueAfterForError(key, serr)}, nil
 			}
 			if rerr := r.reconcileManagedNetwork(ctx, cceCluster, cluster.Name, svc); rerr != nil {
 				conditions.MarkFalse(cceCluster,
-				conditions.NetworkReadyCondition,
-				conditions.NetworkValidationFailedReason, rerr.Error())
+					conditions.NetworkReadyCondition,
+					conditions.NetworkValidationFailedReason, rerr.Error())
 				recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "ManagedNetworkFailed", "%v", rerr)
 				return ctrl.Result{RequeueAfter: requeueAfterForError(key, rerr)}, nil
 			}
@@ -330,8 +330,8 @@ func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clu
 			creds, agency, cerr := r.resolveClusterCredentials(ctx, cluster, cceCluster)
 			if cerr != nil || creds == nil {
 				conditions.MarkFalse(cceCluster,
-				conditions.NetworkReadyCondition,
-				conditions.NetworkValidationFailedReason, "managed network deletion requires credentials: "+errStr(cerr))
+					conditions.NetworkReadyCondition,
+					conditions.NetworkValidationFailedReason, "managed network deletion requires credentials: "+errStr(cerr))
 				return ctrl.Result{}, errors.New("managed network deletion requires credentials")
 			}
 			resolved, rerr := credentials.Resolve(ctx, r.CredentialProvider, cceCluster.Spec.Region, agency, creds.AccessKey, creds.SecretKey)
@@ -344,8 +344,8 @@ func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clu
 			}
 			if derr := svc.DeleteNetwork(ctx, &cceCluster.Spec.Network, cluster.Name); derr != nil {
 				conditions.MarkFalse(cceCluster,
-				conditions.NetworkReadyCondition,
-				conditions.NetworkValidationFailedReason, derr.Error())
+					conditions.NetworkReadyCondition,
+					conditions.NetworkValidationFailedReason, derr.Error())
 				recordEvent(r.Recorder, cceCluster, corev1.EventTypeWarning, "ManagedNetworkDeleteFailed", "%v", derr)
 				return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 			}
@@ -380,15 +380,15 @@ func (r *CCEClusterReconciler) reconcileManagedNetwork(ctx context.Context, cceC
 	spec := &cceCluster.Spec.Network
 	if err := svc.ReconcileVpc(ctx, spec, clusterName); err != nil {
 		conditions.MarkFalse(cceCluster,
-				conditions.VpcReadyCondition,
-				conditions.NetworkReconciliationFailedReason, err.Error())
+			conditions.VpcReadyCondition,
+			conditions.NetworkReconciliationFailedReason, err.Error())
 		return err
 	}
 	conditions.MarkTrue(cceCluster, conditions.VpcReadyCondition, "VpcReconciled", "managed VPC reconciled")
 	if err := svc.ReconcileSubnets(ctx, spec, clusterName); err != nil {
 		conditions.MarkFalse(cceCluster,
-				conditions.SubnetsReadyCondition,
-				conditions.NetworkReconciliationFailedReason, err.Error())
+			conditions.SubnetsReadyCondition,
+			conditions.NetworkReconciliationFailedReason, err.Error())
 		return err
 	}
 	conditions.MarkTrue(cceCluster, conditions.SubnetsReadyCondition, "SubnetsReconciled", "managed subnets reconciled")

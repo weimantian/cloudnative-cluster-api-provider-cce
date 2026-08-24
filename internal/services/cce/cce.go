@@ -9,9 +9,6 @@ package cce
 import (
 	"context"
 	"encoding/base64"
-	"net/http"
-	"strings"
-	"sync"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
@@ -33,6 +30,9 @@ import (
 	"github.com/pkg/errors"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"net/http"
+	"strings"
+	"sync"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
@@ -497,9 +497,9 @@ func paginateAll[T any](
 		all = append(all, items...)
 		if len(items) == 0 || lastID == nil || int32(len(items)) < pageSize {
 			return all, nil
+		}
+		marker = lastID
 	}
-	marker = lastID
-}
 }
 
 // CreateAccessPolicy implements Service.
@@ -509,7 +509,7 @@ func (s *Client) ListEips(ctx context.Context) ([]EipRef, error) {
 	return paginateAll(1000, func(marker *string) ([]EipRef, *string, error) {
 		resp, err := s.eip.ListPublicips(&eipmodel.ListPublicipsRequest{
 			Marker: marker,
-			Limit:   int32Ptr(1000),
+			Limit:  int32Ptr(1000),
 		})
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "ListPublicips failed")
@@ -531,7 +531,7 @@ func (s *Client) ListEips(ctx context.Context) ([]EipRef, error) {
 			refs = append(refs, ref)
 			lastID = p.Id
 		}
-return refs, lastID, nil
+		return refs, lastID, nil
 	})
 }
 
@@ -550,7 +550,7 @@ func (s *Client) ListVolumes(ctx context.Context) ([]VolumeRef, error) {
 	return paginateAll(1000, func(marker *string) ([]VolumeRef, *string, error) {
 		resp, err := s.evs.ListVolumes(&evsmodel.ListVolumesRequest{
 			Marker: marker,
-			Limit:   int32Ptr(1000),
+			Limit:  int32Ptr(1000),
 		})
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "ListVolumes failed")
@@ -586,7 +586,7 @@ func (s *Client) ListVpcs(ctx context.Context) ([]VpcRef, error) {
 	return paginateAll(1000, func(marker *string) ([]VpcRef, *string, error) {
 		resp, err := s.vpc.ListVpcs(&vpcmodel.ListVpcsRequest{
 			Marker: marker,
-			Limit:   int32Ptr(1000),
+			Limit:  int32Ptr(1000),
 		})
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "ListVpcs failed")
@@ -626,7 +626,7 @@ func (s *Client) ListNatGateways(ctx context.Context) ([]NatGatewayRef, error) {
 	return paginateAll(2000, func(marker *string) ([]NatGatewayRef, *string, error) {
 		resp, err := s.nat.ListNatGateways(&natmodel.ListNatGatewaysRequest{
 			Marker: marker,
-			Limit:   int32Ptr(2000),
+			Limit:  int32Ptr(2000),
 		})
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "ListNatGateways failed")
@@ -1633,15 +1633,6 @@ func parseTaint(s string) (key, value, effect string) {
 
 func lastIndexByte(s string, b byte) int {
 	for i := len(s) - 1; i >= 0; i-- {
-		if s[i] == b {
-			return i
-		}
-	}
-	return -1
-}
-
-func indexByte(s string, b byte) int {
-	for i := 0; i < len(s); i++ {
 		if s[i] == b {
 			return i
 		}

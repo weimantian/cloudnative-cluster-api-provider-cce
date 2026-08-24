@@ -10,9 +10,9 @@ import (
 	"context"
 	"net"
 
-	k8sSemver "k8s.io/apimachinery/pkg/util/version"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
+	k8sSemver "k8s.io/apimachinery/pkg/util/version"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
@@ -140,7 +140,7 @@ func (c *CCEManagedControlPlane) ValidateDelete(_ context.Context, _ *CCEManaged
 }
 
 func (c *CCEManagedControlPlane) validate() error {
-var allErrs field.ErrorList
+	var allErrs field.ErrorList
 
 	if c.Spec.ClusterName == "" {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "clusterName"), "clusterName is required"))

@@ -24,7 +24,7 @@ import (
 //   - writes (everything else: Create/Delete) are clamped to the observed
 //     APIGW.0308 limit of 10 requests/minute (one token every 6s, burst 10).
 //     The burst covers a single managed-network create (VPC + 2 subnets + NAT
-//     + EIP + SNAT ≈ 6 writes), which are issued serially with polling gaps in
+//   - EIP + SNAT ≈ 6 writes), which are issued serially with polling gaps in
 //     between, so the burst is effectively never exhausted in normal use.
 const (
 	readThrottleRate  = 20.0 // operations per second
@@ -76,10 +76,11 @@ func NewThrottleRoundTripper(base http.RoundTripper, limiter *OperationLimiter) 
 	}
 	return &ThrottleRoundTripper{base: base, limiter: limiter}
 }
+
 // RoundTrip implements http.RoundTripper.
 func (t *ThrottleRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err := t.limiter.wait(req.Context(), req.Method); err != nil {
-return nil, err
+		return nil, err
 	}
 	return t.base.RoundTrip(req)
 }

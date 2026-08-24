@@ -30,17 +30,12 @@ import (
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
-	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
 
 var (
 	testEnv   *envtest.Environment
 	k8sClient client.Client
 	restCfg   *rest.Config
-	// fakeSvc and fakeNet are shared across the controller tests; reset per
-	// test as needed.
-	fakeSvc *fakes.FakeCCEService
-	fakeNet *fakes.FakeNetworkValidator
 )
 
 func TestMain(m *testing.M) {
