@@ -21,6 +21,7 @@ func TestCCEManagedControlPlaneTemplateValidate(t *testing.T) {
 		Spec: CCEManagedControlPlaneTemplateSpec{Template: CCEManagedControlPlaneTemplateResource{
 			Spec: CCEManagedControlPlaneSpec{
 				ContainerNetwork: ContainerNetworkSpec{Mode: "eni"},
+				EndpointAccess:   EndpointAccessSpec{Private: true},
 			},
 		}},
 	}
@@ -83,6 +84,7 @@ func TestCCEManagedControlPlaneTemplateValidateCIDRAndSemver(t *testing.T) {
 						CIDR: tc.cidr,
 					},
 					Version: tc.ver,
+					EndpointAccess: EndpointAccessSpec{Private: true},
 				},
 			}
 			cp.Spec.ContainerNetwork.ENISubnets = []string{"subnet-1"}

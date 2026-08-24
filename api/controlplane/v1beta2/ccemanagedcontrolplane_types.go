@@ -301,6 +301,15 @@ type EndpointAccessSpec struct {
 	// +optional
 	Public bool `json:"public,omitempty"`
 
+	// Private controls private (VPC-internal) API server access. CCE always
+	// exposes a VPC-internal endpoint and cannot disable it (platform-managed
+	// control plane), so this field defaults to true and false is rejected by
+	// the webhook. It exists for CAPA parity (CAPA EndpointAccess exposes
+	// public/private).
+	// +kubebuilder:default=true
+	// +optional
+	Private bool `json:"private,omitempty"`
+
 	// CIDRs is the public API server access whitelist (mapped to the CCE
 	// PublicAccess.cidrs). Only sent when public access is enabled; empty
 	// means the platform default ["0.0.0.0/0"]. CCE always exposes a

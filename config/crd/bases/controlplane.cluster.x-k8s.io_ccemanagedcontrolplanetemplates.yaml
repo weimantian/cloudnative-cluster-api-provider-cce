@@ -297,6 +297,15 @@ spec:
                             items:
                               type: string
                             type: array
+                          private:
+                            default: true
+                            description: |-
+                              Private controls private (VPC-internal) API server access. CCE always
+                              exposes a VPC-internal endpoint and cannot disable it (platform-managed
+                              control plane), so this field defaults to true and false is rejected by
+                              the webhook. It exists for CAPA parity (CAPA EndpointAccess exposes
+                              public/private).
+                            type: boolean
                           public:
                             description: Public enables public API server access.
                             type: boolean

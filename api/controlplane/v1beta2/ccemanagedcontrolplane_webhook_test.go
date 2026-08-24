@@ -28,6 +28,7 @@ func validCP() *CCEManagedControlPlane {
 				ENISubnets: []string{"subnet-1"},
 			},
 			Version: "v1.30.0",
+			EndpointAccess: EndpointAccessSpec{Private: true},
 		},
 	}
 }
@@ -140,6 +141,24 @@ func TestCCEManagedControlPlaneValidateEndpointAccessCIDRs(t *testing.T) {
 	bad.Spec.EndpointAccess.CIDRs = []string{"10.0.0.0"}
 	if err := bad.validate(); err == nil {
 		t.Error("expected malformed endpoint CIDR to be rejected")
+	}
+}
+
+// TestCCEManagedControlPlaneValidateEndpointAccessPrivate covers the P2-1
+// private field: CCE's private endpoint is always-on, so private: false is
+// rejected.
+func TestCCEManagedControlPlaneValidateEndpointAccessPrivate(t *testing.T) {
+	ok := validCP()
+	ok.Spec.EndpointAccess.Private = true
+	ok.Spec.EndpointAccess.Public = true
+	if err := ok.validate(); err != nil {
+		t.Errorf("expected private=true to pass, got %v", err)
+	}
+
+	bad := validCP()
+	bad.Spec.EndpointAccess.Private = false
+	if err := bad.validate(); err == nil {
+		t.Error("expected private=false to be rejected")
 	}
 }
 

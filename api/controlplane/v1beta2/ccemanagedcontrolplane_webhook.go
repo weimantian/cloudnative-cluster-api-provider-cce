@@ -238,6 +238,12 @@ var allErrs field.ErrorList
 			allErrs = append(allErrs, field.Invalid(p, cidr, "must be a valid IPv4/IPv6 CIDR"))
 		}
 	}
+	// CCE always exposes a VPC-internal (private) API server endpoint and
+	// cannot disable it, so private: false is rejected (CAPA parity field).
+	if !c.Spec.EndpointAccess.Private {
+		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "endpointAccess", "private"),
+			"private cannot be disabled (CCE always exposes a VPC-internal endpoint)"))
+	}
 	if len(allErrs) == 0 {
 		return nil
 	}
