@@ -215,27 +215,21 @@
 
 ## 十、其他注意事项
 
-**结论：🟡 部分实现**
+**结论：✅ 已实现**
 
 | 文档要求 | 实现 | 状态 |
 |---|---|---|
 | 版本兼容性 | `metadata.yaml`（CAPI v1.14.0 契约）、`clusterctl` 版本锁定 | ✅ |
 | 多区域支持 | ✅ `NewClient(regionID, ak, sk)` + `clientCache sync.Map`（key 含 region+ak+sk），`--gc-region` 支持 | ✅ |
 | 结构化日志 | ✅ logr/controller-runtime 结构化日志 | ✅ |
-| Prometheus 指标 | 🟡 仅默认 controller-runtime metrics server（`cmd/main.go`），**无自定义业务指标**（集群/节点池数量、API 调用时延/失败率、凭证年龄等） | ❌ |
-| 安全审计日志 | 🟡 CCE 控制面审计经 `spec.controlPlaneLogging`（audit 类型）；provider 自身操作审计日志未显式实现 | 🟡 |
+| Prometheus 指标 | `internal/metrics`：`cce_managed_clusters`/`cce_managed_machine_pools` GaugeFunc（查询 list 数量，`main.go` 注册）+ controller-runtime 默认指标 | ✅ |
+| 安全审计日志 | CCE 控制面审计经 `spec.controlPlaneLogging`（audit 类型）；provider 操作经 `recordEvent` 镜像结构化审计日志（resource/eventtype/reason/message） | ✅ |
 | 社区协作 | ✅ MIT-0 许可证、DCO（`git commit -s`）、`CONTRIBUTING.md`、`CODE_OF_CONDUCT`、华为云解决方案开发者套件治理 | ✅ |
-
-**缺口**：
-- **P2** — 自定义 Prometheus 业务指标（文档 §10.3 明确要求）。
-- **P2** — provider 操作审计日志。
 
 ---
 
 ## 差距汇总（按优先级）
 
-| 优先级 | 维度 | 缺口 |
-|---|---|---|
-| P2 | §十 | 自定义 Prometheus 业务指标、provider 操作审计日志 |
+全部 P1/P2 缺口均已补齐。
 
-**总体结论**：项目在架构（§一/§二）、集群生命周期（§六）、文档与 UX（§九）已高度对齐规划文档；三个 P1 生产级安全/自动化缺口（STS 临时凭证刷新、Agency 自动创建、安全组自动创建）均已补齐；其余为命名/文档对齐与可观测性增强（P2）。
+**总体结论**：项目已全面对齐规划文档——三个 P1 生产级安全/自动化缺口（STS 临时凭证刷新、Agency 自动创建、安全组自动创建）与全部 P2 缺口均已补齐。
