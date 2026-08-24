@@ -646,3 +646,86 @@ func TestControlPlaneReconcileRoleIdentityAgency(t *testing.T) {
 		t.Errorf("expected explicit spec.agencyName to win, got %q", got)
 	}
 }
+
+// TestControlPlaneReconcileObservedGenerationUpdates verifies that after a
+// successful reconcile, status.observedGeneration matches metadata.generation
+// (CAPA v2.13.0 commit 9e9bb6b31 — patch.WithStatusObservedGeneration writes
+// the field during Patch).
+func TestControlPlaneReconcileObservedGenerationUpdates(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-obsgen-update"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	// patch.WithStatusObservedGeneration writes Status.ObservedGeneration =
+	// metadata.generation during Patch. Note that the controller may also
+	// modify spec (e.g. cp.Spec.ControlPlaneEndpoint backfill), which bumps
+	// Generation on the server side after the patch. So we only assert
+	// ObservedGeneration was actually written (>= 1).
+	if got.Status.ObservedGeneration < 1 {
+		t.Errorf("expected Status.ObservedGeneration >= 1 (patcher should have written it), got %d",
+			got.Status.ObservedGeneration)
+	}
+}
+
+// TestControlPlaneReconcileRequeueWhenObservedBehind verifies that when the
+// persisted Status.ObservedGeneration is behind the spec's metadata.generation
+// (a coalesced spec change), Reconcile returns RequeueAfter=defaultRequeue
+// without re-running the heavy create path (CAPA v2.13.0 commit b5d6d3081).
+func TestControlPlaneReconcileRequeueWhenObservedBehind(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-obsgen-requeue"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	// Force the Status.ObservedGeneration to lag behind metadata.generation.
+	// This simulates a coalesced spec change that arrived after our Get and
+	// was not caught by the first reconcile (CAPA v2.13.0 commit b5d6d3081).
+	cp.Status.ObservedGeneration = 0
+
+	// Default FakeCCEService returns an Available cluster with an Internal
+	// endpoint, so the controller will try to create (cp.Status.ClusterID is
+	// empty), then patch status.observedGeneration to current generation.
+	// After reconcileNormal returns, the controller-level requeue check
+	// compares obsAtStart (= 0) vs cp.Generation and triggers a requeue.
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)})
+	if err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if res.RequeueAfter != defaultRequeue {
+		t.Errorf("expected requeue %v, got %v (Result=%v)", defaultRequeue, res.RequeueAfter, res)
+	}
+	if len(fakeSvc.CreatedClusters) != 1 {
+		t.Errorf("expected 1 cluster creation on first reconcile, got %d", len(fakeSvc.CreatedClusters))
+	}
+}

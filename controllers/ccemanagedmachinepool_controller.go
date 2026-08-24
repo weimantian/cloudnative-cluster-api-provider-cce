@@ -18,7 +18,6 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
-	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -33,6 +32,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 )
 
 // MachinePoolFinalizer ensures the CCE node pool is deleted before the object.
@@ -69,7 +69,11 @@ func (r *CCEManagedMachinePoolReconciler) newCCEService(regionID, ak, sk string)
 // +kubebuilder:rbac:groups=controlplane.cluster.x-k8s.io,resources=ccemanagedcontrolplanes,verbs=get;list;watch
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
-// Reconcile implements the reconcile loop of CCEManagedMachinePool.
+// Reconcile implements the reconcile loop of CCEManagedMachinePool using
+// the per-reconcile CCEManagedMachinePoolScope (CAPA pkg/cloud/scope pattern).
+// The scope's PatchObject() (called via defer) atomically updates
+// status.observedGeneration via patch.WithStatusObservedGeneration (CAPA
+// commit 9e9bb6b31).
 func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -80,16 +84,6 @@ func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctr
 		}
 		return ctrl.Result{}, err
 	}
-
-	patchHelper, err := patch.NewHelper(pool, r.Client)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	defer func() {
-		if err := patchHelper.Patch(ctx, pool); err != nil && reterr == nil {
-			reterr = err
-		}
-	}()
 
 	cluster, err := util.GetClusterFromMetadata(ctx, r.Client, pool.ObjectMeta)
 	if err != nil {
@@ -106,10 +100,40 @@ func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctr
 	}
 
 	if !pool.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, cluster, pool)
+		res, err := r.reconcileDelete(ctx, cluster, pool)
+		return res, err
 	}
 
-	return r.reconcileNormal(ctx, cluster, pool)
+	// Build the per-reconcile scope (constructor builds the patchHelper and
+	// snapshots Status.ObservedGeneration for coalesced-event detection).
+	scope, err := scope.NewCCEManagedMachinePoolScope(scope.CCEManagedMachinePoolScopeParams{
+		Client:                 r.Client,
+		Cluster:                cluster,
+		CCEManagedMachinePool: pool,
+		ControllerName:         "ccemanagedmachinepool",
+	})
+	if err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "failed to build CMP scope")
+	}
+	defer func() {
+		if err := scope.Close(ctx); err != nil && reterr == nil {
+			reterr = err
+		}
+	}()
+
+	res, err = r.reconcileNormal(ctx, cluster, pool)
+	if err != nil {
+		return res, err
+	}
+
+	// CAPA b5d6d3081: requeue when observed generation is behind current.
+	if scope.ObservedGenerationAtStart() < scope.GenerationAtStart() {
+		log.Info("Observed generation behind current generation, requeueing",
+			"observedGeneration", scope.ObservedGenerationAtStart(),
+			"generation", scope.GenerationAtStart())
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	}
+	return res, nil
 }
 
 func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, pool *infrav1beta2.CCEManagedMachinePool) (ctrl.Result, error) {

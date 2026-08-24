@@ -19,7 +19,6 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	"sigs.k8s.io/cluster-api/util/annotations"
-	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -82,7 +81,8 @@ func (r *CCEClusterReconciler) newNetworkService(regionID, ak, sk string) (netwo
 // +kubebuilder:rbac:groups=cluster.x-k8s.io,resources=clusters/status,verbs=get
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
-// Reconcile implements the reconcile loop of CCECluster.
+// Reconcile implements the reconcile loop of CCECluster using the
+// per-reconcile CCEClusterScope (CAPA pkg/cloud/scope pattern).
 func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -94,20 +94,30 @@ func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 		return ctrl.Result{}, err
 	}
 
-	patchHelper, err := patch.NewHelper(cceCluster, r.Client)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	defer func() {
-		if err := patchHelper.Patch(ctx, cceCluster); err != nil && reterr == nil {
-			reterr = err
-		}
-	}()
-
 	cluster, err := util.GetOwnerCluster(ctx, r.Client, cceCluster.ObjectMeta)
 	if err != nil {
 		return ctrl.Result{}, errors.Wrapf(err, "failed to get owner cluster of CCECluster %s", req.Name)
 	}
+	if cluster == nil {
+		log.Info("Cluster controller has not yet set OwnerRef")
+		return ctrl.Result{}, nil
+	}
+
+	scope, err := scope.NewCCEClusterScope(scope.CCEClusterScopeParams{
+		Client:         r.Client,
+		Cluster:        cluster,
+		CCECluster:     cceCluster,
+		ControllerName: "ccecluster",
+	})
+	if err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "failed to build CCECluster scope")
+	}
+	defer func() {
+		if err := scope.Close(ctx); err != nil && reterr == nil {
+			reterr = err
+		}
+	}()
+
 	if cluster == nil {
 		log.Info("Cluster controller has not yet set OwnerRef")
 		return ctrl.Result{}, nil

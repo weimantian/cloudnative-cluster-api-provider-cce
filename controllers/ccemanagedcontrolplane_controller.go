@@ -21,8 +21,6 @@ import (
 	"k8s.io/client-go/tools/record"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
-	"sigs.k8s.io/cluster-api/util/annotations"
-	"sigs.k8s.io/cluster-api/util/patch"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
@@ -34,6 +32,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 )
 
 // ControlPlaneFinalizer ensures the CCE cluster is deleted before the object.
@@ -74,7 +73,12 @@ func (r *CCEManagedControlPlaneReconciler) newCCEService(regionID, ak, sk string
 // +kubebuilder:rbac:groups=core,resources=secrets,verbs=get;list;watch;create;update;patch;delete
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
-// Reconcile implements the reconcile loop of CCEManagedControlPlane.
+// Reconcile implements the reconcile loop of CCEManagedControlPlane. Uses
+// the per-reconcile CCEManagedControlPlaneScope to hold the patchHelper,
+// CR references and ControllerName (CAPA pkg/cloud/scope pattern). The
+// scope's PatchObject() (called via defer) atomically updates
+// status.observedGeneration via patch.WithStatusObservedGeneration (CAPA
+// commit 9e9bb6b31).
 func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -86,35 +90,54 @@ func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	patchHelper, err := patch.NewHelper(cp, r.Client)
-	if err != nil {
-		return ctrl.Result{}, err
-	}
-	defer func() {
-		if err := patchHelper.Patch(ctx, cp); err != nil && reterr == nil {
-			reterr = err
-		}
-	}()
-
 	cluster, err := util.GetOwnerCluster(ctx, r.Client, cp.ObjectMeta)
 	if err != nil {
 		return ctrl.Result{}, errors.Wrapf(err, "failed to get owner cluster of control plane %s", req.Name)
 	}
-	if cluster == nil {
+
+	// Branch to reconcileDelete before constructing the scope (matches the
+	// pre-refactor structure: scope is only needed for normal reconcile
+	// since the delete path doesn't write status.observedGeneration).
+	if !cp.ObjectMeta.DeletionTimestamp.IsZero() {
+		res, err := r.reconcileDelete(ctx, cluster, cp)
+		return res, err
+	}
+if cluster == nil {
 		log.Info("Cluster controller has not yet set OwnerRef")
 		return ctrl.Result{}, nil
 	}
 
-	if annotations.IsPaused(cluster, cp) {
-		log.Info("Control plane is paused")
-		return ctrl.Result{}, nil
+	// Build the per-reconcile scope (constructor builds the patchHelper
+	// and snapshots Status.ObservedGeneration for coalesced-event detection).
+	scope, err := scope.NewCCEManagedControlPlaneScope(scope.CCEManagedControlPlaneScopeParams{
+		Client:                 r.Client,
+		Cluster:                cluster,
+		CCEManagedControlPlane: cp,
+		ControllerName:         "ccemanagedcontrolplane",
+	})
+	if err != nil {
+		return ctrl.Result{}, errors.Wrap(err, "failed to build CCM scope")
+	}
+	defer func() {
+		if err := scope.Close(ctx); err != nil && reterr == nil {
+			reterr = err
+		}
+	}()
+	res, err = r.reconcileNormal(ctx, cluster, cp)
+	if err != nil {
+		return ctrl.Result{}, err
 	}
 
-	if !cp.ObjectMeta.DeletionTimestamp.IsZero() {
-		return r.reconcileDelete(ctx, cluster, cp)
+	// CAPA v2.13.0 commit b5d6d3081: requeue when observed generation is behind
+	// current generation. Catches spec changes coalesced into the in-flight
+	// work queue entry (event coalescing would otherwise silently drop them).
+	if scope.ObservedGenerationAtStart() < scope.GenerationAtStart() {
+		log.Info("Observed generation behind current generation, requeueing",
+			"observedGeneration", scope.ObservedGenerationAtStart(),
+			"generation", scope.GenerationAtStart())
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
-
-	return r.reconcileNormal(ctx, cluster, cp)
+	return res, nil
 }
 
 func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta2.CCEManagedControlPlane) (ctrl.Result, error) {

@@ -1172,3 +1172,82 @@ func TestMachinePoolReconcileNodeRepair(t *testing.T) {
 		t.Errorf("expected [node-abnormal-1 node-error-1] to be reset, got %v", reset)
 	}
 }
+
+// TestMachinePoolReconcileObservedGenerationUpdates verifies that after a
+// successful reconcile, status.observedGeneration matches metadata.generation
+// (CAPA v2.13.0 commit 9e9bb6b31 — patch.WithStatusObservedGeneration writes
+// the field during Patch).
+func TestMachinePoolReconcileObservedGenerationUpdates(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-obsgen-update"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	cp.Status.ClusterID = "cluster-1"
+	cp.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+
+	mp := &clusterv1.MachinePool{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
+		Spec: clusterv1.MachinePoolSpec{
+			ClusterName: "test-cluster",
+			Replicas:    int32Ptr(1),
+			Template: clusterv1.MachineTemplateSpec{
+				Spec: clusterv1.MachineSpec{
+					ClusterName: "test-cluster",
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+						APIGroup: infrav1beta2.GroupVersion.Group,
+						Kind:     "CCEManagedMachinePool",
+						Name:     "test-cluster-pool-0",
+					},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, mp); err != nil {
+		t.Fatalf("failed to create MachinePool: %v", err)
+	}
+	pool := &infrav1beta2.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
+			ClusterName:  "test-cluster",
+			NodePoolName: "pool-0",
+			Flavor:       "c7.large.2",
+			Replicas:     1,
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create CCEManagedMachinePool: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pool)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+
+	got := &infrav1beta2.CCEManagedMachinePool{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
+		t.Fatalf("failed to get machine pool: %v", err)
+	}
+	if got.Status.ObservedGeneration != got.Generation {
+		t.Errorf("expected Status.ObservedGeneration == Generation (%d), got %d",
+			got.Generation, got.Status.ObservedGeneration)
+	}
+}
