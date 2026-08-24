@@ -7,9 +7,9 @@ Licensed under the MIT No Attribution (MIT-0) License.
 package cce
 
 import (
+	"errors"
 	"strings"
 	"testing"
-
 	"k8s.io/client-go/tools/clientcmd"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/model"
@@ -285,5 +285,90 @@ func TestDecodeCertData(t *testing.T) {
 	pem := "-----BEGIN CERTIFICATE-----\nXYZ\n-----END CERTIFICATE-----\n"
 	if got := decodeCertData(pem); string(got) != pem {
 		t.Errorf("decodeCertData fallback = %q, want raw PEM", got)
+	}
+}
+
+// TestPaginateAllSinglePage covers the common case where the API returns
+// fewer items than pageSize (one call, no marker round-trip).
+func TestPaginateAllSinglePage(t *testing.T) {
+	calls := 0
+	got, err := paginateAll(1000, func(_ *string) ([]int, *string, error) {
+		calls++
+		return []int{1, 2, 3}, stringPtr("3"), nil
+	})
+	if err != nil {
+		t.Fatalf("paginateAll: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("expected 1 call, got %d", calls)
+	}
+	if len(got) != 3 || got[0] != 1 || got[2] != 3 {
+		t.Errorf("unexpected result: %v", got)
+	}
+}
+
+// TestPaginateAllMultiPage simulates the Huawei Cloud v2 marker pattern
+// (no next-marker field, page size signals end of list).
+func TestPaginateAllMultiPage(t *testing.T) {
+	page1 := make([]int, 1000)
+	for i := range page1 {
+		page1[i] = i
+	}
+	page2 := []int{1000, 1001}
+	calls := 0
+	got, err := paginateAll(1000, func(marker *string) ([]int, *string, error) {
+		calls++
+		if marker == nil {
+			return page1, stringPtr("999"), nil
+		}
+		return page2, stringPtr("1001"), nil
+	})
+	if err != nil {
+		t.Fatalf("paginateAll: %v", err)
+	}
+	if calls != 2 {
+		t.Errorf("expected 2 calls, got %d", calls)
+	}
+	if len(got) != 1002 || got[1000] != 1000 || got[1001] != 1001 {
+		t.Errorf("expected 1002 items ending [1000, 1001], got len=%d last=%d", len(got), got[len(got)-1])
+	}
+}
+
+// TestPaginateAllEmptyResult ensures the first call returning 0 items ends
+// the loop without further calls.
+func TestPaginateAllEmptyResult(t *testing.T) {
+	calls := 0
+	got, err := paginateAll(1000, func(_ *string) ([]int, *string, error) {
+		calls++
+		return nil, nil, nil
+	})
+	if err != nil {
+		t.Fatalf("paginateAll: %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("expected 1 call, got %d", calls)
+	}
+	if len(got) != 0 {
+		t.Errorf("expected empty result, got %v", got)
+	}
+}
+
+// TestPaginateAllErrorStopsIteration ensures a fetch error is returned
+// (and the loop stops) without further calls.
+func TestPaginateAllErrorStopsIteration(t *testing.T) {
+	calls := 0
+	sentinel := errors.New("boom")
+	got, err := paginateAll(1000, func(_ *string) ([]int, *string, error) {
+		calls++
+		return nil, nil, sentinel
+	})
+	if !errors.Is(err, sentinel) {
+		t.Errorf("expected sentinel error, got %v", err)
+	}
+	if calls != 1 {
+		t.Errorf("expected 1 call, got %d", calls)
+	}
+	if got != nil {
+		t.Errorf("expected nil result on error, got %v", got)
 	}
 }

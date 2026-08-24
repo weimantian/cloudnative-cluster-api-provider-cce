@@ -473,15 +473,42 @@ func (s *Client) ListClusters(ctx context.Context) ([]ClusterRef, error) {
 	return refs, nil
 }
 
+func paginateAll[T any](
+	pageSize int32,
+	fetch func(marker *string) (items []T, lastID *string, err error),
+) ([]T, error) {
+	var all []T
+	var marker *string
+	for {
+		items, lastID, err := fetch(marker)
+		if err != nil {
+			return all, err
+		}
+		all = append(all, items...)
+		if len(items) == 0 || lastID == nil || int32(len(items)) < pageSize {
+			return all, nil
+	}
+	marker = lastID
+}
+}
+
+// CreateAccessPolicy implements Service.
 // CreateAccessPolicy implements Service.
 // ListEips implements Service.
 func (s *Client) ListEips(ctx context.Context) ([]EipRef, error) {
-	resp, err := s.eip.ListPublicips(&eipmodel.ListPublicipsRequest{})
-	if err != nil {
-		return nil, errors.Wrap(err, "ListPublicips failed")
-	}
-	var refs []EipRef
-	if resp.Publicips != nil {
+	return paginateAll(1000, func(marker *string) ([]EipRef, *string, error) {
+		resp, err := s.eip.ListPublicips(&eipmodel.ListPublicipsRequest{
+			Marker: marker,
+			Limit:   int32Ptr(1000),
+		})
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "ListPublicips failed")
+		}
+		if resp.Publicips == nil {
+			return nil, nil, nil
+		}
+		refs := make([]EipRef, 0, len(*resp.Publicips))
+		var lastID *string
 		for _, p := range *resp.Publicips {
 			ref := EipRef{Tags: map[string]string{}}
 			if p.Id != nil {
@@ -492,9 +519,10 @@ func (s *Client) ListEips(ctx context.Context) ([]EipRef, error) {
 			}
 			ref.Tags = parseKVTags(p.Tags)
 			refs = append(refs, ref)
+			lastID = p.Id
 		}
-	}
-	return refs, nil
+return refs, lastID, nil
+	})
 }
 
 // DeleteEip implements Service.
@@ -506,19 +534,28 @@ func (s *Client) DeleteEip(ctx context.Context, eipID string) error {
 	return nil
 }
 
-// ListVolumes implements Service.
+// ListVolumes implements Service. Paginates via marker+limit to avoid
+// missing volumes in accounts with >1000 EBS volumes (EVS default page size).
 func (s *Client) ListVolumes(ctx context.Context) ([]VolumeRef, error) {
-	resp, err := s.evs.ListVolumes(&evsmodel.ListVolumesRequest{})
-	if err != nil {
-		return nil, errors.Wrap(err, "ListVolumes failed")
-	}
-	var refs []VolumeRef
-	if resp.Volumes != nil {
+	return paginateAll(1000, func(marker *string) ([]VolumeRef, *string, error) {
+		resp, err := s.evs.ListVolumes(&evsmodel.ListVolumesRequest{
+			Marker: marker,
+			Limit:   int32Ptr(1000),
+		})
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "ListVolumes failed")
+		}
+		if resp.Volumes == nil {
+			return nil, nil, nil
+		}
+		refs := make([]VolumeRef, 0, len(*resp.Volumes))
+		var lastID *string
 		for _, v := range *resp.Volumes {
 			refs = append(refs, VolumeRef{ID: v.Id, Name: v.Name, Tags: v.Tags})
+			lastID = stringPtr(v.Id)
 		}
-	}
-	return refs, nil
+		return refs, lastID, nil
+	})
 }
 
 // DeleteVolume implements Service.
@@ -532,13 +569,23 @@ func (s *Client) DeleteVolume(ctx context.Context, volumeID string) error {
 
 // ListVpcs implements Service. VPC tags are not returned by ListVpcs, so this
 // does an N+1 ShowVpcTags per VPC (VPC counts are small).
+// ListVpcs implements Service. Paginates via marker+limit (VPC default page
+// size is the requested limit). Tags are fetched via N+1 ShowVpcTags
+// because ListVpcs does not return tags (VPC counts are small).
 func (s *Client) ListVpcs(ctx context.Context) ([]VpcRef, error) {
-	resp, err := s.vpc.ListVpcs(&vpcmodel.ListVpcsRequest{})
-	if err != nil {
-		return nil, errors.Wrap(err, "ListVpcs failed")
-	}
-	var refs []VpcRef
-	if resp.Vpcs != nil {
+	return paginateAll(1000, func(marker *string) ([]VpcRef, *string, error) {
+		resp, err := s.vpc.ListVpcs(&vpcmodel.ListVpcsRequest{
+			Marker: marker,
+			Limit:   int32Ptr(1000),
+		})
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "ListVpcs failed")
+		}
+		if resp.Vpcs == nil {
+			return nil, nil, nil
+		}
+		refs := make([]VpcRef, 0, len(*resp.Vpcs))
+		var lastID *string
 		for _, v := range *resp.Vpcs {
 			ref := VpcRef{ID: v.Id, Name: v.Name, Tags: map[string]string{}}
 			if tags, terr := s.vpc.ShowVpcTags(&vpcmodel.ShowVpcTagsRequest{VpcId: v.Id}); terr == nil && tags.Tags != nil {
@@ -547,9 +594,10 @@ func (s *Client) ListVpcs(ctx context.Context) ([]VpcRef, error) {
 				}
 			}
 			refs = append(refs, ref)
+			lastID = stringPtr(v.Id)
 		}
-	}
-	return refs, nil
+		return refs, lastID, nil
+	})
 }
 
 // DeleteVpc implements Service.
@@ -561,15 +609,23 @@ func (s *Client) DeleteVpc(ctx context.Context, vpcID string) error {
 	return nil
 }
 
-// ListNatGateways implements Service. NAT tags are not returned by
-// ListNatGateways, so this does an N+1 ShowNatGatewayTag per gateway.
+// ListNatGateways implements Service. Paginates via marker+limit (NAT default
+// 2000). Tags are fetched via N+1 ShowNatGatewayTag because ListNatGateways
+// does not return tags.
 func (s *Client) ListNatGateways(ctx context.Context) ([]NatGatewayRef, error) {
-	resp, err := s.nat.ListNatGateways(&natmodel.ListNatGatewaysRequest{})
-	if err != nil {
-		return nil, errors.Wrap(err, "ListNatGateways failed")
-	}
-	var refs []NatGatewayRef
-	if resp.NatGateways != nil {
+	return paginateAll(2000, func(marker *string) ([]NatGatewayRef, *string, error) {
+		resp, err := s.nat.ListNatGateways(&natmodel.ListNatGatewaysRequest{
+			Marker: marker,
+			Limit:   int32Ptr(2000),
+		})
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "ListNatGateways failed")
+		}
+		if resp.NatGateways == nil {
+			return nil, nil, nil
+		}
+		refs := make([]NatGatewayRef, 0, len(*resp.NatGateways))
+		var lastID *string
 		for _, gw := range *resp.NatGateways {
 			if gw.Id == nil {
 				continue
@@ -584,9 +640,10 @@ func (s *Client) ListNatGateways(ctx context.Context) ([]NatGatewayRef, error) {
 				}
 			}
 			refs = append(refs, ref)
+			lastID = gw.Id
 		}
-	}
-	return refs, nil
+		return refs, lastID, nil
+	})
 }
 
 // DeleteNatGateway implements Service: SNAT rules first, then the gateway
