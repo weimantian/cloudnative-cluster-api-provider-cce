@@ -152,5 +152,5 @@ https://chat.deepseek.com/share/nndkkwyu1gg8seypbj (内容:从 Terraform 入门 
 10. **[需验证]** Autopilot(Serverless)在 CAPI 模型中的表达(无节点概念,对标 Fargate Profile,是否首版不做)。
 11. **[需验证]** 集群升级:`CreateUpgradeWorkFlow` 的编排参数(目标版本、是否支持跳过版本、升级时长)、升级期间集群状态。
 12. **[需验证]** 计费:按需 vs 包周期(billingMode)、集群本身是否计费、空集群最小成本;休眠/唤醒(AwakeCluster)机制。
-13. **[需验证]** 终端节点/公私网:管理集群(可能在其他 VPC/Region)访问 CCE API Server 的网络路径(公网 endpoint / 对等连接 / 云专线)。
+13. **[已确认]** 终端节点/公私网:CCE API Server 私网访问 = 平台托管 VPC 内网端点(`ShowClusterEndpoints.privateEndpoint`,HA 返回 VIP,`https://<VPC内网IP>:5443`,仅同 VPC 可达);跨 VPC 官方方案 = VPC 对等连接 / 企业路由器(ER)/ 云专线 / VPN(非 VPCEP);跨 Region 官方无专门推荐 → 需咨询/实测。**VPCEP(VPC Endpoint)面向 OBS/DNS 等云服务或用户私有服务,CCE API Server 非其支持类别**——gap-analysis §4.3 的「VPC Endpoint 打通 CCE 私网 API Server」为误解,定性为「云能力差异(平台托管),provider 无需实现」。
 14. **[需验证]** API 限流:CCE/ECS/VPC 各服务的 API 调用频率限制(每分钟调用次数),决定控制器 requeue/退避策略参数。
