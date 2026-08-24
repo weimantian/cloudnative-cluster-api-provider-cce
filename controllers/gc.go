@@ -18,6 +18,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/manager"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 )
 
@@ -37,7 +38,7 @@ type GarbageCollector struct {
 	// ServiceFactory builds the CCE service for the sweep. The sweep is
 	// account-wide, so it uses the controller-default (env) credentials rather
 	// than a per-cluster Secret/identity. Overridden in tests with a fake.
-	ServiceFactory func(regionID, ak, sk string) (cceService.Service, error)
+	ServiceFactory func(regionID string, creds *credentials.Credentials) (cceService.Service, error)
 
 	// GlobalScope is the account-wide analog of the per-object scope
 	// (CAPA pkg/cloud/scope). Holds region + controller name, built once at
@@ -100,7 +101,7 @@ func (g *GarbageCollector) sweep(ctx context.Context) {
 		log.Info("garbage collector: no controller credentials, skipping sweep", "reason", err.Error())
 		return
 	}
-	svc, err := g.ServiceFactory(g.region(), creds.AccessKey, creds.SecretKey)
+	svc, err := g.ServiceFactory(g.region(), &credentials.Credentials{AccessKey: creds.AccessKey, SecretKey: creds.SecretKey})
 	if err != nil {
 		log.Error(err, "garbage collector: failed to build CCE service")
 		return

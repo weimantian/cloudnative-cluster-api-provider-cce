@@ -30,6 +30,7 @@ import (
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
@@ -53,16 +54,21 @@ type CCEManagedControlPlaneReconciler struct {
 	// ServiceFactory builds the CCE API service for a region/credential pair.
 	// Overridden in tests with a fake; defaults to cceService.NewClient
 	// (see SetupControllers).
-	ServiceFactory func(regionID, ak, sk string) (cceService.Service, error)
+	ServiceFactory func(regionID string, creds *credentials.Credentials) (cceService.Service, error)
+
+	// CredentialProvider resolves temporary security credentials for an
+	// agency-based identity. Nil means agency identities cannot be assumed
+	// (static AK/SK only). Injected in SetupControllers; nil in tests.
+	CredentialProvider credentials.Provider
 }
 
 // newCCEService returns a CCE service via the injected factory, or the real
 // implementation when no factory is set.
-func (r *CCEManagedControlPlaneReconciler) newCCEService(regionID, ak, sk string) (cceService.Service, error) {
+func (r *CCEManagedControlPlaneReconciler) newCCEService(regionID string, creds *credentials.Credentials) (cceService.Service, error) {
 	if r.ServiceFactory != nil {
-		return r.ServiceFactory(regionID, ak, sk)
+		return r.ServiceFactory(regionID, creds)
 	}
-	return cceService.NewClient(regionID, ak, sk)
+	return cceService.NewClient(regionID, creds)
 }
 
 // +kubebuilder:rbac:groups=controlplane.cluster.x-k8s.io,resources=ccemanagedcontrolplanes,verbs=get;list;watch;create;update;patch;delete
@@ -177,7 +183,15 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	}
 	conditions.MarkTrue(cp, conditions.CredentialsReadyCondition, "CredentialsResolved", "CCE credentials resolved")
 
-	svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
+	resolved, err := credentials.Resolve(ctx, r.CredentialProvider, region, identityAgency, creds.AccessKey, creds.SecretKey)
+	if err != nil {
+		conditions.MarkFalse(cp,
+				conditions.CredentialsReadyCondition,
+				conditions.CredentialsResolutionFailedReason, err.Error())
+		recordEvent(r.Recorder, cp, corev1.EventTypeWarning, "CredentialsFailed", "%v", err)
+		return ctrl.Result{}, err
+	}
+	svc, err := r.newCCEService(region, resolved)
 	if err != nil {
 		conditions.MarkFalse(cp,
 				conditions.CredentialsReadyCondition,
@@ -433,11 +447,15 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	creds, _, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
+	creds, identityAgency, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
 	if err != nil {
 		return ctrl.Result{}, err
 	}
-	svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
+	resolved, err := credentials.Resolve(ctx, r.CredentialProvider, region, identityAgency, creds.AccessKey, creds.SecretKey)
+	if err != nil {
+		return ctrl.Result{}, err
+	}
+	svc, err := r.newCCEService(region, resolved)
 	if err != nil {
 		return ctrl.Result{}, err
 	}

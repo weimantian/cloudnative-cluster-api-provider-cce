@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
@@ -68,7 +69,7 @@ func TestControlPlaneReconcileAccessPolicies(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}

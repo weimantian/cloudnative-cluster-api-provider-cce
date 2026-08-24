@@ -20,6 +20,7 @@ import (
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 	"github.com/pkg/errors"
@@ -38,7 +39,7 @@ func TestCCEClusterReconcileReady(t *testing.T) {
 	fakeNet := fakes.NewFakeNetworkValidator()
 	r := &CCEClusterReconciler{
 		Client: k8sClient,
-		NetworkValidatorFactory: func(_, _, _ string) (network.ValidatorInterface, error) {
+		NetworkValidatorFactory: func(_ string, _ *credentials.Credentials) (network.ValidatorInterface, error) {
 			return fakeNet, nil
 		},
 	}
@@ -77,7 +78,7 @@ func TestCCEClusterReconcileNetworkFailure(t *testing.T) {
 	}
 	r := &CCEClusterReconciler{
 		Client: k8sClient,
-		NetworkValidatorFactory: func(_, _, _ string) (network.ValidatorInterface, error) {
+		NetworkValidatorFactory: func(_ string, _ *credentials.Credentials) (network.ValidatorInterface, error) {
 			return fakeNet, nil
 		},
 	}
@@ -124,10 +125,10 @@ func TestCCEClusterReconcileManagedNetwork(t *testing.T) {
 	fakeNet := fakes.NewFakeNetworkValidator()
 	r := &CCEClusterReconciler{
 		Client: k8sClient,
-		NetworkValidatorFactory: func(_, _, _ string) (network.ValidatorInterface, error) {
+		NetworkValidatorFactory: func(_ string, _ *credentials.Credentials) (network.ValidatorInterface, error) {
 			return fakeNet, nil
 		},
-		NetworkServiceFactory: func(_, _, _ string) (network.ManagerInterface, error) {
+		NetworkServiceFactory: func(_ string, _ *credentials.Credentials) (network.ManagerInterface, error) {
 			return fakeMgr, nil
 		},
 	}
@@ -182,10 +183,10 @@ func TestCCEClusterReconcileAdoptedNetwork(t *testing.T) {
 	fakeMgr := &fakes.FakeNetworkManager{}
 	r := &CCEClusterReconciler{
 		Client: k8sClient,
-		NetworkValidatorFactory: func(_, _, _ string) (network.ValidatorInterface, error) {
+		NetworkValidatorFactory: func(_ string, _ *credentials.Credentials) (network.ValidatorInterface, error) {
 			return fakes.NewFakeNetworkValidator(), nil
 		},
-		NetworkServiceFactory: func(_, _, _ string) (network.ManagerInterface, error) {
+		NetworkServiceFactory: func(_ string, _ *credentials.Credentials) (network.ManagerInterface, error) {
 			return fakeMgr, nil
 		},
 	}
@@ -229,10 +230,10 @@ func TestCCEClusterReconcileManagedNetworkFailure(t *testing.T) {
 	}
 	r := &CCEClusterReconciler{
 		Client: k8sClient,
-		NetworkValidatorFactory: func(_, _, _ string) (network.ValidatorInterface, error) {
+		NetworkValidatorFactory: func(_ string, _ *credentials.Credentials) (network.ValidatorInterface, error) {
 			return fakes.NewFakeNetworkValidator(), nil
 		},
-		NetworkServiceFactory: func(_, _, _ string) (network.ManagerInterface, error) {
+		NetworkServiceFactory: func(_ string, _ *credentials.Credentials) (network.ManagerInterface, error) {
 			return fakeMgr, nil
 		},
 	}
@@ -278,10 +279,10 @@ func TestCCEClusterDeleteManagedNetwork(t *testing.T) {
 	// object around with a deletion timestamp.
 	setupR := &CCEClusterReconciler{
 		Client: k8sClient,
-		NetworkValidatorFactory: func(_, _, _ string) (network.ValidatorInterface, error) {
+		NetworkValidatorFactory: func(_ string, _ *credentials.Credentials) (network.ValidatorInterface, error) {
 			return fakes.NewFakeNetworkValidator(), nil
 		},
-		NetworkServiceFactory: func(_, _, _ string) (network.ManagerInterface, error) {
+		NetworkServiceFactory: func(_ string, _ *credentials.Credentials) (network.ManagerInterface, error) {
 			return &fakes.FakeNetworkManager{}, nil
 		},
 	}
@@ -309,10 +310,10 @@ func TestCCEClusterDeleteManagedNetwork(t *testing.T) {
 	fakeMgr := &fakes.FakeNetworkManager{}
 	r := &CCEClusterReconciler{
 		Client: k8sClient,
-		NetworkValidatorFactory: func(_, _, _ string) (network.ValidatorInterface, error) {
+		NetworkValidatorFactory: func(_ string, _ *credentials.Credentials) (network.ValidatorInterface, error) {
 			return fakes.NewFakeNetworkValidator(), nil
 		},
-		NetworkServiceFactory: func(_, _, _ string) (network.ManagerInterface, error) {
+		NetworkServiceFactory: func(_ string, _ *credentials.Credentials) (network.ManagerInterface, error) {
 			return fakeMgr, nil
 		},
 	}

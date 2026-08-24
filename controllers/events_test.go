@@ -15,6 +15,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
@@ -36,7 +37,7 @@ func TestControlPlaneReconcilerEmitsEvents(t *testing.T) {
 	r := &CCEManagedControlPlaneReconciler{
 		Client:   k8sClient,
 		Recorder: recorder,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}

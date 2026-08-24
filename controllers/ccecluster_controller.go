@@ -28,6 +28,7 @@ import (
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
 )
@@ -48,30 +49,35 @@ type CCEClusterReconciler struct {
 	// NetworkValidatorFactory builds the network validator for a
 	// region/credential pair. Overridden in tests with a fake; defaults to
 	// network.NewValidator (see SetupControllers).
-	NetworkValidatorFactory func(regionID, ak, sk string) (network.ValidatorInterface, error)
+	NetworkValidatorFactory func(regionID string, creds *credentials.Credentials) (network.ValidatorInterface, error)
 
 	// NetworkServiceFactory builds the managed-network service (VPC/
 	// subnets/NAT create+delete) for a region/credential pair. Overridden
 	// in tests with a fake; defaults to network.NewManager.
-	NetworkServiceFactory func(regionID, ak, sk string) (network.ManagerInterface, error)
+	NetworkServiceFactory func(regionID string, creds *credentials.Credentials) (network.ManagerInterface, error)
+
+	// CredentialProvider resolves temporary security credentials for an
+	// agency-based identity. Nil means agency identities cannot be assumed
+	// (static AK/SK only). Injected in SetupControllers; nil in tests.
+	CredentialProvider credentials.Provider
 }
 
 // newNetworkValidator returns a validator via the injected factory, or the
 // real implementation when no factory is set.
-func (r *CCEClusterReconciler) newNetworkValidator(regionID, ak, sk string) (network.ValidatorInterface, error) {
+func (r *CCEClusterReconciler) newNetworkValidator(regionID string, creds *credentials.Credentials) (network.ValidatorInterface, error) {
 	if r.NetworkValidatorFactory != nil {
-		return r.NetworkValidatorFactory(regionID, ak, sk)
+		return r.NetworkValidatorFactory(regionID, creds)
 	}
-	return network.NewValidator(regionID, ak, sk)
+	return network.NewValidator(regionID, creds)
 }
 
 // newNetworkService returns a managed-network service via the injected
 // factory, or the real implementation when no factory is set.
-func (r *CCEClusterReconciler) newNetworkService(regionID, ak, sk string) (network.ManagerInterface, error) {
+func (r *CCEClusterReconciler) newNetworkService(regionID string, creds *credentials.Credentials) (network.ManagerInterface, error) {
 	if r.NetworkServiceFactory != nil {
-		return r.NetworkServiceFactory(regionID, ak, sk)
+		return r.NetworkServiceFactory(regionID, creds)
 	}
-	return network.NewManager(regionID, ak, sk)
+	return network.NewManager(regionID, creds)
 }
 
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=cceclusters,verbs=get;list;watch;create;update;patch;delete
@@ -153,7 +159,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 	// are not stuck on network validation/managed reconciliation - mirroring
 	// resolveControlPlaneCredentials, which the CP/MP controllers use. A
 	// credentials resolution FAILURE must not silently skip validation.
-	creds, credErr := r.resolveClusterCredentials(ctx, cluster, cceCluster)
+	creds, agency, credErr := r.resolveClusterCredentials(ctx, cluster, cceCluster)
 	if credErr != nil {
 		conditions.MarkFalse(cceCluster,
 				conditions.NetworkReadyCondition,
@@ -161,11 +167,18 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
 	if creds != nil {
+		resolved, rerr := credentials.Resolve(ctx, r.CredentialProvider, cceCluster.Spec.Region, agency, creds.AccessKey, creds.SecretKey)
+		if rerr != nil {
+			conditions.MarkFalse(cceCluster,
+					conditions.NetworkReadyCondition,
+					conditions.NetworkValidationFailedReason, rerr.Error())
+			return ctrl.Result{RequeueAfter: requeueAfterForError(rerr)}, nil
+		}
 		// Managed network mode (vpc.id empty): create the VPC/subnets/(NAT)
 		// first, then validate the result. BYO mode validates the referenced
 		// network as before.
 		if network.IsManaged(&cceCluster.Spec.Network, cluster.Name) {
-			svc, serr := r.newNetworkService(cceCluster.Spec.Region, creds.AccessKey, creds.SecretKey)
+			svc, serr := r.newNetworkService(cceCluster.Spec.Region, resolved)
 			if serr != nil {
 				conditions.MarkFalse(cceCluster,
 				conditions.NetworkReadyCondition,
@@ -182,7 +195,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 			recordEvent(r.Recorder, cceCluster, corev1.EventTypeNormal, "ManagedNetworkReconciled",
 				"managed network reconciled (VPC %s)", cceCluster.Spec.Network.VPC.ResourceID)
 		}
-		validator, verr := r.newNetworkValidator(cceCluster.Spec.Region, creds.AccessKey, creds.SecretKey)
+		validator, verr := r.newNetworkValidator(cceCluster.Spec.Region, resolved)
 		if verr != nil {
 			conditions.MarkFalse(cceCluster,
 				conditions.NetworkReadyCondition,
@@ -308,14 +321,18 @@ func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clu
 	// tolerated); aggregated errors requeue until the whole network is gone.
 	if network.IsManaged(&cceCluster.Spec.Network, cluster.Name) {
 		if cceCluster.Spec.Network.VPC.ResourceID != "" {
-			creds, cerr := r.resolveClusterCredentials(ctx, cluster, cceCluster)
+			creds, agency, cerr := r.resolveClusterCredentials(ctx, cluster, cceCluster)
 			if cerr != nil || creds == nil {
 				conditions.MarkFalse(cceCluster,
 				conditions.NetworkReadyCondition,
 				conditions.NetworkValidationFailedReason, "managed network deletion requires credentials: "+errStr(cerr))
 				return ctrl.Result{}, errors.New("managed network deletion requires credentials")
 			}
-			svc, serr := r.newNetworkService(cceCluster.Spec.Region, creds.AccessKey, creds.SecretKey)
+			resolved, rerr := credentials.Resolve(ctx, r.CredentialProvider, cceCluster.Spec.Region, agency, creds.AccessKey, creds.SecretKey)
+			if rerr != nil {
+				return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+			}
+			svc, serr := r.newNetworkService(cceCluster.Spec.Region, resolved)
 			if serr != nil {
 				return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 			}
@@ -338,15 +355,16 @@ func (r *CCEClusterReconciler) reconcileDelete(ctx context.Context, cluster *clu
 // through the control plane's identityRef chain when a control plane exists,
 // else the per-cluster Secret (mirrors resolveControlPlaneCredentials, which
 // the CP/MP controllers use, so identityRef-based clusters are not stuck).
-func (r *CCEClusterReconciler) resolveClusterCredentials(ctx context.Context, cluster *clusterv1.Cluster, cceCluster *infrav1beta2.CCECluster) (*scope.Credentials, error) {
+func (r *CCEClusterReconciler) resolveClusterCredentials(ctx context.Context, cluster *clusterv1.Cluster, cceCluster *infrav1beta2.CCECluster) (*scope.Credentials, string, error) {
 	if cluster.Spec.ControlPlaneRef.Name != "" {
 		cp := &controlplanev1beta2.CCEManagedControlPlane{}
 		if err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err == nil {
-			creds, _, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
-			return creds, err
+			creds, agency, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
+			return creds, agency, err
 		}
 	}
-	return scope.ResolveCredentials(ctx, r.Client, cceCluster.Namespace, cluster.Name+"-credentials")
+	creds, err := scope.ResolveCredentials(ctx, r.Client, cceCluster.Namespace, cluster.Name+"-credentials")
+	return creds, "", err
 }
 
 // reconcileManagedNetwork drives the managed-network lifecycle step by step,

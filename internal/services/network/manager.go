@@ -27,7 +27,8 @@ import (
 	vpcregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/region"
 	"github.com/pkg/errors"
 
-"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/wait"
 )
@@ -106,12 +107,16 @@ type Manager struct {
 }
 
 // NewManager builds a VPC/NAT/EIP API-backed network manager.
-func NewManager(regionID, ak, sk string) (*Manager, error) {
+func NewManager(regionID string, creds *credentials.Credentials) (*Manager, error) {
 	region, err := vpcregion.SafeValueOf(regionID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to resolve VPC region %q", regionID)
 	}
-	cred, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).SafeBuild()
+	builder := basic.NewCredentialsBuilder().WithAk(creds.AccessKey).WithSk(creds.SecretKey)
+	if creds.SecurityToken != "" {
+		builder = builder.WithSecurityToken(creds.SecurityToken)
+	}
+	cred, err := builder.SafeBuild()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build network credentials")
 	}

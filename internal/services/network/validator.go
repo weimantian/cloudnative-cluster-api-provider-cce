@@ -29,8 +29,8 @@ import (
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
 	vpcRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/region"
 	"github.com/pkg/errors"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 )
-
 // maxENISubnets is the conservative official limit for eni container subnets
 // (older versions <=20; newer versions <=100 — questionnaire Q4).
 const maxENISubnets = 20
@@ -71,12 +71,16 @@ type Validator struct {
 }
 
 // NewValidator builds a VPC API-backed network validator.
-func NewValidator(regionID, ak, sk string) (*Validator, error) {
+func NewValidator(regionID string, creds *credentials.Credentials) (*Validator, error) {
 	region, err := vpcRegion.SafeValueOf(regionID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to resolve VPC region %q", regionID)
 	}
-	cred, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).SafeBuild()
+	builder := basic.NewCredentialsBuilder().WithAk(creds.AccessKey).WithSk(creds.SecretKey)
+	if creds.SecurityToken != "" {
+		builder = builder.WithSecurityToken(creds.SecurityToken)
+	}
+	cred, err := builder.SafeBuild()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build VPC credentials")
 	}

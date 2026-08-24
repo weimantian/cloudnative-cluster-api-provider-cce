@@ -12,6 +12,7 @@ import (
 	"testing"
 	"k8s.io/client-go/tools/clientcmd"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/model"
 )
 
@@ -22,7 +23,7 @@ func TestNewClientCaches(t *testing.T) {
 	// cached pointer is returned unchanged.
 	fake := &Client{}
 	clientCache.Store("cn-north-4\x00test-ak-cache\x00test-sk-cache", fake)
-	c, err := NewClient("cn-north-4", "test-ak-cache", "test-sk-cache")
+	c, err := NewClient("cn-north-4", &credentials.Credentials{AccessKey: "test-ak-cache", SecretKey: "test-sk-cache"})
 	if err != nil {
 		t.Fatalf("NewClient (cached) failed: %v", err)
 	}

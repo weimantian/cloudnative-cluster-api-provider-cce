@@ -30,6 +30,7 @@ import (
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
@@ -48,16 +49,21 @@ type CCEManagedMachinePoolReconciler struct {
 
 	// ServiceFactory builds the CCE API service for a region/credential pair.
 	// Overridden in tests with a fake; defaults to cceService.NewClient.
-	ServiceFactory func(regionID, ak, sk string) (cceService.Service, error)
+	ServiceFactory func(regionID string, creds *credentials.Credentials) (cceService.Service, error)
+
+	// CredentialProvider resolves temporary security credentials for an
+	// agency-based identity. Nil means agency identities cannot be assumed
+	// (static AK/SK only). Injected in SetupControllers; nil in tests.
+	CredentialProvider credentials.Provider
 }
 
 // newCCEService returns a CCE service via the injected factory, or the real
 // implementation when no factory is set.
-func (r *CCEManagedMachinePoolReconciler) newCCEService(regionID, ak, sk string) (cceService.Service, error) {
+func (r *CCEManagedMachinePoolReconciler) newCCEService(regionID string, creds *credentials.Credentials) (cceService.Service, error) {
 	if r.ServiceFactory != nil {
-		return r.ServiceFactory(regionID, ak, sk)
+		return r.ServiceFactory(regionID, creds)
 	}
-	return cceService.NewClient(regionID, ak, sk)
+	return cceService.NewClient(regionID, creds)
 }
 
 // +kubebuilder:rbac:groups=infrastructure.cluster.x-k8s.io,resources=ccemanagedmachinepools,verbs=get;list;watch;create;update;patch;delete
@@ -169,14 +175,27 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	// -> per-cluster Secret -> env), shared with the control plane
 	// controller: machine pools must honor identityRef too, otherwise pools
 	// of identity-based clusters never reconcile.
-	creds, _, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
+	creds, identityAgency, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
 	if err != nil {
 		conditions.MarkFalse(pool,
 				conditions.NodePoolReadyCondition,
 				conditions.NodePoolCreationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
-	svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
+	resolved, err := credentials.Resolve(ctx, r.CredentialProvider, region, identityAgency, creds.AccessKey, creds.SecretKey)
+	if err != nil {
+		conditions.MarkFalse(pool,
+				conditions.NodePoolReadyCondition,
+				conditions.NodePoolCreationFailedReason, err.Error())
+		return ctrl.Result{}, err
+	}
+	svc, err := r.newCCEService(region, resolved)
+	if err != nil {
+		conditions.MarkFalse(pool,
+				conditions.NodePoolReadyCondition,
+				conditions.NodePoolCreationFailedReason, err.Error())
+		return ctrl.Result{}, err
+	}
 	if err != nil {
 		conditions.MarkFalse(pool,
 				conditions.NodePoolReadyCondition,
@@ -417,11 +436,18 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			creds, _, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
+			creds, identityAgency, err := resolveControlPlaneCredentials(ctx, r.Client, cp)
 			if err != nil {
 				return ctrl.Result{}, err
 			}
-			svc, err := r.newCCEService(region, creds.AccessKey, creds.SecretKey)
+			resolved, err := credentials.Resolve(ctx, r.CredentialProvider, region, identityAgency, creds.AccessKey, creds.SecretKey)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
+			svc, err := r.newCCEService(region, resolved)
+			if err != nil {
+				return ctrl.Result{}, err
+			}
 			if err != nil {
 				return ctrl.Result{}, err
 			}

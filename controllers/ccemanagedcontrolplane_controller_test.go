@@ -21,6 +21,7 @@ import (
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
@@ -40,7 +41,7 @@ func TestControlPlaneReconcileWaitingForInfra(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -70,7 +71,7 @@ func TestControlPlaneReconcileSuccess(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -140,7 +141,7 @@ func TestControlPlaneReconcileDeletePassesOptions(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -190,7 +191,7 @@ func upgradeCP(t *testing.T, ns string) (*clusterv1.Cluster, *controlplanev1beta
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -341,7 +342,7 @@ func TestControlPlaneReconcileAddons(t *testing.T) {
 	}
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -395,7 +396,7 @@ func TestControlPlaneReconcilePodIdentity(t *testing.T) {
 	}
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -459,7 +460,7 @@ func TestControlPlaneReconcileLogging(t *testing.T) {
 	}
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -519,7 +520,7 @@ func TestControlPlaneReconcileLoggingNoDrift(t *testing.T) {
 	}
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -554,7 +555,7 @@ func TestControlPlaneReconcileDeleteWithIdentity(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -607,8 +608,9 @@ func TestControlPlaneReconcileRoleIdentityAgency(t *testing.T) {
 	}
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedControlPlaneReconciler{
-		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		Client:              k8sClient,
+		CredentialProvider:  fakes.NewFakeCredentialProvider(),
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -634,8 +636,9 @@ func TestControlPlaneReconcileRoleIdentityAgency(t *testing.T) {
 	}
 	fakeSvc2 := fakes.NewFakeCCEService()
 	r2 := &CCEManagedControlPlaneReconciler{
-		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		Client:             k8sClient,
+		CredentialProvider: fakes.NewFakeCredentialProvider(),
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc2, nil
 		},
 	}
@@ -663,7 +666,7 @@ func TestControlPlaneReconcileObservedGenerationUpdates(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -713,7 +716,7 @@ func TestControlPlaneReconcileRequeueWhenObservedBehind(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}

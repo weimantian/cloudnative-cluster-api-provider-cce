@@ -47,6 +47,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 )
 
@@ -73,7 +74,7 @@ func main() {
 	}
 
 	ctx := context.Background()
-	svc, err := cce.NewClient(region, ak, sk)
+	svc, err := cce.NewClient(region, &credentials.Credentials{AccessKey: ak, SecretKey: sk})
 	if err != nil {
 		fatalf("NewClient: %v", err)
 	}

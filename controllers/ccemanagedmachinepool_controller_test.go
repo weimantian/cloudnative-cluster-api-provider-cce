@@ -26,6 +26,7 @@ import (
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
@@ -88,7 +89,7 @@ func TestMachinePoolReconcileAutoscalingGate(t *testing.T) {
 		fakeSvc := fakes.NewFakeCCEService()
 		r := &CCEManagedMachinePoolReconciler{
 			Client: k8sClient,
-			ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 				return fakeSvc, nil
 			},
 		}
@@ -165,7 +166,7 @@ func TestMachinePoolReconcileAutoscalingGate(t *testing.T) {
 	fakeSvc2 := fakes.NewFakeCCEService()
 	r2 := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc2, nil
 		},
 	}
@@ -241,7 +242,7 @@ func TestMachinePoolReconcileSuccess(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -339,7 +340,7 @@ func TestMachinePoolReconcileSecurityGroupDrift(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -438,7 +439,7 @@ func TestMachinePoolReconcileWaitsForControlPlane(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -512,7 +513,7 @@ func TestMachinePoolReconcileDelete(t *testing.T) {
 	}
 	r := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -561,7 +562,7 @@ func TestControlPlaneReconcileCredentialsFailure(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -644,7 +645,7 @@ func TestMachinePoolReconcileSyncsReplicasFromOwner(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -791,7 +792,7 @@ func TestMachinePoolScaleTriggeredByWatch(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedMachinePoolReconciler{
 		Client: mgr.GetClient(),
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -910,7 +911,7 @@ func TestMachinePoolReconcileWithIdentity(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -967,7 +968,7 @@ func TestMachinePoolReconcileDeleteControlPlaneGone(t *testing.T) {
 	}
 	r := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -1058,7 +1059,7 @@ func TestMachinePoolReconcileReplicasExternallyManaged(t *testing.T) {
 	}
 	r := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -1154,7 +1155,7 @@ func TestMachinePoolReconcileNodeRepair(t *testing.T) {
 	}
 	r := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}
@@ -1233,7 +1234,7 @@ func TestMachinePoolReconcileObservedGenerationUpdates(t *testing.T) {
 	fakeSvc := fakes.NewFakeCCEService()
 	r := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 	}

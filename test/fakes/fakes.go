@@ -14,6 +14,7 @@ import (
 	"fmt"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
 )
@@ -259,6 +260,27 @@ func NewFakeNetworkValidator() *FakeNetworkValidator {
 // Validate implements network.ValidatorInterface.
 func (f *FakeNetworkValidator) Validate(_ context.Context, _ network.ValidateInput) ([]network.Issue, error) {
 	return f.Issues, nil
+}
+
+// FakeCredentialProvider is a scriptable credentials.Provider that returns
+// canned temporary security credentials without contacting Huawei Cloud STS.
+type FakeCredentialProvider struct {
+	AssumeAgencyFn func(ctx context.Context, region, agencyName, accessKey, secretKey string) (*credentials.Credentials, error)
+}
+
+// NewFakeCredentialProvider returns a provider that echoes the input AK/SK and
+// sets a fake security token.
+func NewFakeCredentialProvider() *FakeCredentialProvider {
+	return &FakeCredentialProvider{
+		AssumeAgencyFn: func(_ context.Context, _, _, accessKey, secretKey string) (*credentials.Credentials, error) {
+			return &credentials.Credentials{AccessKey: accessKey, SecretKey: secretKey, SecurityToken: "fake-security-token"}, nil
+		},
+	}
+}
+
+// AssumeAgency implements credentials.Provider.
+func (f *FakeCredentialProvider) AssumeAgency(ctx context.Context, region, agencyName, accessKey, secretKey string) (*credentials.Credentials, error) {
+	return f.AssumeAgencyFn(ctx, region, agencyName, accessKey, secretKey)
 }
 
 // FakeNetworkManager is a scriptable network.ManagerInterface for the

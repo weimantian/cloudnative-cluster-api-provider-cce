@@ -34,6 +34,7 @@ import (
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
 )
@@ -55,21 +56,29 @@ type Client struct {
 // even that per-reconcile HTTP-client construction).
 var clientCache sync.Map
 
-// NewClient builds (or returns a cached) CCE client from AK/SK and region.
+// NewClient builds (or returns a cached) CCE client from the resolved
+// credentials and region. Static AK/SK clients are cached; clients built from
+// temporary security credentials (agency assumption) are never cached because
+// the token expires.
 // Pattern follows CAPHW pkg/scope/clients.go (SafeValueOf + Builder pattern).
-func NewClient(regionID, ak, sk string) (*Client, error) {
-	key := regionID + "\x00" + ak + "\x00" + sk
-	if v, ok := clientCache.Load(key); ok {
-		return v.(*Client), nil
+func NewClient(regionID string, creds *credentials.Credentials) (*Client, error) {
+	key := regionID + "\x00" + creds.AccessKey + "\x00" + creds.SecretKey
+	if creds.SecurityToken == "" {
+		if v, ok := clientCache.Load(key); ok {
+			return v.(*Client), nil
+		}
 	}
 	region, err := cceRegion.SafeValueOf(regionID)
 	if err != nil {
 		return nil, errors.Wrapf(err, "failed to resolve CCE region %q", regionID)
 	}
-	cred, err := basic.NewCredentialsBuilder().
-		WithAk(ak).
-		WithSk(sk).
-		SafeBuild()
+	builder := basic.NewCredentialsBuilder().
+		WithAk(creds.AccessKey).
+		WithSk(creds.SecretKey)
+	if creds.SecurityToken != "" {
+		builder = builder.WithSecurityToken(creds.SecurityToken)
+	}
+	cred, err := builder.SafeBuild()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build CCE credentials")
 	}
@@ -84,13 +93,14 @@ func NewClient(regionID, ak, sk string) (*Client, error) {
 		SafeBuild()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build CCE HTTP client")
-	return nil, errors.Wrap(err, "failed to build CCE HTTP client")
 	}
 	c := &Client{cce: ccev3.NewCceClient(hcClient)}
 	if err := buildAuxClients(c, regionID, cred); err != nil {
 		return nil, err
 	}
-	clientCache.Store(key, c)
+	if creds.SecurityToken == "" {
+		clientCache.Store(key, c)
+	}
 	return c, nil
 }
 

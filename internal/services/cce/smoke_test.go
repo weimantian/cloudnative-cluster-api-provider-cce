@@ -35,6 +35,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/model"
@@ -95,7 +96,7 @@ func TestSmoke(t *testing.T) {
 	cases := smokeCases()
 	mode := smokeEnv("CCE_SMOKE_MODE", "eni") // eni (Turbo) | vpc-router (Standard)
 
-	svc, err := NewClient(region, ak, sk)
+	svc, err := NewClient(region, &credentials.Credentials{AccessKey: ak, SecretKey: sk})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -413,7 +414,7 @@ func TestSmokeExtras(t *testing.T) {
 	cases := smokeCases()
 	enabled := func(c string) bool { return cases["extras"] || cases[c] }
 
-	svc, err := NewClient(region, ak, sk)
+	svc, err := NewClient(region, &credentials.Credentials{AccessKey: ak, SecretKey: sk})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -549,7 +550,7 @@ func TestSmokeUpgrade(t *testing.T) {
 	keypair := smokeRequired(t, "CCE_SMOKE_KEYPAIR")
 	flavor := smokeEnv("CCE_SMOKE_FLAVOR", "c6.large.2")
 
-	svc, err := NewClient(region, ak, sk)
+	svc, err := NewClient(region, &credentials.Credentials{AccessKey: ak, SecretKey: sk})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -761,7 +762,7 @@ func TestSmokeRemaining(t *testing.T) {
 	cases := smokeCases()
 	enabled := func(c string) bool { return cases["remaining"] || cases[c] }
 
-	svc, err := NewClient(region, ak, sk)
+	svc, err := NewClient(region, &credentials.Credentials{AccessKey: ak, SecretKey: sk})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -896,7 +897,7 @@ func TestSmokeUpgradeInfo(t *testing.T) {
 	flavor := smokeEnv("CCE_SMOKE_FLAVOR", "c6.large.2")
 	fromVersion := smokeEnv("CCE_SMOKE_UPGRADE_FROM", "v1.34")
 
-	svc, err := NewClient(region, ak, sk)
+	svc, err := NewClient(region, &credentials.Credentials{AccessKey: ak, SecretKey: sk})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -1105,7 +1106,7 @@ func TestSmokeAutoscaling(t *testing.T) {
 	cases := smokeCases()
 	enabled := func(c string) bool { return cases["autoscaling"] || cases[c] }
 
-	svc, err := NewClient(region, ak, sk)
+	svc, err := NewClient(region, &credentials.Credentials{AccessKey: ak, SecretKey: sk})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -1241,7 +1242,7 @@ func TestSmokeUpgradeWorkflow(t *testing.T) {
 	flavor := smokeEnv("CCE_SMOKE_FLAVOR", "c6.large.2")
 	fromVersion := smokeEnv("CCE_SMOKE_UPGRADE_FROM", "v1.34")
 
-	svc, err := NewClient(region, ak, sk)
+	svc, err := NewClient(region, &credentials.Credentials{AccessKey: ak, SecretKey: sk})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}
@@ -1408,7 +1409,7 @@ func TestSmokeLogging(t *testing.T) {
 	vpcID := smokeRequired(t, "CCE_SMOKE_VPC")
 	subnetID := smokeRequired(t, "CCE_SMOKE_SUBNET")
 
-	svc, err := NewClient(region, ak, sk)
+	svc, err := NewClient(region, &credentials.Credentials{AccessKey: ak, SecretKey: sk})
 	if err != nil {
 		t.Fatalf("NewClient: %v", err)
 	}

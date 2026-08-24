@@ -12,6 +12,7 @@ import (
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
@@ -68,7 +69,7 @@ func TestGarbageCollectorSweep(t *testing.T) {
 
 	gc := &GarbageCollector{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 		Region:   "cn-north-4",
@@ -137,7 +138,7 @@ func TestGarbageCollectorSweepEipEvs(t *testing.T) {
 
 	gc := &GarbageCollector{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 		Region:        "cn-north-4",
@@ -248,7 +249,7 @@ func TestGarbageCollectorSweepSkipsOptedOutCluster(t *testing.T) {
 
 	gc := &GarbageCollector{
 		Client: k8sClient,
-		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
 			return fakeSvc, nil
 		},
 		Region: "cn-north-4",

@@ -14,6 +14,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 )
 
 // ControllerConcurrency holds the max-concurrent-reconciles settings for the
@@ -34,21 +35,25 @@ func SetupControllers(mgr ctrl.Manager, concurrency ControllerConcurrency) error
 	cpOpts := controller.Options{MaxConcurrentReconciles: concurrency.ControlPlane}
 	mpOpts := controller.Options{MaxConcurrentReconciles: concurrency.MachinePool}
 
+	credentialProvider := credentials.NewProvider()
 	if err := (&CCEClusterReconciler{
-		Client:   mgr.GetClient(),
-		Recorder: mgr.GetEventRecorderFor("ccecluster-controller"),
+		Client:             mgr.GetClient(),
+		Recorder:           mgr.GetEventRecorderFor("ccecluster-controller"),
+		CredentialProvider: credentialProvider,
 	}).SetupWithManager(context.Background(), mgr, clusterOpts); err != nil {
 		return err
 	}
 	if err := (&CCEManagedControlPlaneReconciler{
-		Client:   mgr.GetClient(),
-		Recorder: mgr.GetEventRecorderFor("ccemanagedcontrolplane-controller"),
+		Client:             mgr.GetClient(),
+		Recorder:           mgr.GetEventRecorderFor("ccemanagedcontrolplane-controller"),
+		CredentialProvider: credentialProvider,
 	}).SetupWithManager(context.Background(), mgr, cpOpts); err != nil {
 		return err
 	}
 	if err := (&CCEManagedMachinePoolReconciler{
-		Client:   mgr.GetClient(),
-		Recorder: mgr.GetEventRecorderFor("ccemanagedmachinepool-controller"),
+		Client:             mgr.GetClient(),
+		Recorder:           mgr.GetEventRecorderFor("ccemanagedmachinepool-controller"),
+		CredentialProvider: credentialProvider,
 	}).SetupWithManager(context.Background(), mgr, mpOpts); err != nil {
 		return err
 	}
