@@ -174,16 +174,14 @@
 
 ## 七、错误处理与重试策略
 
-**结论：🟡 部分实现（错误映射表、可重试分类齐全；退避为固定延迟而非指数退避）**
+**结论：✅ 已实现（错误映射表、可重试分类、指数退避齐全）**
 
 | 文档要求 | 实现 | 状态 |
 |---|---|---|
 | 错误映射表 | `internal/services/errors/errors.go`：26+ 官方 CCE 错误码（`CCE.01400001` 无效请求、`CCE.01400002` 子网不存在、`CCE.01400005` 容器网段冲突、`CCE.01400007~11` 配额类、`APIGW.0308` 限流等）+ `sdkerr.ServiceResponseError` 分类 | ✅ |
 | 可重试错误分类 | `IsThrottled`(429)/`IsConflict`(409)/`IsQuotaExceeded`/`IsPermissionDenied`/`IsNotFound`/`IsScaleNoOp` | ✅ |
-| **指数退避** | `controllers/requeue.go`：**固定延迟**——throttled=1min、quota=5min、permission=30min、默认=defaultRequeue；`resultAfterError` 对 throttled/quota 返回延迟 requeue+nil error（避免 error 风暴/覆盖延迟） | 🟡（非指数） |
+| **指数退避** | `controllers/requeue.go`：`backoffTracker` 按 reconcile key 跟踪连续失败次数，throttled/quota 延迟指数翻倍（base 1min/5min，上限 30min），成功 reconcile 重置；permission 固定 30min | ✅ |
 | 不可重试 → Failed + 事件 | 非限流/配额错误透传为 reconcile error + `recordEvent`（`EventTypeWarning`） | ✅ |
-
-**缺口（P2）**：文档要求「指数退避」，当前为固定延迟重试。限流 1min 固定延迟在华为云 10 次/分钟写限流下可工作（真机验证通过），但严格对齐「指数退避」需引入 `wait.ExponentialBackoff` 或自适应退避。
 
 ---
 
@@ -240,7 +238,6 @@
 
 | 优先级 | 维度 | 缺口 |
 |---|---|---|
-| P2 | §七 | 退避为固定延迟，非文档要求的指数退避 |
 | P2 | §八 | 官方 CAPI e2e 框架 + 正式 CI 配置 |
 | P2 | §十 | 自定义 Prometheus 业务指标、provider 操作审计日志 |
 
