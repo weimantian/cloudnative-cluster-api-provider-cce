@@ -37,7 +37,7 @@
 字段命名差异（文档 → 仓库）：
 - `spec.instanceType` → `spec.flavor`
 - `spec.scaling` → `spec.autoscaling`
-- `spec.region`（文档挂在 ControlPlane）→ 实际在 **`CCECluster.spec.region`**（`ccecluster_controller.go` 读取 `cceCluster.Spec.Region` 做网络校验；ControlPlane 经 `clusterNetwork()` 间接读取）。**这是与文档的结构性差异**，需在用户文档说明。
+- `spec.region`（文档挂在 ControlPlane）→ 实际在 **`CCECluster.spec.region`**（`ccecluster_controller.go` 读取 `cceCluster.Spec.Region` 做网络校验；ControlPlane 经 `clusterNetwork()` 间接读取）。**这是与文档的结构性差异**，已在 README/示例 YAML 中显式标注。
 - 其余 `os`/`rootVolume`/`dataVolumes`/`labels`/`taints`/`nodePoolName` 均对齐。
 
 ### 2.2 控制器逻辑（Reconcile / 幂等性 / 最终一致性）
@@ -45,8 +45,6 @@
 - Reconcile：`controllers/ccemanagedcontrolplane_controller.go`、`ccemanagedmachinepool_controller.go`、`ccecluster_controller.go` 三者协作。✅
 - 幂等性：创建走「先查后建」+ 冲突即采纳（adopt，同 CIDR 触发冲突即复用已有集群，README「Adopting an existing cluster」）。✅
 - 最终一致性：`status.conditions` + `observedGeneration` 驱动，异步轮询 CCE 任务（`upgradeTaskID`、`nodePoolID` 落地）。✅
-
-**缺口（P2）**：文档 `spec.region` 位置差异需在 README/示例 YAML 中显式标注，避免用户按文档误填。
 
 ---
 
@@ -243,7 +241,6 @@
 
 | 优先级 | 维度 | 缺口 |
 |---|---|---|
-| P2 | §二 | `spec.region` 位置差异（文档挂 ControlPlane，实际在 CCECluster）需文档标注 |
 | P2 | §五 | `NodePoolAutoscaling` 默认关，需文档标注/评估转默认开 |
 | P2 | §六 | conditions 命名对齐表 + 补 `NetworkReady`/`NodePoolsReady` 语义 |
 | P2 | §七 | 退避为固定延迟，非文档要求的指数退避 |

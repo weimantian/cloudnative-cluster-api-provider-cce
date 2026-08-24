@@ -34,7 +34,7 @@ metadata:
   labels:
     cluster.x-k8s.io/cluster-name: my-cce-cluster # required: the provider resolves the Cluster via this label
 spec:
-  region: cn-north-4
+  region: cn-north-4 # declared on CCECluster (NOT on CCEManagedControlPlane) — the control plane inherits it via the Cluster
   network:
     vpc:
       id: VERIFY-VPC-ID # an existing VPC is required before cluster creation

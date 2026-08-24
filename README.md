@@ -204,6 +204,7 @@ kubectl get ccemanagedcontrolplane --watch
    ```
 
 5. **Create the workload cluster** (Cluster + CCECluster + CCEManagedControlPlane + MachinePool + CCEManagedMachinePool — sample in `config/samples/cluster-template.yaml`; fill in every `VERIFY-...` placeholder):
+   > **`spec.region` lives on `CCECluster`** — not on `CCEManagedControlPlane`. The control plane has no `region` field; it inherits the region through the owning `Cluster` (the sample already puts it in the right place).
 
    ```bash
    kubectl create secret generic my-cce-cluster-credentials \
@@ -363,6 +364,7 @@ clusterctl delete --infrastructure cce
 - **Cluster creation fails with a network error** — CCE requires an existing VPC and non-overlapping container/service CIDRs; verify `spec.network` and the CIDR plan (see [docs/architecture-design.md](docs/architecture-design.md) §6). Container CIDRs must be unique *per VPC*.
 - **Node pool does not scale** — confirm the control plane is `Ready` (node pools are only created after the cluster is `Available`) and that the IAM user has `cce:nodepool:scale`.
 - **`clusterctl get kubeconfig` returns an unreachable server** — for private clusters (`endpointAccess.public: false`) the kubeconfig server is an internal VPC IP; reach it from a host inside the VPC.
+- **Where is `region` configured?** — on `CCECluster.spec.region` (the infrastructure cluster), **not** on `CCEManagedControlPlane`. The control plane resolves the region through the owning `Cluster`; see `config/samples/cluster-template.yaml`.
 - More: [docs/requirements-design.md](docs/requirements-design.md) §8 (cautions) and the [verification checklist](docs/research-sources.md) §4.
 
 ## Contributing
