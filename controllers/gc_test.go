@@ -162,3 +162,117 @@ func TestGarbageCollectorSweepEipEvs(t *testing.T) {
 		t.Errorf("expected only nat-orphan deleted (tracked kept), got %v", fakeSvc.DeletedNatGateways)
 	}
 }
+
+// TestSkipGCAnnotation verifies the per-cluster opt-out annotation parsing:
+// any truthy value (true/yes/1/on, case-insensitive) means opt-out.
+func TestSkipGCAnnotation(t *testing.T) {
+	cases := []struct {
+		name string
+		ann  map[string]string
+		want bool
+	}{
+		{name: "missing", ann: nil, want: false},
+		{name: "unrelated key", ann: map[string]string{"foo": "true"}, want: false},
+		{name: "explicit true", ann: map[string]string{skipGCAnnotationKey: "true"}, want: true},
+		{name: "explicit yes", ann: map[string]string{skipGCAnnotationKey: "yes"}, want: true},
+		{name: "explicit 1", ann: map[string]string{skipGCAnnotationKey: "1"}, want: true},
+		{name: "explicit on", ann: map[string]string{skipGCAnnotationKey: "on"}, want: true},
+		{name: "TRUE upper", ann: map[string]string{skipGCAnnotationKey: "TRUE"}, want: true},
+		{name: "with spaces", ann: map[string]string{skipGCAnnotationKey: "  on  "}, want: true},
+		{name: "false string", ann: map[string]string{skipGCAnnotationKey: "false"}, want: false},
+		{name: "empty value", ann: map[string]string{skipGCAnnotationKey: ""}, want: false},
+		{name: "garbage value", ann: map[string]string{skipGCAnnotationKey: "maybe"}, want: false},
+		{name: "nil cluster", ann: nil, want: false}, // documents nil-safety
+	}
+	for _, tc := range cases {
+		var c *clusterv1.Cluster
+		if tc.name != "nil cluster" {
+			cl := &clusterv1.Cluster{}
+			cl.Annotations = tc.ann
+			c = cl
+		}
+		t.Run(tc.name, func(t *testing.T) {
+			if got := skipGCAnnotation(c); got != tc.want {
+				t.Errorf("skipGCAnnotation(%v) = %v, want %v", tc.ann, got, tc.want)
+			}
+		})
+	}
+}
+
+// TestGarbageCollectorSweepSkipsOptedOutCluster verifies that a Cluster CR
+// carrying the skipGC annotation blocks GC of its orphaned cloud resources,
+// while non-opted clusters are still cleaned up.
+func TestGarbageCollectorSweepSkipsOptedOutCluster(t *testing.T) {
+	ctx := context.Background()
+	ns := "gc-test-skip"
+	createNamespace(t, ns)
+
+	// Opted-out cluster CR.
+	opted := &clusterv1.Cluster{}
+	opted.Name = "opted-out"
+	opted.Namespace = ns
+	opted.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{APIGroup: "infrastructure.cluster.x-k8s.io", Kind: "CCECluster", Name: "opted-out"}
+	opted.Annotations = map[string]string{skipGCAnnotationKey: "true"}
+	if err := k8sClient.Create(ctx, opted); err != nil {
+		t.Fatalf("failed to create opted-out Cluster CR: %v", err)
+	}
+
+	// Tracked cluster CR (no annotation, normal behaviour).
+	tracked := &clusterv1.Cluster{}
+	tracked.Name = "tracked"
+	tracked.Namespace = ns
+	tracked.Spec.InfrastructureRef = clusterv1.ContractVersionedObjectReference{APIGroup: "infrastructure.cluster.x-k8s.io", Kind: "CCECluster", Name: "tracked"}
+	if err := k8sClient.Create(ctx, tracked); err != nil {
+		t.Fatalf("failed to create tracked Cluster CR: %v", err)
+	}
+
+	// Orphan cluster CR (no CR; GC candidates).
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeSvc.ListClustersFn = func(_ context.Context) ([]cceService.ClusterRef, error) {
+		return []cceService.ClusterRef{
+			// Orphan 1 — no Cluster CR anywhere, must be deleted.
+			{ClusterID: "orphan-1", Name: "orphan-1", Tags: map[string]string{"cluster-api-provider-cce.cluster.orphan-1": "owned"}},
+			// Opted-out: still has its Cluster CR but skipGC annotation, must NOT delete.
+			{ClusterID: "opted-out", Name: "opted-out", Tags: map[string]string{"cluster-api-provider-cce.cluster.opted-out": "owned"}},
+			// Tracked: Cluster CR, no annotation, must NOT delete.
+			{ClusterID: "tracked", Name: "tracked", Tags: map[string]string{"cluster-api-provider-cce.cluster.tracked": "owned"}},
+		}, nil
+	}
+	fakeSvc.ListEipsFn = func(_ context.Context) ([]cceService.EipRef, error) {
+		return []cceService.EipRef{
+			{ID: "eip-orphan-1", Tags: map[string]string{"cluster-api-provider-cce.cluster.orphan-1": "owned"}},
+			{ID: "eip-opted-out", Tags: map[string]string{"cluster-api-provider-cce.cluster.opted-out": "owned"}},
+			{ID: "eip-tracked", Tags: map[string]string{"cluster-api-provider-cce.cluster.tracked": "owned"}},
+		}, nil
+	}
+
+	gc := &GarbageCollector{
+		Client: k8sClient,
+		ServiceFactory: func(_, _, _ string) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+		Region: "cn-north-4",
+		Interval: 1,
+		ResourceTypes: []string{"eip"},
+	}
+	t.Setenv("CLOUD_SDK_AK", "test-ak")
+	t.Setenv("CLOUD_SDK_SK", "test-sk")
+
+	gc.sweep(ctx)
+
+	// Only orphan-1 should be deleted (cluster + eip).
+	if len(fakeSvc.DeletedClusters) != 1 {
+		t.Fatalf("expected exactly 1 deleted cluster, got %d (%+v)",
+			len(fakeSvc.DeletedClusters), fakeSvc.DeletedClusters)
+	}
+	if fakeSvc.DeletedClusters[0].ClusterID != "orphan-1" {
+		t.Errorf("expected orphan-1 deleted, got %+v", fakeSvc.DeletedClusters[0])
+	}
+if len(fakeSvc.DeletedEips) != 1 {
+		t.Fatalf("expected exactly 1 deleted EIP, got %d (%+v)",
+			len(fakeSvc.DeletedEips), fakeSvc.DeletedEips)
+	}
+	if fakeSvc.DeletedEips[0] != "eip-orphan-1" {
+		t.Errorf("expected eip-orphan-1 deleted, got %v", fakeSvc.DeletedEips[0])
+	}
+}

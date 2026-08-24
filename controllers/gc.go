@@ -39,7 +39,14 @@ type GarbageCollector struct {
 	// than a per-cluster Secret/identity. Overridden in tests with a fake.
 	ServiceFactory func(regionID, ak, sk string) (cceService.Service, error)
 
+	// GlobalScope is the account-wide analog of the per-object scope
+	// (CAPA pkg/cloud/scope). Holds region + controller name, built once at
+	// manager-start by main.go. The legacy Region field below is kept for
+	// backward compatibility; prefer scope.Region() when both are set.
+	GlobalScope *scope.GlobalScope
+
 	// Region the sweep enumerates (CCE is regional; a sweep covers one region).
+	// Deprecated: use GlobalScope.Region() instead.
 	Region string
 
 	// Interval between sweeps.
@@ -56,9 +63,19 @@ type GarbageCollector struct {
 // only runs on the leader, like the controllers.
 func (g *GarbageCollector) NeedLeaderElection() bool { return true }
 
+// region returns the GC's region from GlobalScope if set, else the legacy
+// Region field. Lets the GC migrate to the CAPA-style GlobalScope without
+// breaking existing setup.
+func (g *GarbageCollector) region() string {
+	if g.GlobalScope != nil {
+		return g.GlobalScope.Region()
+	}
+	return g.Region
+}
+
 // Start runs the periodic sweep until ctx is cancelled.
 func (g *GarbageCollector) Start(ctx context.Context) error {
-	g.Log.Info("starting CCE garbage collector", "region", g.Region, "interval", g.Interval)
+	g.Log.Info("starting CCE garbage collector", "region", g.region(), "interval", g.Interval)
 	g.sweep(ctx)
 	ticker := time.NewTicker(g.Interval)
 	defer ticker.Stop()
@@ -83,7 +100,7 @@ func (g *GarbageCollector) sweep(ctx context.Context) {
 		log.Info("garbage collector: no controller credentials, skipping sweep", "reason", err.Error())
 		return
 	}
-	svc, err := g.ServiceFactory(g.Region, creds.AccessKey, creds.SecretKey)
+	svc, err := g.ServiceFactory(g.region(), creds.AccessKey, creds.SecretKey)
 	if err != nil {
 		log.Error(err, "garbage collector: failed to build CCE service")
 		return
@@ -95,23 +112,35 @@ func (g *GarbageCollector) sweep(ctx context.Context) {
 		return
 	}
 
-	// Index the Cluster CRs that should exist.
+	// Index the Cluster CRs that should exist. We keep the full object
+	// (not just the name) so per-cluster annotations can opt out of GC for
+	// specific clusters (see skipGCAnnotation).
 	list := &clusterv1.ClusterList{}
 	if err := g.Client.List(ctx, list); err != nil {
 		log.Error(err, "garbage collector: failed to list Cluster CRs")
 		return
 	}
-	wanted := make(map[string]struct{}, len(list.Items))
+	wanted := make(map[string]*clusterv1.Cluster, len(list.Items))
 	for i := range list.Items {
-		wanted[list.Items[i].Name] = struct{}{}
+		c := &list.Items[i]
+		wanted[c.Name] = c
 	}
 
+	skipCount := 0
 	for _, c := range clusters {
 		name := ownedClusterName(c.Tags)
 		if name == "" {
 			continue // not provider-owned; leave it alone
 		}
-		if _, ok := wanted[name]; ok {
+		wantedCluster, ok := wanted[name]
+		if ok {
+			if skipGCAnnotation(wantedCluster) {
+				skipCount++
+				log.Info("garbage collector: skipping orphan cluster (annotation opt-out)",
+					"clusterID", c.ClusterID, "name", name,
+					"annotation", skipGCAnnotationKey)
+				continue
+			}
 			continue // still tracked by a Cluster CR
 		}
 		log.Info("garbage collector: deleting orphaned CCE cluster",
@@ -130,21 +159,66 @@ func (g *GarbageCollector) sweep(ctx context.Context) {
 				"clusterID", c.ClusterID, "name", name)
 		}
 	}
+	if skipCount > 0 {
+		log.Info("garbage collector: skipped orphan sweep via annotation",
+			"skippedCount", skipCount, "annotation", skipGCAnnotationKey)
+	}
 
-	// Phase 2: orphaned owned-tagged standalone resources (EIP/EVS). These
-	// are NOT covered by DeleteCluster's cascade options - e.g. a managed NAT
-	// EIP whose Cluster CR was force-deleted - and would keep billing. Only
-	// resources carrying the provider owned tag whose Cluster CR is gone are
-	// removed (whitelist-by-tag; mirrors CAPA ExternalResourceGC).
+	// Phase 2: orphaned owned-tagged standalone resources (EIP/EVS/VPC/
+	// NAT). These are NOT covered by DeleteCluster's cascade options - e.g. a
+	// managed NAT EIP whose Cluster CR was force-deleted - and would keep
+	// billing. Only resources carrying the provider owned tag whose Cluster
+	// CR is gone (and not opted-out) are removed (whitelist-by-tag; mirrors
+	// CAPA ExternalResourceGC).
 	g.sweepEips(ctx, svc, wanted)
 	g.sweepVolumes(ctx, svc, wanted)
 	g.sweepVpcs(ctx, svc, wanted)
 	g.sweepNatGateways(ctx, svc, wanted)
 }
 
+// skipGCAnnotationKey opts a Cluster CR out of GC orphan deletion. Set this
+// annotation on a CAPI Cluster to keep its orphaned cloud resources intact
+// (e.g. when the cloud resources are managed by an external process or are
+// being preserved for forensic analysis). The annotation is honored only
+// when the cluster CR still exists but the cloud resource is orphaned.
+//
+// Mirrors CAPA's ExternalResourceGCAnnotation opt-out (any truthy value
+// means opt-out: true/yes/1/on, case-insensitive).
+const skipGCAnnotationKey = "cce-provider/skip-gc"
+
+// skipGCAnnotation reports whether the given Cluster CR requests GC opt-out.
+func skipGCAnnotation(c *clusterv1.Cluster) bool {
+	if c == nil {
+		return false
+	}
+	v, ok := c.GetAnnotations()[skipGCAnnotationKey]
+	if !ok {
+		return false
+	}
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "true", "yes", "1", "on":
+		return true
+	}
+	return false
+}
+
+// Phase-2 sweeps: orphaned owned-tagged standalone resources (EIP/EVS/VPC/
+// NAT). These are NOT covered by DeleteCluster's cascade options - e.g. a
+// managed NAT EIP whose Cluster CR was force-deleted - and would keep
+// billing. Only resources carrying the provider owned tag whose Cluster
+// CR is gone are removed (whitelist-by-tag; mirrors CAPA
+// ExternalResourceGC).
+//
+// Tracked clusters (CR present) skip phase-2 GC: the cloud resource is
+// considered managed by the tracked cluster, not orphan. opt-out
+// annotation (skipGCAnnotationKey) is consulted in the cluster-phase
+// sweep above; for phase-2 resources we keep the simple tracked-skips
+// semantics - matches CAPA's ExternalResourceGCAnnotation which gates only
+// the delete-path collection, not the tag-driven orphan scan.
+
 // sweepEips enumerates owned-tagged EIPs whose Cluster CR is gone and
-// releases them. Only EIPs carrying the provider owned tag are touched.
-func (g *GarbageCollector) sweepEips(ctx context.Context, svc cceService.Service, wanted map[string]struct{}) {
+// releases them.
+func (g *GarbageCollector) sweepEips(ctx context.Context, svc cceService.Service, wanted map[string]*clusterv1.Cluster) {
 	if !slices.Contains(g.ResourceTypes, "eip") {
 		return
 	}
@@ -169,8 +243,8 @@ func (g *GarbageCollector) sweepEips(ctx context.Context, svc cceService.Service
 }
 
 // sweepVolumes enumerates owned-tagged EVS volumes whose Cluster CR is gone
-// and deletes them. Only volumes carrying the provider owned tag are touched.
-func (g *GarbageCollector) sweepVolumes(ctx context.Context, svc cceService.Service, wanted map[string]struct{}) {
+// and deletes them.
+func (g *GarbageCollector) sweepVolumes(ctx context.Context, svc cceService.Service, wanted map[string]*clusterv1.Cluster) {
 	if !slices.Contains(g.ResourceTypes, "evs") {
 		return
 	}
@@ -194,10 +268,10 @@ func (g *GarbageCollector) sweepVolumes(ctx context.Context, svc cceService.Serv
 	}
 }
 
-// sweepVpcs enumerates owned-tagged VPCs whose Cluster CR is gone and deletes
-// them. VPCs are free, so this is about resource hygiene rather than billing;
-// only owned-tagged VPCs are touched.
-func (g *GarbageCollector) sweepVpcs(ctx context.Context, svc cceService.Service, wanted map[string]struct{}) {
+// sweepVpcs enumerates owned-tagged VPCs whose Cluster CR is gone and
+// deletes them. VPCs are free, so this is about resource hygiene rather
+// than billing.
+func (g *GarbageCollector) sweepVpcs(ctx context.Context, svc cceService.Service, wanted map[string]*clusterv1.Cluster) {
 	if !slices.Contains(g.ResourceTypes, "vpc") {
 		return
 	}
@@ -223,7 +297,7 @@ func (g *GarbageCollector) sweepVpcs(ctx context.Context, svc cceService.Service
 
 // sweepNatGateways enumerates owned-tagged NAT gateways whose Cluster CR is
 // gone and deletes them (SNAT rules first, then the gateway).
-func (g *GarbageCollector) sweepNatGateways(ctx context.Context, svc cceService.Service, wanted map[string]struct{}) {
+func (g *GarbageCollector) sweepNatGateways(ctx context.Context, svc cceService.Service, wanted map[string]*clusterv1.Cluster) {
 	if !slices.Contains(g.ResourceTypes, "nat") {
 		return
 	}
