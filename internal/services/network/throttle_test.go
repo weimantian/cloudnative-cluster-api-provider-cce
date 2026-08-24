@@ -18,7 +18,7 @@ import (
 // TestOperationLimiterDefaults verifies the limiter is wired with the intended
 // read/write rates and bursts.
 func TestOperationLimiterDefaults(t *testing.T) {
-	l := newOperationLimiter()
+	l := NewOperationLimiter()
 
 	if got := l.read.Burst(); got != readThrottleBurst {
 		t.Errorf("read burst = %d, want %d", got, readThrottleBurst)
@@ -38,7 +38,7 @@ func TestOperationLimiterDefaults(t *testing.T) {
 // exhausted, the next write blocks (waiting for the 6s refill) rather than
 // proceeding immediately.
 func TestOperationLimiterThrottlesWrites(t *testing.T) {
-	l := newOperationLimiter()
+	l := NewOperationLimiter()
 	ctx := context.Background()
 
 	for i := 0; i < writeThrottleBurst; i++ {
@@ -62,7 +62,7 @@ func TestOperationLimiterThrottlesWrites(t *testing.T) {
 // TestOperationLimiterMethodIsolation verifies reads and writes use separate
 // buckets: exhausting the write bucket must not throttle a read.
 func TestOperationLimiterMethodIsolation(t *testing.T) {
-	l := newOperationLimiter()
+	l := NewOperationLimiter()
 	ctx := context.Background()
 
 	for i := 0; i < writeThrottleBurst; i++ {
@@ -87,7 +87,7 @@ func TestOperationLimiterMethodIsolation(t *testing.T) {
 // TestOperationLimiterWaitCancellation verifies an already-cancelled context
 // short-circuits the wait with the context error.
 func TestOperationLimiterWaitCancellation(t *testing.T) {
-	l := newOperationLimiter()
+	l := NewOperationLimiter()
 	ctx, cancel := context.WithCancel(context.Background())
 	cancel()
 
@@ -116,7 +116,7 @@ func (s *stubRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) 
 // through to the base transport after the limiter grants a token.
 func TestThrottleRoundTripperDelegates(t *testing.T) {
 	base := &stubRoundTripper{status: http.StatusOK}
-	rt := newThrottleRoundTripper(base, newOperationLimiter())
+	rt := NewThrottleRoundTripper(base, NewOperationLimiter())
 
 	req, err := http.NewRequest(http.MethodGet, "https://example.com", nil)
 	if err != nil {

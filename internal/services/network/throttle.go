@@ -34,17 +34,18 @@ const (
 	writeThrottleBurst    = 10
 )
 
-// operationLimiter is a token-bucket limiter with independent read and write
+// OperationLimiter is a token-bucket limiter with independent read and write
 // buckets. It is safe for concurrent use; the underlying rate.Limiter handles
-// its own locking.
-type operationLimiter struct {
+// its own locking. Exported so other services (e.g. cce client) can share the
+// same throttle budget.
+type OperationLimiter struct {
 	read  *rate.Limiter
 	write *rate.Limiter
 }
 
-// newOperationLimiter builds a limiter with the default read/write rates.
-func newOperationLimiter() *operationLimiter {
-	return &operationLimiter{
+// NewOperationLimiter builds a limiter with the default read/write rates.
+func NewOperationLimiter() *OperationLimiter {
+	return &OperationLimiter{
 		read:  rate.NewLimiter(rate.Limit(readThrottleRate), readThrottleBurst),
 		write: rate.NewLimiter(rate.Every(writeThrottleInterval), writeThrottleBurst),
 	}
@@ -52,30 +53,33 @@ func newOperationLimiter() *operationLimiter {
 
 // wait blocks until a token is available for the given HTTP method, or ctx is
 // cancelled. GET/HEAD count as reads; every other method is a write.
-func (l *operationLimiter) wait(ctx context.Context, method string) error {
+func (l *OperationLimiter) wait(ctx context.Context, method string) error {
 	if method == http.MethodGet || method == http.MethodHead {
 		return l.read.Wait(ctx)
 	}
 	return l.write.Wait(ctx)
 }
 
-// throttleRoundTripper is an http.RoundTripper that applies the read/write
-// limiter before delegating to the wrapped transport. It wraps the shared
-// http.DefaultTransport, which is safe to reuse across the VPC/NAT/EIP clients.
-type throttleRoundTripper struct {
+// ThrottleRoundTripper is an http.RoundTripper that applies the read/write
+// limiter before delegating to the wrapped transport.
+type ThrottleRoundTripper struct {
 	base    http.RoundTripper
-	limiter *operationLimiter
+	limiter *OperationLimiter
 }
 
-// newThrottleRoundTripper wraps base with the rate limiter.
-func newThrottleRoundTripper(base http.RoundTripper, limiter *operationLimiter) *throttleRoundTripper {
-	return &throttleRoundTripper{base: base, limiter: limiter}
+// NewThrottleRoundTripper wraps base with the supplied limiter. The returned
+// RoundTripper is safe for concurrent use. Pass http.DefaultTransport as base
+// to throttle Huawei Cloud SDK HTTP clients.
+func NewThrottleRoundTripper(base http.RoundTripper, limiter *OperationLimiter) *ThrottleRoundTripper {
+	if base == nil {
+		base = http.DefaultTransport
+	}
+	return &ThrottleRoundTripper{base: base, limiter: limiter}
 }
-
 // RoundTrip implements http.RoundTripper.
-func (t *throttleRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
+func (t *ThrottleRoundTripper) RoundTrip(req *http.Request) (*http.Response, error) {
 	if err := t.limiter.wait(req.Context(), req.Method); err != nil {
-		return nil, err
+return nil, err
 	}
 	return t.base.RoundTrip(req)
 }

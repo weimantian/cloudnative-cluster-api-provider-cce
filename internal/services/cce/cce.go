@@ -9,9 +9,9 @@ package cce
 import (
 	"context"
 	"encoding/base64"
+	"net/http"
 	"strings"
 	"sync"
-
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
@@ -35,6 +35,7 @@ import (
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
 
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
 )
 
 // Client is the default CCE SDK-backed implementation of Service.
@@ -75,10 +76,15 @@ func NewClient(regionID, ak, sk string) (*Client, error) {
 	hcClient, err := ccev3.CceClientBuilder().
 		WithRegion(region).
 		WithCredential(cred).
-		WithHttpConfig(config.DefaultHttpConfig()).
+		WithHttpConfig(
+			config.DefaultHttpConfig().WithHttpRoundTripper(
+				network.NewThrottleRoundTripper(http.DefaultTransport, network.NewOperationLimiter()),
+			),
+		).
 		SafeBuild()
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build CCE HTTP client")
+	return nil, errors.Wrap(err, "failed to build CCE HTTP client")
 	}
 	c := &Client{cce: ccev3.NewCceClient(hcClient)}
 	if err := buildAuxClients(c, regionID, cred); err != nil {

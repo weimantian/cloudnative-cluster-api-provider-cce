@@ -27,8 +27,9 @@ import (
 	vpcregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/region"
 	"github.com/pkg/errors"
 
-	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
+"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/wait"
 )
 
 // Managed-network constants (defaults mirror hack/smoke-setup and
@@ -36,11 +37,12 @@ import (
 const (
 	defaultVPCCIDR        = "10.0.0.0/16"
 	defaultNatGatewaySpec = "1"
-	natActiveTimeout      = 60 * time.Second
-	pollInterval          = 5 * time.Second
-	eipBandwidthSize      = 5
+	// NAT wait timeout. Polling uses exponential backoff via internal/wait
+	// (no fixed pollInterval needed); the backoff budget (~5m) bounds
+	// total wait. Kept here for downstream callers that read this value.
+	natActiveTimeout = 60 * time.Second
+	eipBandwidthSize  = 5
 )
-
 // ownedTagPrefix mirrors cceService.OwnedTagPrefix ("cluster-api-provider-cce.cluster").
 // Kept local to avoid a network -> cce import for a single constant.
 const ownedTagPrefix = "cluster-api-provider-cce.cluster"
@@ -114,7 +116,7 @@ func NewManager(regionID, ak, sk string) (*Manager, error) {
 		return nil, errors.Wrap(err, "failed to build network credentials")
 	}
 	httpConfig := config.DefaultHttpConfig()
-	httpConfig.WithHttpRoundTripper(newThrottleRoundTripper(http.DefaultTransport, newOperationLimiter()))
+	httpConfig.WithHttpRoundTripper(NewThrottleRoundTripper(http.DefaultTransport, NewOperationLimiter()))
 
 	vpcHC, err := vpcv2.VpcClientBuilder().WithRegion(region).WithCredential(cred).WithHttpConfig(httpConfig).SafeBuild()
 	if err != nil {
@@ -540,23 +542,17 @@ func (m *Manager) createNatGateway(ctx context.Context, name, vpcID, subnetID, s
 }
 
 func (m *Manager) waitNatGatewayActive(ctx context.Context, gatewayID string) error {
-	deadline := time.Now().Add(natActiveTimeout)
-	for time.Now().Before(deadline) {
-		select {
-		case <-ctx.Done():
-			return ctx.Err()
-		default:
-		}
+	backoff := wait.NewBackoff()
+	return wait.WaitForWithRetryable(ctx, backoff, func() (bool, error) {
 		resp, err := m.nat.ShowNatGateway(&natmodel.ShowNatGatewayRequest{NatGatewayId: gatewayID})
 		if err != nil {
-			return errors.Wrapf(err, "ShowNatGateway %s failed", gatewayID)
+			return false, err
 		}
 		if resp.NatGateway != nil && resp.NatGateway.Status != nil && resp.NatGateway.Status.Value() == "ACTIVE" {
-			return nil
+			return true, nil
 		}
-		time.Sleep(pollInterval)
-	}
-	return errors.Errorf("NAT gateway %s not ACTIVE within %s", gatewayID, natActiveTimeout)
+		return false, nil
+	})
 }
 
 // ---- delete helpers (NotFound-tolerant, aggregated by the caller) ----
