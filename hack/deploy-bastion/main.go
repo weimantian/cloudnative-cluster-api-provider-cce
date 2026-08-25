@@ -25,6 +25,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"strings"
@@ -32,6 +33,7 @@ import (
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
 	ecsv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
 	ecsmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
 	ecsRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/region"
@@ -91,10 +93,16 @@ func main() {
 
 	// 1. Keypair (private key saved locally for SSH).
 	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
-		resp, err := ecs.NovaCreateKeypair(&ecsmodel.NovaCreateKeypairRequest{Body: &ecsmodel.NovaCreateKeypairRequestBody{
-			Keypair: &ecsmodel.NovaCreateKeypairOption{Name: keyName},
-		}})
-		must(err, "create keypair")
+		var resp *ecsmodel.NovaCreateKeypairResponse
+		if err := retryThrottled("create keypair", 3, func() error {
+			var e error
+			resp, e = ecs.NovaCreateKeypair(&ecsmodel.NovaCreateKeypairRequest{Body: &ecsmodel.NovaCreateKeypairRequestBody{
+				Keypair: &ecsmodel.NovaCreateKeypairOption{Name: keyName},
+			}})
+			return e
+		}); err != nil {
+			must(err, "create keypair")
+		}
 		if resp.Keypair == nil || resp.Keypair.PrivateKey == "" {
 			fatal("create keypair returned no private key")
 		}
@@ -183,10 +191,16 @@ func findSecurityGroup(ctx context.Context, vpc *vpcv2.VpcClient, vpcID, name st
 }
 
 func createSecurityGroup(ctx context.Context, vpc *vpcv2.VpcClient, vpcID, name string) string {
-	resp, err := vpc.CreateSecurityGroup(&vpcmodel.CreateSecurityGroupRequest{Body: &vpcmodel.CreateSecurityGroupRequestBody{
-		SecurityGroup: &vpcmodel.CreateSecurityGroupOption{Name: name, VpcId: strPtr(vpcID)},
-	}})
-	must(err, "create security group")
+	var resp *vpcmodel.CreateSecurityGroupResponse
+	if err := retryThrottled("create security group", 3, func() error {
+		var e error
+		resp, e = vpc.CreateSecurityGroup(&vpcmodel.CreateSecurityGroupRequest{Body: &vpcmodel.CreateSecurityGroupRequestBody{
+			SecurityGroup: &vpcmodel.CreateSecurityGroupOption{Name: name, VpcId: strPtr(vpcID)},
+		}})
+		return e
+	}); err != nil {
+		must(err, "create security group")
+	}
 	if resp.SecurityGroup == nil || resp.SecurityGroup.Id == "" {
 		fatal("create security group returned no id")
 	}
@@ -198,17 +212,21 @@ func createSSHRule(ctx context.Context, vpc *vpcv2.VpcClient, sgID string) {
 	min := int32(22)
 	max := int32(22)
 	cidr := "0.0.0.0/0"
-	_, err := vpc.CreateSecurityGroupRule(&vpcmodel.CreateSecurityGroupRuleRequest{Body: &vpcmodel.CreateSecurityGroupRuleRequestBody{
-		SecurityGroupRule: &vpcmodel.CreateSecurityGroupRuleOption{
-			SecurityGroupId: sgID,
-			Direction:       "ingress",
-			Protocol:        &proto,
-			PortRangeMin:    &min,
-			PortRangeMax:    &max,
-			RemoteIpPrefix:  &cidr,
-		},
-	}})
-	must(err, "create ssh rule")
+	if err := retryThrottled("create ssh rule", 3, func() error {
+		_, e := vpc.CreateSecurityGroupRule(&vpcmodel.CreateSecurityGroupRuleRequest{Body: &vpcmodel.CreateSecurityGroupRuleRequestBody{
+			SecurityGroupRule: &vpcmodel.CreateSecurityGroupRuleOption{
+				SecurityGroupId: sgID,
+				Direction:       "ingress",
+				Protocol:        &proto,
+				PortRangeMin:    &min,
+				PortRangeMax:    &max,
+				RemoteIpPrefix:  &cidr,
+			},
+		}})
+		return e
+	}); err != nil {
+		must(err, "create ssh rule")
+	}
 }
 
 func findBastion(ctx context.Context, ecs *ecsv2.EcsClient) string {
@@ -236,36 +254,42 @@ func createServer(ctx context.Context, ecs *ecsv2.EcsClient, vpcID, subnetID, sg
 	if agency := os.Getenv("CCE_DEPLOY_BASTION_AGENCY"); agency != "" {
 		metadata["agency_name"] = agency
 	}
-	resp, err := ecs.CreateServers(&ecsmodel.CreateServersRequest{Body: &ecsmodel.CreateServersRequestBody{
-		Server: &ecsmodel.PrePaidServer{
-			ImageRef:  imageID,
-			FlavorRef: flavor,
-			Name:      bastionName,
-			Vpcid:     vpcID,
-			Nics: []ecsmodel.PrePaidServerNic{{
-				SubnetId: &subnetID,
-			}},
-			KeyName:  strPtr(keyName),
-			Count:       &count,
-			Metadata:    metadata,
-			RootVolume: &ecsmodel.PrePaidServerRootVolume{
-				Volumetype: ecsmodel.GetPrePaidServerRootVolumeVolumetypeEnum().GPSSD,
-				Size:       &size,
-			},
-			SecurityGroups:    &[]ecsmodel.PrePaidServerSecurityGroup{{Id: &sgID}},
-			AvailabilityZone:  &az,
-			Publicip: &ecsmodel.PrePaidServerPublicip{
-				Eip: &ecsmodel.PrePaidServerEip{
-					Iptype: "5_bgp",
-					Bandwidth: &ecsmodel.PrePaidServerEipBandwidth{
-						Sharetype: ecsmodel.GetPrePaidServerEipBandwidthSharetypeEnum().PER,
-						Size:      &bandSize,
+	var resp *ecsmodel.CreateServersResponse
+	if err := retryThrottled("create server", 3, func() error {
+		var e error
+		resp, e = ecs.CreateServers(&ecsmodel.CreateServersRequest{Body: &ecsmodel.CreateServersRequestBody{
+			Server: &ecsmodel.PrePaidServer{
+				ImageRef:  imageID,
+				FlavorRef: flavor,
+				Name:      bastionName,
+				Vpcid:     vpcID,
+				Nics: []ecsmodel.PrePaidServerNic{{
+					SubnetId: &subnetID,
+				}},
+				KeyName:  strPtr(keyName),
+				Count:       &count,
+				Metadata:    metadata,
+				RootVolume: &ecsmodel.PrePaidServerRootVolume{
+					Volumetype: ecsmodel.GetPrePaidServerRootVolumeVolumetypeEnum().GPSSD,
+					Size:       &size,
+				},
+				SecurityGroups:    &[]ecsmodel.PrePaidServerSecurityGroup{{Id: &sgID}},
+				AvailabilityZone:  &az,
+				Publicip: &ecsmodel.PrePaidServerPublicip{
+					Eip: &ecsmodel.PrePaidServerEip{
+						Iptype: "5_bgp",
+						Bandwidth: &ecsmodel.PrePaidServerEipBandwidth{
+							Sharetype: ecsmodel.GetPrePaidServerEipBandwidthSharetypeEnum().PER,
+							Size:      &bandSize,
+						},
 					},
 				},
 			},
-		},
-	}})
-	must(err, "create server")
+		}})
+		return e
+	}); err != nil {
+		must(err, "create server")
+	}
 	if resp.ServerIds == nil || len(*resp.ServerIds) == 0 {
 		fatal("create server returned no server id")
 	}
@@ -339,4 +363,34 @@ func must(err error, what string) {
 func fatal(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "ERROR: "+format+"\n", args...)
 	os.Exit(1)
+}
+
+// retryThrottled retries fn when the Huawei Cloud API reports 429
+// (APIGW.0308 throttling). Each retry sleeps to let the per-minute write
+// window drain before trying again, so repeated attempts do not keep
+// refreshing the counter (verified: retries count towards the limit).
+func retryThrottled(desc string, maxRetries int, fn func() error) error {
+	var err error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		err = fn()
+		if !isThrottled(err) {
+			return err
+		}
+		wait := time.Duration(60*(attempt+1)) * time.Second
+		fmt.Printf("%s: throttled (429), retrying in %v (attempt %d/%d)\n", desc, wait, attempt+1, maxRetries)
+		time.Sleep(wait)
+	}
+	return err
+}
+
+// isThrottled reports whether err is a Huawei Cloud 429 (APIGW.0308) error.
+func isThrottled(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se *sdkerr.ServiceResponseError
+	if errors.As(err, &se) {
+		return se.StatusCode == 429
+	}
+	return false
 }

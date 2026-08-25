@@ -51,6 +51,7 @@ package main
 
 import (
 	"context"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -58,6 +59,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
@@ -125,24 +128,28 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 	fmt.Printf("creating management cluster %q (region %s, vpc %s, subnet %s)…\n",
 		name, envDefault("CCE_DEPLOY_REGION", "cn-north-4"), vpcID, subnetID)
 
-	id, err := svc.CreateCluster(ctx, cce.CreateClusterInput{
-		Name:                 name,
-		Category:             "CCE", // Standard
-		Flavor:               "cce.s1.small",
-		Version:              envOr("CCE_DEPLOY_K8S_VERSION", ""),
-		ContainerNetworkMode: "vpc-router",
-		ContainerNetworkCIDR: "10.244.0.0/16",
-		HostNetworkVpcID:     vpcID,
-		HostNetworkSubnetID:  subnetID,
-		ServiceCIDR:          "10.247.0.0/16",
-		// Public access mirrors the CAPA EKS control-plane endpoint (public +
-		// private). CCE does not allocate a public IP automatically, so we bind
-		// an EIP afterwards when public is enabled (CCE_DEPLOY_PUBLIC, default true).
-		PublicAccess:      public,
-		PublicAccessCIDRs: publicCIDRs,
-		BillingMode:       0,
-	})
-	if err != nil {
+	var id string
+	if err := retryThrottled("CreateCluster", 5, func() error {
+		var e error
+		id, e = svc.CreateCluster(ctx, cce.CreateClusterInput{
+			Name:                 name,
+			Category:             "CCE", // Standard
+			Flavor:               "cce.s1.small",
+			Version:              envOr("CCE_DEPLOY_K8S_VERSION", ""),
+			ContainerNetworkMode: "vpc-router",
+			ContainerNetworkCIDR: "10.244.0.0/16",
+			HostNetworkVpcID:     vpcID,
+			HostNetworkSubnetID:  subnetID,
+			ServiceCIDR:          "10.247.0.0/16",
+			// Public access mirrors the CAPA EKS control-plane endpoint (public +
+			// private). CCE does not allocate a public IP automatically, so we bind
+			// an EIP afterwards when public is enabled (CCE_DEPLOY_PUBLIC, default true).
+			PublicAccess:      public,
+			PublicAccessCIDRs: publicCIDRs,
+			BillingMode:       0,
+		})
+		return e
+	}); err != nil {
 		fatalf("CreateCluster: %v", err)
 	}
 	fmt.Printf("cluster created: %s\n", id)
@@ -204,26 +211,30 @@ func createPool(ctx context.Context, svc cce.Service, clusterID, kubeconfigPath 
 	publicNodes := envBool("CCE_DEPLOY_PUBLIC_NODES", true)
 	nodeBandwidth := int32Env("CCE_DEPLOY_PUBLIC_NODES_BANDWIDTH", 5)
 
-	poolID, err := svc.CreateNodePool(ctx, cce.CreateNodePoolInput{
-		ClusterID: clusterID,
-		Name:      "mgmt-pool-0",
-		Flavor:    flavor,
-		// OS is required (verified live: "OS:should not be empty"); valid
-		// value for current versions from official docs.
-		OS:                  "Huawei Cloud EulerOS 2.0",
-		RootVolumeSize:      40,
-		RootVolumeType:      "GPSSD",
-		// Non-local-disk flavors (c6.large.2) require a data volume.
-		DataVolumes:         []cce.NodeVolumeInput{{Size: 100, Type: "GPSSD"}},
-		SSHKey:              keypair,
-		AvailabilityZone:    az,
-		InitialNodeCount:    nodeCount,
-		BillingMode:         0,
-		ExtensionScaleGroups: extensionGroups,
-		PublicIP:             publicNodes,
-		PublicIPBandwidthSize: nodeBandwidth,
-	})
-	if err != nil {
+	var poolID string
+	if err := retryThrottled("CreateNodePool", 5, func() error {
+		var e error
+		poolID, e = svc.CreateNodePool(ctx, cce.CreateNodePoolInput{
+			ClusterID: clusterID,
+			Name:      "mgmt-pool-0",
+			Flavor:    flavor,
+			// OS is required (verified live: "OS:should not be empty"); valid
+			// value for current versions from official docs.
+			OS:                  "Huawei Cloud EulerOS 2.0",
+			RootVolumeSize:      40,
+			RootVolumeType:      "GPSSD",
+			// Non-local-disk flavors (c6.large.2) require a data volume.
+			DataVolumes:         []cce.NodeVolumeInput{{Size: 100, Type: "GPSSD"}},
+			SSHKey:              keypair,
+			AvailabilityZone:    az,
+			InitialNodeCount:    nodeCount,
+			BillingMode:         0,
+			ExtensionScaleGroups: extensionGroups,
+			PublicIP:             publicNodes,
+			PublicIPBandwidthSize: nodeBandwidth,
+		})
+		return e
+	}); err != nil {
 		fatalf("CreateNodePool: %v", err)
 	}
 	fmt.Printf("node pool created: %s (flavor %s, nodes %d)\n", poolID, flavor, nodeCount)
@@ -435,4 +446,34 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
+}
+
+// retryThrottled retries fn when the Huawei Cloud API reports 429
+// (APIGW.0308 throttling). Each retry sleeps to let the per-minute write
+// window drain before trying again, so repeated attempts do not keep
+// refreshing the counter (verified: retries count towards the limit).
+func retryThrottled(desc string, maxRetries int, fn func() error) error {
+	var err error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		err = fn()
+		if !isThrottled(err) {
+			return err
+		}
+		wait := time.Duration(60*(attempt+1)) * time.Second
+		fmt.Printf("%s: throttled (429), retrying in %v (attempt %d/%d)\n", desc, wait, attempt+1, maxRetries)
+		time.Sleep(wait)
+	}
+	return err
+}
+
+// isThrottled reports whether err is a Huawei Cloud 429 (APIGW.0308) error.
+func isThrottled(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se *sdkerr.ServiceResponseError
+	if errors.As(err, &se) {
+		return se.StatusCode == 429
+	}
+	return false
 }

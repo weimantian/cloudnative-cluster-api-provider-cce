@@ -20,14 +20,17 @@ package main
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"sort"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
+	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
 	ecsv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
 	ecsRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/region"
@@ -76,10 +79,16 @@ func main() {
 	// 1. VPC (reuse if present).
 	vpcID := findVPCByName(ctx, vpcClient, vpcName)
 	if vpcID == "" {
-		resp, err := vpcClient.CreateVpc(&vpcmodel.CreateVpcRequest{Body: &vpcmodel.CreateVpcRequestBody{
-			Vpc: &vpcmodel.CreateVpcOption{Name: stringPtr(vpcName), Cidr: stringPtr(vpcCIDR)},
-		}})
-		must(err, "CreateVpc")
+		var resp *vpcmodel.CreateVpcResponse
+		if err := retryThrottled("CreateVpc", 3, func() error {
+			var e error
+			resp, e = vpcClient.CreateVpc(&vpcmodel.CreateVpcRequest{Body: &vpcmodel.CreateVpcRequestBody{
+				Vpc: &vpcmodel.CreateVpcOption{Name: stringPtr(vpcName), Cidr: stringPtr(vpcCIDR)},
+			}})
+			return e
+		}); err != nil {
+			must(err, "CreateVpc")
+		}
 		vpcID = mustID(resp.Vpc.Id, "vpc")
 	}
 	fmt.Printf("VPC: %s (%s)\n", vpcName, vpcID)
@@ -108,10 +117,14 @@ func main() {
 		}
 	}
 	{
-		_, err := ecsClient.NovaCreateKeypair(&model.NovaCreateKeypairRequest{Body: &model.NovaCreateKeypairRequestBody{
-			Keypair: &model.NovaCreateKeypairOption{Name: keypairName},
-		}})
-		must(err, "CreateKeypair")
+		if err := retryThrottled("CreateKeypair", 3, func() error {
+			_, e := ecsClient.NovaCreateKeypair(&model.NovaCreateKeypairRequest{Body: &model.NovaCreateKeypairRequestBody{
+				Keypair: &model.NovaCreateKeypairOption{Name: keypairName},
+			}})
+			return e
+		}); err != nil {
+			must(err, "CreateKeypair")
+		}
 		fmt.Printf("Keypair: %s (created)\n", keypairName)
 	}
 keypairDone:
@@ -143,10 +156,16 @@ keypairDone:
 
 func createSubnet(ctx context.Context, c *vpcv2.VpcClient, vpcID, name, cidr string) string {
 	gw := cidr[:strings.LastIndex(cidr, ".")] + ".1"
-	resp, err := c.CreateSubnet(&vpcmodel.CreateSubnetRequest{Body: &vpcmodel.CreateSubnetRequestBody{
-		Subnet: &vpcmodel.CreateSubnetOption{Name: name, Cidr: cidr, VpcId: vpcID, GatewayIp: gw, PrimaryDns: stringPtr("100.125.1.250"), SecondaryDns: stringPtr("100.125.129.250")},
-	}})
-	must(err, "CreateSubnet "+name)
+	var resp *vpcmodel.CreateSubnetResponse
+	if err := retryThrottled("CreateSubnet "+name, 3, func() error {
+		var e error
+		resp, e = c.CreateSubnet(&vpcmodel.CreateSubnetRequest{Body: &vpcmodel.CreateSubnetRequestBody{
+			Subnet: &vpcmodel.CreateSubnetOption{Name: name, Cidr: cidr, VpcId: vpcID, GatewayIp: gw, PrimaryDns: stringPtr("100.125.1.250"), SecondaryDns: stringPtr("100.125.129.250")},
+		}})
+		return e
+	}); err != nil {
+		must(err, "CreateSubnet "+name)
+	}
 	return mustID(resp.Subnet.Id, "subnet")
 }
 
@@ -285,4 +304,34 @@ func must(err error, what string) {
 func fatal(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "ERROR: "+format+"\n", args...)
 	os.Exit(1)
+}
+
+// retryThrottled retries fn when the Huawei Cloud API reports 429
+// (APIGW.0308 throttling). Each retry sleeps to let the per-minute write
+// window drain before trying again, so repeated attempts do not keep
+// refreshing the counter (verified: retries count towards the limit).
+func retryThrottled(desc string, maxRetries int, fn func() error) error {
+	var err error
+	for attempt := 0; attempt <= maxRetries; attempt++ {
+		err = fn()
+		if !isThrottled(err) {
+			return err
+		}
+		wait := time.Duration(60*(attempt+1)) * time.Second
+		fmt.Printf("%s: throttled (429), retrying in %v (attempt %d/%d)\n", desc, wait, attempt+1, maxRetries)
+		time.Sleep(wait)
+	}
+	return err
+}
+
+// isThrottled reports whether err is a Huawei Cloud 429 (APIGW.0308) error.
+func isThrottled(err error) bool {
+	if err == nil {
+		return false
+	}
+	var se *sdkerr.ServiceResponseError
+	if errors.As(err, &se) {
+		return se.StatusCode == 429
+	}
+	return false
 }
