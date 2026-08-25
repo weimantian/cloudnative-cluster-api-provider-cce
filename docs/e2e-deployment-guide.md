@@ -366,7 +366,7 @@ nocloud go run ./hack/create-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
 | 16 | 改 `spec.containerNetwork.cidr` 报 `field is immutable after creation` | CCEManagedControlPlane 的 containerNetwork.cidr 创建后不可变 | 删除 Cluster 重建（改网段前先删） | ✅ 已记录 |
 | 17 | `rollout restart` 后 pod 仍拉旧镜像 | CCE 节点 containerd 缓存 `latest` tag（imagePullPolicy=IfNotPresent） | deployment 设 `imagePullPolicy: Always` 或推唯一 tag | ✅ 已修复 |
 | 18 | 删除失败集群卡 Deleting（finalizer 未移除） | 集群未创建成功（ClusterID 空）时删除，controller 未触发删除 reconcile，finalizer 阻塞 | 手动 `kubectl patch ... --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]'` | ✅ 已记录 |
-| 19 | 删除成功集群时 `MachinePool` 与 `CCEManagedControlPlane` 的 finalizer 卡住，删除链停滞 | ① CAPI MachinePool 控制器删除 CCEManagedMachinePool 后返回空 Result（不 requeue），依赖 watch 事件重触发但未触发；② provider `reconcileDelete` 在 CCE 集群删除后 `ShowCluster` 可能返回非 NotFound 错误 → 指数 backoff → 长时间不 reconcile | 手动移除 finalizer（MachinePool + CCEManagedControlPlane + CCECluster） | ✅ 已记录（手动干预；根因待进一步分析） |
+| 19 | 删除成功集群时 `MachinePool` 与 `CCEManagedControlPlane` 的 finalizer 卡住，删除链停滞 | ① CAPI MachinePool 控制器删除 CCEManagedMachinePool 后返回空 Result（不 requeue），依赖 watch 事件重触发但未触发；② provider `CCEManagedControlPlane`/`CCEManagedMachinePool` 的 `reconcileDelete` 分支在 scope 构建之前，`RemoveFinalizer` 后无 `Client.Update`/patch 持久化 → finalizer 移除永远写不回 API server | `reconcileDelete` 里 `RemoveFinalizer` 后显式 `Client.Update`；本次 E2E 临时手动移除 finalizer 兜底 | ✅ 已修复（950d550） |
 
 ---
 
