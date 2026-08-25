@@ -226,7 +226,10 @@ func cheapestFlavor(ctx context.Context, c *ecsv2.EcsClient) (*model.Flavor, err
 		return nil, fmt.Errorf("no 2C4G Turbo-capable flavor found")
 	}
 	// Prefer common x86 general-purpose families (more likely purchasable).
-	for _, prefix := range []string{"c6sne.", "c6.", "s6.", "s7.", "c7.", "t6.", "e3.", "e7.", "ac8.", "ac9."} {
+	// c6sne.* is excluded: it reports sub-ENI quota > 0 but is abandon(ed) in
+	// cn-north-4a (verified live: CreateNodePool fails with "flavor status is
+	// abandon"), so prefer c7./c6ne. etc. which are active.
+	for _, prefix := range []string{"c7.", "c7n.", "c6ne.", "c7t.", "s7.", "ac7.", "e7.", "t6.", "c6.", "s6."} {
 		for i := range candidates {
 			if strings.HasPrefix(candidates[i].Id, prefix) {
 				return &candidates[i], nil
