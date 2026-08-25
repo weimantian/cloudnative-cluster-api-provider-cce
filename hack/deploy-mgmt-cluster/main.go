@@ -36,8 +36,11 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //	                             mirrors CAPA EKS public+private endpoint)
 //	CCE_DEPLOY_PUBLIC_CIDRS      comma-separated source CIDR whitelist for the
 //	                             public endpoint (empty = all sources)
+//	CCE_DEPLOY_PUBLIC_NODES      bind a public EIP to each node (default true;
+//	                             direct egress, no NAT); false = private nodes
+//	                             (use hack/nat-egress for egress)
+//	CCE_DEPLOY_PUBLIC_NODES_BANDWIDTH  node EIP bandwidth Mbps (default 5)
 //
-// Usage:
 // Usage:
 //
 //	go run ./hack/deploy-mgmt-cluster
@@ -195,6 +198,11 @@ func createPool(ctx context.Context, svc cce.Service, clusterID, kubeconfigPath 
 		}
 		fmt.Printf("multi-AZ node pool: %s + extensions %v", az, azs[1:])
 	}
+	// Node egress: public IP (default, AWS public-subnet parity) or NAT. When
+	// CCE_DEPLOY_PUBLIC_NODES=true each node gets a public EIP (direct egress,
+	// no NAT gateway); when false nodes stay private and need hack/nat-egress.
+	publicNodes := envBool("CCE_DEPLOY_PUBLIC_NODES", true)
+	nodeBandwidth := int32Env("CCE_DEPLOY_PUBLIC_NODES_BANDWIDTH", 5)
 
 	poolID, err := svc.CreateNodePool(ctx, cce.CreateNodePoolInput{
 		ClusterID: clusterID,
@@ -212,6 +220,8 @@ func createPool(ctx context.Context, svc cce.Service, clusterID, kubeconfigPath 
 		InitialNodeCount:    nodeCount,
 		BillingMode:         0,
 		ExtensionScaleGroups: extensionGroups,
+		PublicIP:             publicNodes,
+		PublicIPBandwidthSize: nodeBandwidth,
 	})
 	if err != nil {
 		fatalf("CreateNodePool: %v", err)

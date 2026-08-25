@@ -166,6 +166,15 @@ type CreateNodePoolInput struct {
 	// WaitPostInstallFinish blocks pod scheduling until the post-install
 	// script finishes (nodeTemplate.waitPostInstallFinish).
 	WaitPostInstallFinish *bool
+	// PublicIP binds a public EIP to each node so the node can reach the
+	// internet directly (AWS public-subnet parity), avoiding a NAT gateway.
+	PublicIP bool
+	// PublicIPBandwidthSize is the EIP bandwidth in Mbps for PublicIP (and
+	// PublicIPShareType/PublicIPChargeMode are its bandwidth share/charge
+	// modes, default PER / bandwidth).
+	PublicIPBandwidthSize int32
+	PublicIPShareType     string
+	PublicIPChargeMode    string
 }
 
 // NodePoolAutoscaling mirrors NodePoolNodeAutoscaling (enable/min/max).

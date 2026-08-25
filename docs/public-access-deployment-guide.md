@@ -164,9 +164,17 @@ MGMT_CLUSTER_ID=...
 
 > **对标 CAPA**：管理集群 A 默认公网+私有 endpoint（`CCE_DEPLOY_PUBLIC=true` 自动绑 EIP）。设 `CCE_DEPLOY_PUBLIC_CIDRS` 可限制公网来源 IP；设 `CCE_DEPLOY_PUBLIC=false` 则仅私有。
 
-## 步骤 4：配置 NAT 出网（公网拉镜像）
+## 步骤 4：节点出网（公网 IP 默认 / NAT 可选）
 
-CCE 节点默认无公网出站能力，需 NAT 网关（对标 CAPA 的 IGW）：
+节点出网有两种方式，**默认走节点公网 IP**（对标 AWS 公有子网）：
+
+**方式 A（默认，推荐）**：节点公网 IP
+
+  `deploy-mgmt-cluster` 默认 `CCE_DEPLOY_PUBLIC_NODES=true`，创建节点池时给每个节点绑公网 EIP，节点直连出网（对标 AWS 公有子网 + IGW），**无需 NAT 网关**。步骤 3 已自动完成，无需额外操作。
+
+  **方式 B（可选）**：NAT 网关
+
+若设 `CCE_DEPLOY_PUBLIC_NODES=false`（节点私有），则需 NAT 网关出网：
 
 ```bash
 nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> \
@@ -176,15 +184,7 @@ nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> \
   go run ./hack/nat-egress -mode create
 ```
 
-输出：
-
-```
-NAT gateway: capi-egress-nat-... (status=ACTIVE)
-SNAT rule: ... (status=ACTIVE)
-EIP: ... (addr=...)
-```
-
-> 有了 NAT 出网，集群 A 节点才能从 `quay.io`/`registry.k8s.io` 公网拉取 cert-manager/CAPI 镜像（本方案不搬运 SWR，对标 CAPA 公网 registry）。
+> 有了节点公网 IP（方式 A）或 NAT（方式 B），集群 A 节点才能从 `quay.io`/`registry.k8s.io` 公网拉取 cert-manager/CAPI 镜像（本方案不搬运 SWR，对标 CAPA 公网 registry）。
 
 ## 步骤 5：SSH 登录跳板机 + 安装工具
 

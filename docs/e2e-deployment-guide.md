@@ -163,6 +163,7 @@ nocloud CCE_DEPLOY_VPC="$CCE_DEPLOY_VPC" \
 | 默认 flavor | 集群 `cce.s1.small`，节点 `c6.large.2` ×2 |
 | `CCE_DEPLOY_MGMT_AZS`（可选） | 多 AZ 列表（逗号分隔，如 `cn-north-4a,cn-north-4b`）；默认单 AZ（`CCE_DEPLOY_AZ`）。首个 AZ 为主节点池，其余作为扩展组（管理集群高可用） |
 | `CCE_DEPLOY_PUBLIC` / `CCE_DEPLOY_PUBLIC_CIDRS`（可选） | 公网访问开关（默认 `true`）+ 来源 IP 白名单（逗号分隔 CIDR，空=全部开放）。对标 CAPA EKS 控制面"公网+私有"端点：默认自动绑定 EIP 开放公网；设 `false` 则仅内网 |
+| `CCE_DEPLOY_PUBLIC_NODES`（可选） | 节点出网方式（默认 `true`）：`true` = 每个节点绑公网 EIP（对标 AWS 公有子网，直连出网、无需 NAT）；`false` = 节点私有（需 `hack/nat-egress` NAT 出网）。`CCE_DEPLOY_PUBLIC_NODES_BANDWIDTH` 控制带宽（默认 5 Mbps） |
 | 输出 `capi-mgmt.kubeconfig` | **管理集群 kubeconfig（下载到本地）** |
 
 > ⚠️ **踩坑 #3（无公网 endpoint）**：CCE 不自动分配公网 IP——`publicAccess=true` 时仍只有 Internal endpoint。现已由 `deploy-mgmt-cluster` 创建后**自动绑定 EIP**（复用 `hack/bind-eip`）开放公网（对标 CAPA EKS 默认公网+私有端点）；若设 `CCE_DEPLOY_PUBLIC=false` 则保持纯内网，kubeconfig 的 server 是内网 IP，本地无法直达，必须由跳板机访问。

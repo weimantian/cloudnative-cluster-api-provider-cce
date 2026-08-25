@@ -903,6 +903,20 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 		// onto the node (nodeTemplate.waitPostInstallFinish).
 		template.WaitPostInstallFinish = in.WaitPostInstallFinish
 	}
+	if in.PublicIP {
+		// Bind a public EIP to each node (nodeTemplate.publicIP) so nodes
+		// reach the internet directly — AWS public-subnet parity, avoiding a
+		// NAT gateway. Bandwidth defaults to PER/bandwidth when unset.
+		bw := &model.NodeBandwidth{
+			Size:      int32Ptr(in.PublicIPBandwidthSize),
+			Sharetype: stringPtr(defaultString(in.PublicIPShareType, "PER")),
+			Chargemode: stringPtr(defaultString(in.PublicIPChargeMode, "bandwidth")),
+		}
+		template.PublicIP = &model.NodeEipSpec{
+			Iptype:    "5_bgp",
+			Bandwidth: bw,
+		}
+	}
 	spec := &model.NodePoolSpec{
 		NodeTemplate:     template,
 		InitialNodeCount: int32Ptr(in.InitialNodeCount),
