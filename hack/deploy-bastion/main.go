@@ -18,6 +18,9 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //	CCE_DEPLOY_SUBNET              management node subnet ID (required)
 //	CCE_DEPLOY_AZ                  availability zone (default cn-north-4a)
 //	CCE_BASTION_FLAVOR            ECS flavor (default s6.small.1)
+//	CCE_DEPLOY_BASTION_AGENCY     IAM trust agency name (optional; binds the
+//	                             agency so the bastion can fetch temporary
+//	                             credentials from the ECS metadata service)
 package main
 
 import (
@@ -225,6 +228,14 @@ func createServer(ctx context.Context, ecs *ecsv2.EcsClient, vpcID, subnetID, sg
 	count := int32(1)
 	size := int32(40)
 	bandSize := int32(1)
+	// Bind an IAM trust agency (CCE_DEPLOY_BASTION_AGENCY) so the bastion can
+	// fetch temporary credentials from the ECS metadata service — the Huawei
+	// Cloud equivalent of the CAPA EC2 IAM-role pattern. Unset keeps key-pair
+	// auth only.
+	metadata := map[string]string{}
+	if agency := os.Getenv("CCE_DEPLOY_BASTION_AGENCY"); agency != "" {
+		metadata["agency_name"] = agency
+	}
 	resp, err := ecs.CreateServers(&ecsmodel.CreateServersRequest{Body: &ecsmodel.CreateServersRequestBody{
 		Server: &ecsmodel.PrePaidServer{
 			ImageRef:  imageID,
@@ -235,7 +246,8 @@ func createServer(ctx context.Context, ecs *ecsv2.EcsClient, vpcID, subnetID, sg
 				SubnetId: &subnetID,
 			}},
 			KeyName:  strPtr(keyName),
-			Count:    &count,
+			Count:       &count,
+			Metadata:    metadata,
 			RootVolume: &ecsmodel.PrePaidServerRootVolume{
 				Volumetype: ecsmodel.GetPrePaidServerRootVolumeVolumetypeEnum().GPSSD,
 				Size:       &size,

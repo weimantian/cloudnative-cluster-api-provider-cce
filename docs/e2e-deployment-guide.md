@@ -120,6 +120,7 @@ nocloud go run ./hack/deploy-bastion
 | 默认 flavor | `s6.small.1`（1C2G，最小通用型） |
 | 输出 `BASTION_PUBLIC_IP` | 跳板机公网 IP（SSH 登录用） |
 | 输出 `capi-bastion-key.pem` | **跳板机私钥（必须保留，SSH 登录用）** |
+| `CCE_DEPLOY_BASTION_AGENCY`（可选） | IAM 委托名称：绑定后跳板机可从 ECS metadata 获取临时凭证（对标 CAPA EC2 IAM 角色），适合免静态密钥场景 |
 
 > ⚠️ **踩坑 #2（私钥）**：跳板机密钥对 `capi-bastion-key` 的私钥脚本会保存到本地 `capi-bastion-key.pem`。集群 A 的节点也改用此密钥对（而非 `capi-node-key`），这样节点异常时可 SSH 排查。
 >
