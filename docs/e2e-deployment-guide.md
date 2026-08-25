@@ -124,6 +124,17 @@ nocloud go run ./hack/deploy-bastion
 > ⚠️ **踩坑 #2（私钥）**：跳板机密钥对 `capi-bastion-key` 的私钥脚本会保存到本地 `capi-bastion-key.pem`。集群 A 的节点也改用此密钥对（而非 `capi-node-key`），这样节点异常时可 SSH 排查。
 >
 > ⚠️ **踩坑 #12（Ecs.0314）**：若报 `keypair does not match the user_id`，说明云上存在**其他用户**创建的同名密钥对。删除本地私钥文件（`rm -f capi-bastion-key.pem`）强制脚本新建即可。
+**替代方式：控制台创建跳板机**（不跑 `deploy-bastion` 时，本方式同样满足后续流程）：
+
+| 控制台操作 | 参数建议 |
+|---|---|
+| 弹性云服务器 ECS → 购买弹性云服务器 | 区域 `cn-north-4`；镜像 EulerOS 2.0 x86_64；规格 `s6.small.1`（1C2G） |
+| 网络 | 选 `capi-vpc` + 节点子网 `capi-subnet-node`（**与集群 A 同 VPC**，便于访问内网 API） |
+| 密钥对 | 选择/新建 `capi-bastion-key`（**下载私钥并保留**，SSH 登录用） |
+| 安全组 | 新建 `capi-bastion-sg`，入方向放行 TCP 22（来源限公司 IP 或本机） |
+| 弹性公网 IP | 绑定一个 EIP（记录公网 IP 作为 `BASTION_PUBLIC_IP`） |
+
+> 之后流程不变：`ssh -i capi-bastion-key.pem root@<BASTION_PUBLIC_IP>`。
 
 验证 SSH（首次连接需等 EIP 生效约 30-60 秒）：
 
@@ -154,6 +165,16 @@ nocloud CCE_DEPLOY_VPC="$CCE_DEPLOY_VPC" \
 > ⚠️ **踩坑 #3（无公网 endpoint）**：管理集群 `publicAccess=true` 仍**只有 Internal endpoint**（`https://10.0.x.x:5443`）。kubeconfig 的 server 是内网 IP，本地无法直达，必须由跳板机访问。
 >
 > ⚠️ **踩坑 #10（429 限流）**：连续写操作触发 CCE 写限流（10 次/分钟），且每次 429 重试也计入限流计数。需停止写操作等窗口清零（1-10 分钟），或后台自动重试。
+
+**替代方式：控制台创建管理集群 A**（不跑 `deploy-mgmt-cluster` 时，本方式同样满足后续流程）：
+
+| 控制台操作 | 参数建议 |
+|---|---|
+| 云容器引擎 CCE → 创建集群 | 区域 `cn-north-4`；版本 `v1.35`；规格 `cce.s1.small`；VPC/子网选 `capi-vpc` / `capi-subnet-node`；容器网段、服务网段自定义（与集群 B 不冲突） |
+| 添加节点池 | flavor `c6.large.2` ×2；SSH 密钥对 `capi-bastion-key`；AZ `cn-north-4a` |
+| 下载 kubeconfig | 集群详情 → 连接信息 → kubectl 配置，下载到本地，随后上传到跳板机 `/root/capi-mgmt.kubeconfig` |
+
+> ⚠️ 控制台创建的集群 `kubectl` 访问同样走内网 endpoint（踩坑 #3），跳板机同 VPC 可达；下载的 kubeconfig 内网 server 与脚本生成的一致。
 
 ### 步骤 4：构建 provider 镜像 + 搬运 CAPI 镜像到 SWR
 
@@ -232,6 +253,7 @@ clusterctl version
 ### 步骤 7：配置 kubectl 连接集群 A
 
 > 管理集群 kubeconfig 在步骤 3 已下载（本地 `capi-mgmt.kubeconfig`），需上传到跳板机。
+> **控制台模式**：步骤 3 用控制台创建集群时，kubeconfig 从控制台[连接信息]下载，同样命名并上传到跳板机 `/root/capi-mgmt.kubeconfig`。
 
 ```bash
 # 本地：上传 kubeconfig 到跳板机
