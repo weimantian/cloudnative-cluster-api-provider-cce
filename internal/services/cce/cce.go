@@ -206,7 +206,9 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		spec.Flavor = stringPtr(in.Flavor)
 	}
 	if in.Version != "" {
-		spec.Version = stringPtr(in.Version)
+		// CCE CreateCluster accepts vMAJOR.MINOR (e.g. "v1.35"), not the full
+		// semver (e.g. "v1.35.0") that the webhook enforces; strip the patch.
+		spec.Version = stringPtr(cceClusterVersion(in.Version))
 	}
 	// containerNetwork mode mapping (official enum: overlay_l2/vpc-router/eni).
 	switch in.ContainerNetworkMode {
@@ -1433,6 +1435,16 @@ func ownedTagKey(clusterName string) string { return OwnedTagPrefix + "." + clus
 
 // ---- helpers ----
 
+// cceClusterVersion normalizes a spec version to the CCE CreateCluster API
+// format: the API accepts vMAJOR.MINOR (e.g. "v1.35"), while the control
+// plane webhook enforces a full semver (e.g. "v1.35.0"). Strip the patch
+// suffix so an already-semver version is accepted by both.
+func cceClusterVersion(v string) string {
+	if parts := strings.SplitN(v, ".", 3); len(parts) == 3 {
+		return parts[0] + "." + parts[1]
+	}
+	return v
+}
 func assembleKubeconfig(resp *model.CreateKubernetesClusterCertResponse) (string, error) {
 	if resp == nil || resp.Clusters == nil || len(*resp.Clusters) == 0 {
 		return "", errors.New("kubeconfig response contains no clusters")

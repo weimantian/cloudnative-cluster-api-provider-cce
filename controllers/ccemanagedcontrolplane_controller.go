@@ -361,7 +361,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 			return res, nil
 		}
 	}
-	if cp.Spec.Version != "" && info.Version != "" && cp.Spec.Version != info.Version {
+	if cp.Spec.Version != "" && info.Version != "" && !sameMajorMinor(cp.Spec.Version, info.Version) {
 		if res, done := r.startUpgrade(ctx, svc, clusterID, cp); done {
 			return res, nil
 		}
@@ -485,6 +485,25 @@ func (r *CCEManagedControlPlaneReconciler) startUpgrade(ctx context.Context, svc
 	recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "UpgradeStarted", "upgrading to %s", cp.Spec.Version)
 	log.Info("Cluster upgrade started", "clusterID", clusterID, "target", cp.Spec.Version, "taskID", taskID)
 	return ctrl.Result{RequeueAfter: defaultRequeue}, true
+}
+
+// sameMajorMinor reports whether two Kubernetes version strings share the same
+// major.minor prefix (e.g. "v1.35.0" and "v1.35.5" are both v1.35). CCE picks
+// the latest patch itself, so a spec version like "v1.35.0" and the running
+// "v1.35.5" must be treated as the same version — otherwise the reconciler
+// endlessly re-triggers an upgrade (which has no target from the current patch)
+// and never marks the control plane Ready, blocking node pool creation.
+func sameMajorMinor(a, b string) bool {
+	return majorMinor(a) == majorMinor(b)
+}
+
+// majorMinor returns the "vMAJOR.MINOR" prefix of a Kubernetes version string,
+// or the input unchanged when it does not have a MAJOR.MINOR(.PATCH) shape.
+func majorMinor(v string) string {
+	if parts := strings.SplitN(v, ".", 3); len(parts) >= 2 {
+		return parts[0] + "." + parts[1]
+	}
+	return v
 }
 
 func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta2.CCEManagedControlPlane) (ctrl.Result, error) {
