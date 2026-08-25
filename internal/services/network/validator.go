@@ -223,6 +223,13 @@ func (v *Validator) fetchNetwork(ctx context.Context, vpcID string) (string, map
 	if subResp.Subnets != nil {
 		for _, s := range *subResp.Subnets {
 			out[s.Id] = s.Cidr
+			// ENI (Turbo) subnets are referenced by their neutron_subnet_id in
+			// containerNetwork.eniSubnets (the eniNetwork API requires the neutron
+			// ID, not the network ID), so index the map by both IDs — otherwise the
+			// validator reports a valid ENI subnet as "not found in the VPC".
+			if s.NeutronSubnetId != "" {
+				out[s.NeutronSubnetId] = s.Cidr
+			}
 		}
 	}
 	return vpcCIDR, out, nil
