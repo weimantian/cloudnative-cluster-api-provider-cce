@@ -9,6 +9,8 @@ package controllers
 import (
 	"context"
 	"slices"
+	"strconv"
+	"time"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -38,6 +40,14 @@ import (
 
 // MachinePoolFinalizer ensures the CCE node pool is deleted before the object.
 const MachinePoolFinalizer = "ccemanagedmachinepool.infrastructure.cluster.x-k8s.io"
+
+// nodePoolDeletePollAnnotation is bumped (minute-granularity) while waiting
+// for a CCE node pool to finish deleting. The RequeueAfter returned by
+// reconcileDelete can be coalesced away by the workqueue dedup while the
+// object is terminating (observed live: the delete loop stalled until an
+// external touch), so bumping this annotation keeps the informer watch
+// firing and the delete loop alive regardless of requeue behavior.
+const nodePoolDeletePollAnnotation = "infrastructure.cluster.x-k8s.io/last-nodepool-delete-poll"
 
 // CCEManagedMachinePoolReconciler reconciles CCEManagedMachinePool objects
 // (InfrastructureMachinePool). It drives the CCE node pool lifecycle.
@@ -482,6 +492,19 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 				}
 				log.Info("Node pool deletion requested, waiting", "nodePoolID", pool.Status.NodePoolID)
 				recordEvent(r.Recorder, pool, corev1.EventTypeNormal, "NodePoolDeletionRequested", "deletion requested for CCE node pool %s", pool.Status.NodePoolID)
+				// The RequeueAfter alone is unreliable here: the workqueue dedup can
+				// coalesce it away while the object is terminating, stalling the delete
+				// loop until an external touch (observed live twice). Bump an annotation
+				// (minute-granularity) so the informer watch fires and re-drives the
+				// reconcile even when the requeue is dropped.
+				if pool.Annotations == nil {
+					pool.Annotations = map[string]string{}
+				}
+				orig := pool.DeepCopy()
+				pool.Annotations[nodePoolDeletePollAnnotation] = strconv.FormatInt(time.Now().Unix()/60, 10)
+				if err := r.Patch(ctx, pool, client.MergeFrom(orig)); err != nil {
+					return ctrl.Result{}, err
+				}
 				return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 			}
 		}
