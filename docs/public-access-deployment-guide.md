@@ -111,25 +111,29 @@ nocloud CLOUD_SDK_AK='<你的AK>' CLOUD_SDK_SK='<你的SK>' ...
 
 ---
 
-## 步骤总览
+## 总体流程（三阶段）
 
-| 步骤 | 操作 | 耗时 |
-|---|---|---|
-| 1 | 准备网络与密钥 | 2 min |
-| 2 | 创建跳板机（公网） | 2 min |
-| 3 | 创建管理集群 A（公网 endpoint） | 10-15 min |
-| 4 | 配置 NAT 出网（公网拉镜像） | 2 min |
-| 5 | SSH 登录跳板机 + 装工具 | 5 min |
-| 6 | 连集群 A（公网 endpoint） | 1 min |
-| 7 | 安装 Provider（clusterctl init，公网直拉） | 5 min |
-| 8 | Provider 镜像交付（私有 SWR / public SWR 二选一）+ webhook cert | 2 min |
-| 9 | 创建工作负载集群 B | 10-20 min |
-| 10 | 验证 | 2 min |
-| 清理 | 删除所有资源 | 10 min |
+```
+【阶段一：预置基础设施】本地电脑（通过华为云 API）
+  1. 准备网络（VPC/子网/密钥对）
+  2. 创建跳板机 ECS（公网）
+  3. 创建 CCE 管理集群 A（公网 endpoint）
+  4. 节点出网（公网 IP 默认 / NAT 可选）
 
----
+【阶段二：跳板机部署】本地 SSH 登录跳板机（所有集群 B 操作在此完成）
+  5. SSH 登录跳板机 + 安装 kubectl/clusterctl
+  6. 配置 kubectl 连接集群 A（公网 endpoint）
+  7. clusterctl init 部署 Provider（公网直拉）
+  8. Provider 镜像交付（私有 SWR / public SWR 二选一）+ webhook cert
 
-## 步骤 1：准备网络与密钥
+【阶段三：创建工作负载集群 + 验证】跳板机
+  9. 创建工作负载集群 B
+  10. 验证
+```
+
+## 阶段一：预置基础设施（本地电脑）
+
+### 步骤 1：准备网络与密钥
 
 ```bash
 nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_DEPLOY_REGION=cn-north-4 \
@@ -165,7 +169,7 @@ export CCE_DEPLOY_KEYPAIR="capi-node-key"
 
 > 完成后把控制台记下的 VPC ID / 节点子网 ID / ENI 子网 ID，作为后续 `CCE_DEPLOY_VPC` / `CCE_DEPLOY_SUBNET` / `CCE_DEPLOY_ENI_SUBNET`。
 
-## 步骤 2：创建跳板机（公网）
+### 步骤 2：创建跳板机（公网）
 
 ```bash
 nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> \
@@ -198,7 +202,7 @@ ssh -i capi-bastion-key.pem root@<公网IP>
 
 > 之后流程不变：`ssh -i capi-bastion-key.pem root@<BASTION_PUBLIC_IP>`。
 
-## 步骤 3：创建管理集群 A（公网 endpoint）
+### 步骤 3：创建管理集群 A（公网 endpoint）
 
 ```bash
 nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> \
@@ -237,7 +241,7 @@ MGMT_CLUSTER_ID=...
 
 > ⚠️ 控制台创建默认只有内网 endpoint（踩坑 #3）：需在集群详情绑定公网 EIP 才能从本地直连；否则走跳板机（同 VPC 内网可达）。
 
-## 步骤 4：节点出网（公网 IP 默认 / NAT 可选）
+### 步骤 4：节点出网（公网 IP 默认 / NAT 可选）
 
 节点出网有两种方式，**默认走节点公网 IP**（对标 AWS 公有子网）：
 
@@ -259,7 +263,9 @@ nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> \
 
 > 有了节点公网 IP（方式 A）或 NAT（方式 B），集群 A 节点才能从 `quay.io`/`registry.k8s.io` 公网拉取 cert-manager/CAPI 镜像（本方案不搬运 SWR，对标 CAPA 公网 registry）。
 
-## 步骤 5：SSH 登录跳板机 + 安装工具
+## 阶段二：跳板机部署（SSH 登录跳板机）
+
+### 步骤 5：SSH 登录跳板机 + 安装工具
 
 ```bash
 ssh -i capi-bastion-key.pem -o StrictHostKeyChecking=no root@<BASTION_PUBLIC_IP>
@@ -280,7 +286,7 @@ kubectl version --client
 clusterctl version
 ```
 
-## 步骤 6：连集群 A（公网 endpoint）
+### 步骤 6：连集群 A（公网 endpoint）
 
 ```bash
 # 上传 kubeconfig（本地 scp）——或直接从公网 endpoint 连接
@@ -292,7 +298,7 @@ ssh -i capi-bastion-key.pem root@<BASTION_PUBLIC_IP> \
 
 > 管理集群 A 有公网 endpoint，kubeconfig 也可用公网 server 从跳板机直接访问（对标 CAPA EKS 公网端点）。
 
-## 步骤 7：安装 Provider（clusterctl init，公网直拉）
+### 步骤 7：安装 Provider（clusterctl init，公网直拉）
 
 ```bash
 # 本地：生成 manifests（见 e2e 指南附录 A），上传 metadata + components 到跳板机
@@ -315,11 +321,11 @@ clusterctl init --infrastructure cce
 
 > **对标 CAPA**：本步骤 cert-manager（quay.io）、CAPI（registry.k8s.io）**公网直拉**（节点有公网出网——公网 IP 或 NAT），无需搬运到 SWR + imagePullSecret（省去 e2e 指南的"搬运 CAPI 镜像"步骤）。
 
-## 步骤 8：Provider 镜像交付（私有 SWR / public SWR 二选一）+ webhook cert
+### 步骤 8：Provider 镜像交付（私有 SWR / public SWR 二选一）+ webhook cert
 
 Provider 镜像交付有两种方式：**方式 A 私有 SWR**（客户自推镜像 + imagePullSecret）或**方式 B public SWR**（已发布公开镜像，免认证直拉，对标 CAPA 官方镜像）。webhook 证书由 **cert-manager 自动签发**（见下文），两种方式均无需手动。
 
-### 方式 A：私有 SWR（客户自建镜像）
+#### 方式 A：私有 SWR（客户自建镜像）
 
 镜像推到**私有** SWR 仓库，节点拉取需 imagePullSecret：
 
@@ -339,7 +345,7 @@ kubectl -n cloudnative-cluster-api-provider-cce-system patch deployment cloudnat
 kubectl -n cloudnative-cluster-api-provider-cce-system rollout restart deployment/cloudnative-cluster-api-provider-cce-controller-manager
 ```
 
-### 方式 B：public SWR（已发布公开镜像）
+#### 方式 B：public SWR（已发布公开镜像）
 
 Provider 镜像已提前推到**公开** SWR 仓库（如 `swr.cn-north-4.myhuaweicloud.com/capi_cce/cloudnative-cluster-api-provider-cce:latest` 设为 **public**），节点**免认证直拉**（对标 CAPA 官方镜像），**无需 imagePullSecret**：
 
@@ -351,14 +357,14 @@ kubectl -n cloudnative-cluster-api-provider-cce-system rollout restart deploymen
 
 > 将 SWR 仓库设为 public：控制台 → 容器镜像服务 SWR → 仓库 → 管理 → 设置为"公开"（公开后任意账号/匿名均可 `docker pull`，适合 Provider 开源发布的场景）。
 
-### webhook TLS cert（cert-manager 自动签发）
+#### webhook TLS cert（cert-manager 自动签发）
 
 webhook 证书已由 **cert-manager 自动签发**（`config/certmanager` 的 Issuer + Certificate 随组件部署，`webhook-service-cert` Secret 自动创建，webhook 配置 caBundle 经 `cert-manager.io/inject-ca-from` 注入）——**无需手动创建**。
 
 > **方式 B 一次性完成**：`clusterctl init` 装完（cert-manager → provider），webhook 证书自动签发 + public 镜像免认证拉取，provider pod 直接 Running，**无任何手动步骤**（对标 CAPA）。
 > 注意：cert-manager/CAPI 的 pod 本方案用公网镜像（不换 SWR）；Provider 镜像按方式 A（私有 + imagePullSecret）或方式 B（public 免认证）交付。
 
-### 镜像清单（public SWR，已备好）
+#### 镜像清单（public SWR，已备好）
 
 以下 7 个镜像已提前构建/搬运到 **public SWR**（`swr.cn-north-4.myhuaweicloud.com/capi_cce/`，全部 **amd64**，任意节点免认证拉取）。本方案 cert-manager/CAPI 默认公网直拉；若节点拉 `quay.io`/`registry.k8s.io` 超时（国内网络），可直接改用下表 SWR 地址（替换组件清单/部署中的镜像），无需再走 e2e 指南的搬运流程：
 
@@ -372,7 +378,9 @@ webhook 证书已由 **cert-manager 自动签发**（`config/certmanager` 的 Is
 | `cert-manager-cainjector:v1.21.1` | quay.io/jetstack | cert-manager CA 注入 | amd64 |
 | `cert-manager-webhook:v1.21.1` | quay.io/jetstack | cert-manager webhook | amd64 |
 
-## 步骤 9：创建工作负载集群 B
+## 阶段三：创建工作负载集群 + 验证
+
+### 步骤 9：创建工作负载集群 B
 
 ```bash
 # 跳板机：用 clusterctl generate cluster（Standard 默认 / Turbo flavor）
@@ -396,7 +404,7 @@ kubectl create secret generic my-cce-cluster-bootstrap \
 kubectl apply -f my-cluster.yaml
 ```
 
-## 步骤 10：验证
+### 步骤 10：验证
 
 ```bash
 # 跳板机
@@ -431,27 +439,67 @@ nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_DEPLOY_REGION=cn-north-4 \
 
 ---
 
-## 故障排查
+## 踩坑记录（测试问题 + 修正）
 
-### Provider pod 卡在 ContainerCreating / ImagePullBackOff
+> **活文档核心**：后续测试遇到问题，按序追加记录（现象/根因/修正/状态），并在上方对应步骤同步修正。
+
+| # | 问题现象 | 根因 | 修正 | 状态 |
+|---|---|---|---|---|
+| 1 | Provider pod 卡 ContainerCreating（方式 A） | 未建 SWR imagePullSecret 或凭据错误 | 步骤 8 方式 A：创建 `cce-provider-swr-secret` + patch imagePullSecrets | ✅ 已记录 |
+| 2 | Provider pod ImagePullBackOff（方式 B） | SWR 仓库未设为 public | 仓库设为 public（免认证直拉） | ✅ 已记录 |
+| 3 | cert-manager/CAPI pod ImagePullBackOff | 公网拉镜像失败（NAT 未配 / region 不可达） | 确认 NAT + SNAT ACTIVE；region 不可达时改用 e2e 指南 SWR 搬运方案 | ✅ 已记录 |
+| 4 | 集群 A 无公网 endpoint | CCE 不自动分配公网 IP | `CCE_DEPLOY_PUBLIC=true` 自动绑 EIP；失败手动 `hack/bind-eip` | ✅ 已记录 |
+| 5 | 连续 429 限流（`APIGW.0308`） | CCE 写限流 10 次/分钟，429 重试也计数 | hack 脚本已内置 429 退避；脚本间隔 ≥60s；密集 429 后停止写 1-10 分钟 | ✅ 已修复（b3bfb4b） |
+| 6 | 节点永久卡 `Installing` | 子网未指定 DNS | 子网 DNS 填 `100.125.1.250,100.125.129.250` | ✅ 已记录 |
+| 7 | 镜像推 SWR 报 `Invalid image, fail to parse 'manifest.json'` | BuildKit attestation / OCI manifest，SWR 不支持 | 构建 `--provenance=false --sbom=false`；或 `docker save` + `crane push` | ✅ 已记录 |
+| 8 | 命令连接失败 | 本地代理干扰 | 命令前加 `nocloud`（剥离代理） | ✅ 已记录 |
+
+### 详细排查
+
+#### Provider pod 卡在 ContainerCreating / ImagePullBackOff
 - **方式 A（私有 SWR）**：未建 `cce-provider-swr-secret` 或 SWR 凭据错误 → 执行步骤 8 方式 A（imagePullSecret + imagePullSecrets patch）。
 - **方式 B（public SWR）**：确认仓库已设为 public（免认证），否则拉取会 401/ImagePullBackOff。
 - **webhook 证书异常**：证书由 cert-manager 自动签发（Secret `webhook-service-cert`）。若未生成，检查 `cert-manager` pods Running + `Certificate serving-cert` Ready（`kubectl get certificate -n cloudnative-cluster-api-provider-cce-system`），再重启 provider。
 
-### cert-manager / CAPI pod ImagePullBackOff（公网拉镜像失败）
+#### cert-manager / CAPI pod ImagePullBackOff（公网拉镜像失败）
 - 确认 NAT 网关 + SNAT 规则 ACTIVE（`hack/nat-egress -mode list`）。
 - 确认节点所在子网被 SNAT 规则覆盖（`hack/nat-egress -mode create` 已默认覆盖 `CCE_DEPLOY_SUBNET`）。
 - 若 `registry.k8s.io`/`quay.io` 在所在 region 不可达（国内网络），改用 e2e 指南的 **SWR 搬运方案**（零公网）。
 
-### 集群 A 无公网 endpoint
+#### 集群 A 无公网 endpoint
 - 确认 `CCE_DEPLOY_PUBLIC` 未设 `false`（默认 `true` 自动绑 EIP）。
 - 若绑 EIP 失败，手动 `nocloud go run ./hack/bind-eip -cluster <MGMT_CLUSTER_ID>`。
 
-### 集群创建失败 `APIGW.0308`（429 限流）
+#### 集群创建失败 `APIGW.0308`（429 限流）
 CCE 写限流 10 次/分钟（429 重试也计数）。`deploy-network`/`deploy-bastion`/`deploy-mgmt-cluster` 已内置 429 退避（自动等窗口清零再重试）；脚本间建议间隔 ≥60s；密集 429 后停止写操作 1-10 分钟。
 
-### 代理导致连接失败
+#### 代理导致连接失败
 所有命令前加 `nocloud`（剥离本地代理）。
+
+---
+
+## 凭证轮换
+
+### AK/SK 轮换（静态凭证）
+
+更新 `<clusterName>-credentials` Secret 的 `accessKey` / `secretKey` 即可，**无需重启 provider**：provider 每次 reconcile 读取最新值，且 controller watch 该 Secret，更新后自动重新 reconcile。
+
+```bash
+# 跳板机：原地更新 credentials Secret（新 AK/SK）
+kubectl create secret generic my-cce-cluster-credentials \
+  --namespace default \
+  --from-literal=accessKey='<新AK>' --from-literal=secretKey='<新SK>' \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# 验证：观察 provider 用新凭证继续正常（日志无鉴权错误）
+kubectl -n cloudnative-cluster-api-provider-cce-system logs deploy/cloudnative-cluster-api-provider-cce-controller-manager --tail=20
+```
+
+### IAM 委托（agency）凭证
+
+当 `CCEClusterIdentity` 引用委托（agency）时，provider 通过 **STS `AssumeAgency`** 获取临时凭证，**每次 reconcile 自动刷新**（对标 CAPA 的 EC2 IAM 角色），无过期运维负担；仅需确保委托的信任策略与权限覆盖 CCE 操作。
+
+> 本项目静态 AK/SK 与 agency 委托两条路径均已支持：默认用 `<clusterName>-credentials` Secret；`spec.identityRef` 指向 `CCEClusterIdentity` 时走委托/STS。
 
 ---
 
