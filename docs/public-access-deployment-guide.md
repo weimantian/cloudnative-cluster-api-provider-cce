@@ -285,6 +285,20 @@ webhook 证书已由 **cert-manager 自动签发**（`config/certmanager` 的 Is
 > **方式 B 一次性完成**：`clusterctl init` 装完（cert-manager → provider），webhook 证书自动签发 + public 镜像免认证拉取，provider pod 直接 Running，**无任何手动步骤**（对标 CAPA）。
 > 注意：cert-manager/CAPI 的 pod 本方案用公网镜像（不换 SWR）；Provider 镜像按方式 A（私有 + imagePullSecret）或方式 B（public 免认证）交付。
 
+### 镜像清单（public SWR，已备好）
+
+以下 7 个镜像已提前构建/搬运到 **public SWR**（`swr.cn-north-4.myhuaweicloud.com/capi_cce/`，全部 **amd64**，任意节点免认证拉取）。本方案 cert-manager/CAPI 默认公网直拉；若节点拉 `quay.io`/`registry.k8s.io` 超时（国内网络），可直接改用下表 SWR 地址（替换组件清单/部署中的镜像），无需再走 e2e 指南的搬运流程：
+
+| SWR 仓库（swr.cn-north-4.myhuaweicloud.com/capi_cce/） | 源镜像 | 用途 | 架构 |
+|---|---|---|---|
+| `cce-provider-controller:latest` | 本地构建 | CCE Provider 控制器（方式 B） | amd64 |
+| `cluster-api-controller:v1.14.0` | registry.k8s.io/cluster-api | CAPI 核心 | amd64 |
+| `kubeadm-bootstrap-controller:v1.14.0` | registry.k8s.io/cluster-api | CAPI bootstrap-kubeadm | amd64 |
+| `kubeadm-control-plane-controller:v1.14.0` | registry.k8s.io/cluster-api | CAPI control-plane-kubeadm | amd64 |
+| `cert-manager-controller:v1.21.1` | quay.io/jetstack | cert-manager 控制器 | amd64 |
+| `cert-manager-cainjector:v1.21.1` | quay.io/jetstack | cert-manager CA 注入 | amd64 |
+| `cert-manager-webhook:v1.21.1` | quay.io/jetstack | cert-manager webhook | amd64 |
+
 ## 步骤 9：创建工作负载集群 B
 
 ```bash
