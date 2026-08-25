@@ -685,6 +685,21 @@ nocloud go run ./hack/deploy-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
 - **部署工具**（`hack/deploy-*`）：正式 E2E 部署流程（阶段一）使用——`deploy-network`（VPC/子网/密钥对）、`deploy-bastion`（跳板机）、`deploy-mgmt-cluster`（管理集群）；配套中性工具 `hack/swr-login`、`hack/survey-hw`、`hack/cleanup-hw`。
 - **冒烟测试工具**：`scripts/smoke-cce.sh` + `hack/cleanup-smoke-clusters` + `hack/check-smoke-env`，项目冒烟测试专用，与正式部署流程相互独立。
 
+### 相关代码位置（部署流程 → 代码文件）
+
+| 部署环节 | 代码/清单 | 说明 |
+|---|---|---|
+| 阶段一步骤 1 网络/密钥 | `hack/deploy-network/main.go` | VPC/子网/密钥对创建（含 DNS 修复） |
+| 阶段一步骤 2 跳板机 | `hack/deploy-bastion/main.go` | 跳板机 ECS + EIP + 安全组 |
+| 阶段一步骤 3 管理集群 A | `hack/deploy-mgmt-cluster/main.go` | 管理集群创建/删除（复用 `internal/services/cce`） |
+| 阶段一步骤 4 镜像 | `hack/swr-login/main.go` + `Dockerfile` | SWR 登录 token + 镜像构建 |
+| Provider 本体 | `cmd/main.go` | manager 启动、feature gates、controller 注册 |
+| CRD 类型 | `api/controlplane/v1beta2`、`api/infrastructure/v1beta2` | CCEManagedControlPlane / CCECluster / CCEManagedMachinePool |
+| 控制器 | `controllers/ccemanagedcontrolplane_controller.go` 等 | 控制面/集群/节点池 reconcile 循环 |
+| 华为云服务层 | `internal/services/cce`、`internal/services/network` | CCE 集群/节点池 API 封装、网络校验 |
+| 集群 B 模板 | `config/samples/cluster-template.yaml` | Standard/Turbo 参数注释（本指南步骤 9 / 阶段四为完整版） |
+| 部署清单 | `config/default`（kustomize） | 附录 A 生成 infrastructure-components.yaml 的源 |
+
 ---
 
 ## 附录 A：生成 infrastructure-components.yaml（本地）

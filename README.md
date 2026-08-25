@@ -24,6 +24,7 @@ This provider is for platform engineers and SRE teams who want to manage Huawei 
 ## Table of Contents
 
 - [Overview](#overview)
+- [Repository Layout](#repository-layout)
 - [Architecture](#architecture)
 - [Highlights](#highlights)
 - [Involved Cloud Services & Costs](#involved-cloud-services--costs)
@@ -48,6 +49,69 @@ This provider is for platform engineers and SRE teams who want to manage Huawei 
 - obtain a workload-cluster kubeconfig through `clusterctl get kubeconfig`.
 
 It follows the CAPI Provider Contract (namespace-scoped CRDs, version labels, `status.conditions`, finalizers, `clusterctl` packaging) and is published under the Huawei Cloud solution developer kit governance (see [CONTRIBUTING.md](CONTRIBUTING.md) and [docs/](docs/)).
+
+## Repository Layout
+
+```
+cloudnative-cluster-api-provider-cce/
+├── cmd/                       # program entry
+│   └── main.go                #   manager bootstrap (feature gates, controller registration)
+├── api/                       # CRD Go types (+kubebuilder markers)
+│   ├── common/                #   shared types (VPC/Subnet/Network: reference vs create)
+│   ├── controlplane/          #   CCEManagedControlPlane / Template (v1beta2)
+│   └── infrastructure/        #   CCECluster / CCEManagedMachinePool / identities (v1beta2)
+├── controllers/               # reconcilers
+│   ├── ccecluster_controller.go              # CCECluster: network validation / managed network
+│   ├── ccemanagedcontrolplane_controller.go  # control plane: CCE cluster lifecycle, kubeconfig, upgrades
+│   ├── ccemanagedmachinepool_controller.go   # node pools: CCE node pool lifecycle
+│   ├── requeue.go                            # exponential backoff for throttle/quota errors
+│   ├── gc.go                                 # orphaned-resource garbage collection (ExternalResourceGC)
+│   └── setup.go                              # controller registration
+├── internal/                  # private packages
+│   ├── conditions/            #   CAPI condition constants/helpers
+│   ├── credentials/           #   AK/SK and STS temporary-credential resolution
+│   ├── features/              #   feature gates (NodePoolAutoscaling, ExternalResourceGC, ...)
+│   ├── metrics/               #   Prometheus metrics
+│   ├── scope/                 #   per-reconcile scope (patchHelper pattern)
+│   ├── services/              #   Huawei Cloud service layer (SDK wrappers)
+│   │   ├── cce/               #     CCE cluster / node-pool / kubeconfig API
+│   │   ├── network/           #     VPC/subnet/NAT management + network validator
+│   │   ├── iam/               #     trust-agency (委托) management
+│   │   └── errors/            #     error classification (throttle/quota/permission)
+│   └── wait/                  #   polling/wait utilities
+├── config/                    # kustomize deployment manifests
+│   ├── crd/                   #   CRD manifests (controller-gen output)
+│   ├── default/               #   default overlay (manager + webhook)
+│   ├── manager/ rbac/ webhook/#   deployment / RBAC / webhook fragments
+│   └── samples/               #   examples: cluster-template.yaml (Standard/Turbo)
+├── hack/                      # Go dev/deploy tools (see docs/e2e-deployment-guide.md)
+│   ├── deploy-network/        #   VPC / subnets / keypair (deploy guide stage 1, step 1)
+│   ├── deploy-bastion/        #   bastion ECS (deploy guide stage 1, step 2)
+│   ├── deploy-mgmt-cluster/   #   create/list/delete management cluster (stage 1, step 3)
+│   ├── swr-login/             #   SWR temp login token
+│   ├── survey-hw/             #   inventory all Huawei Cloud resources
+│   ├── cleanup-hw/            #   delete resources by ID
+│   └── ...                    #   misc (nat-egress, bind-eip, cleanup-smoke-clusters, ...)
+├── scripts/                   # shell scripts
+│   ├── deploy-kind.sh         #   one-command local kind deployment
+│   ├── smoke-cce.sh           #   real-cloud smoke test
+│   └── check-prerequisites.sh
+├── test/                      # test support
+│   ├── fakes/                 #   fake services (unit tests)
+│   ├── e2e/                   #   envtest controller suite
+│   └── capi-crds/             #   CAPI CRD manifests (envtest)
+├── deploy/                    # deployment scripts (deploy-provider.sh / destroy.sh)
+├── docs/                      # design, requirements, deployment guides, verification findings
+├── Makefile                   # build / test / manifest generation
+├── Dockerfile
+└── go.mod
+```
+
+Key flows:
+
+- **API → reconciler**: `api/*` types are reconciled by `controllers/*`; each reconcile reads the Huawei Cloud state through `internal/services/*` (SDK wrappers) and persists results via `internal/scope` (patchHelper).
+- **Deployment**: `hack/deploy-*` provisions the real cloud (VPC, bastion, management cluster); `scripts/deploy-kind.sh` runs everything locally; the full end-to-end guide is in [docs/e2e-deployment-guide.md](docs/e2e-deployment-guide.md).
+- **Smoke test**: `scripts/smoke-cce.sh` + `hack/cleanup-smoke-clusters` drive the real-cloud smoke test, independent of the deploy flow.
 
 ## Architecture
 
