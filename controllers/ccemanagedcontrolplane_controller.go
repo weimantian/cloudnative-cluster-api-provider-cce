@@ -570,6 +570,12 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 	}
 
 	controllerutil.RemoveFinalizer(cp, ControlPlaneFinalizer)
+	// The delete path runs before the scope is built (see Reconcile), so it has
+	// no scope.Close to persist changes — patch the finalizer removal explicitly,
+	// otherwise the object stays stuck terminating forever.
+	if err := r.Client.Update(ctx, cp); err != nil {
+		return ctrl.Result{}, err
+	}
 	return ctrl.Result{}, nil
 }
 
