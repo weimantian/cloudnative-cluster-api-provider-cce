@@ -269,9 +269,9 @@ done
 | `--provenance=false --sbom=false` | 禁用 BuildKit attestation，SWR 不支持——踩坑 #6 |
 | `buildx imagetools create` | 从 registry 直拷并强制 amd64（`docker pull --platform` 不生效）——踩坑 #7 |
 
-| 架构 | 构建/搬运必须 amd64（管理集群节点 x86_64）——踩坑 #5 |
+### 镜像清单（public SWR，已备好）
 
-> **镜像清单（已备好，public SWR）**：以下 7 个镜像已提前构建/搬运到 **public SWR**（`swr.cn-north-4.myhuaweicloud.com/capi_cce/`），全部 **amd64** 且 **public**（任意节点免认证拉取）。可直接用表内 SWR 地址替换部署清单/组件中的镜像，跳过 4.4 的搬运（或验证已有镜像时直接引用）：
+以下 7 个镜像已提前构建/搬运到 **public SWR**（`swr.cn-north-4.myhuaweicloud.com/capi_cce/`），全部 **amd64** 且 **public**（任意节点免认证拉取）。可直接用表内 SWR 地址替换部署清单/组件中的镜像，跳过 4.4 的搬运（或验证已有镜像时直接引用）：
 
 | SWR 仓库（swr.cn-north-4.myhuaweicloud.com/capi_cce/） | 源镜像 | 用途 | 架构 |
 |---|---|---|---|
