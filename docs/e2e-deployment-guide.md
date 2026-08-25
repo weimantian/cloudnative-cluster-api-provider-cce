@@ -5,6 +5,8 @@
 > **架构**：ECS 跳板机（运维入口）→ CCE 管理集群 A（运行 CAPI + Provider）→ CCE 工作负载集群 B（业务集群，私有 API）。
 >
 > **文档性质**：活文档。后续测试严格按本文档执行，遇到新问题追加到 [踩坑记录](#踩坑记录测试问题--修正) 章节并标记修正。
+>
+> **选型指引**：若环境能直接访问公网 registry（`quay.io` / `registry.k8s.io`，如海外 region 或允许出网的 VPC），推荐用更简单的 [public-access 方案](public-access-deployment-guide.md)；本方案（零公网）适合私有化 / 内网 / 无法访问公网 registry 的环境。
 
 ---
 
@@ -44,6 +46,14 @@
 
 ## 前置条件
 
+### 开始前自检（小白先确认这 5 项，缺一不可）
+
+1. 能登录 [华为云控制台](https://console.huaweicloud.com)，区域切到 `cn-north-4`。
+2. 账户**有余额**（CCE 集群 + 节点 + ECS 均按需计费；余额为 0 创建会报 `CCE.01429004`）。
+3. 有 **AK/SK**（控制台 → 右上角用户名 → 我的凭证 → 访问密钥）。不确定权限时先用主账号 AK/SK 验证（主账号有全部权限），生产环境再收窄到 CCE/VPC/ECS/EIP/SWR。
+4. 本地装好工具：docker / go / kubectl / clusterctl v1.14.0（见下文）。
+5. 已 export AK/SK 环境变量（见下文“凭证环境变量”）。
+
 ### 华为云资源
 
 | 项目 | 要求 |
@@ -81,6 +91,21 @@ export CCE_DEPLOY_REGION='cn-north-4'
 export CCE_DEPLOY_AZ='cn-north-4a'
 ```
 
+### 术语表（小白速查）
+
+| 术语 | 是什么（通俗） | 本文档用途 |
+|---|---|---|
+| AK / SK | 华为云 API 访问密钥（给程序用的账号密码） | 脚本调华为云 API 的凭证 |
+| VPC | 你专属的隔离网络（像一栋楼） | 跳板机 + 集群 A/B 的网络 |
+| 子网 | VPC 内的网段（像楼层） | 节点 / 跳板机分配 IP |
+| 安全组 | 防火墙规则（放行哪些端口 / IP） | 放行 SSH 22、API 端口 |
+| 密钥对 | SSH 公私钥（私钥 = 钥匙，自己保管） | 登录跳板机 / 节点 |
+| EIP | 弹性公网 IP（互联网可直接访问） | 跳板机 SSH、集群公网 endpoint |
+| kubeconfig | K8s 集群访问配置（地址 + 证书） | kubectl 连集群用 |
+| CCE | 华为云托管 Kubernetes 服务 | 集群 A/B 即 CCE 集群 |
+| CAPI / clusterctl | K8s 官方集群管理框架 / 其命令行 | 声明式管理集群 |
+| Provider | CAPI 插件，把 CAPI 对象翻译成云 API 调用 | 本项目（CCE provider） |
+
 ---
 
 ## 阶段一：预置基础设施（本地电脑）
@@ -108,6 +133,19 @@ nocloud go run ./hack/deploy-network
 - **怎么获取**：`100.125.1.250` / `100.125.129.250` 是华为云**云内 DNS 服务器地址**（各 region 固定提供，解析 OBS/SWR/IAM 等内网域名）。可查华为云 VPC 官方文档；或从已有子网获取（VPC API `ShowSubnet` / 控制台子网详情 / `hack/survey-hw` 输出）。
 - **为什么**：节点用子网 DNS 解析域名，若 DNS 不对（公网 DNS 或 VPC 默认值），解析不到华为云内网 OBS 域名 → cce-agent 下载失败 → 节点永久卡 `Installing`。
 
+**方式二：控制台手动创建网络与密钥**（不跑 `deploy-network` 时，本方式同样满足后续流程）：
+
+1. **创建 VPC**：控制台 → 服务列表 → 网络 → 虚拟私有云 VPC → 创建虚拟私有云。
+   - 名称：`capi-vpc`；IPv4 网段：`10.0.0.0/16`；其余默认。记下 **VPC ID**。
+2. **创建节点子网**：进入刚创建的 VPC → 子网 → 创建子网。
+   - 名称：`capi-subnet-node`；子网网段：`10.0.1.0/24`；可用区：`cn-north-4a`。
+   - **DNS 服务器地址**：`100.125.1.250,100.125.129.250`（⚠️ 踩坑 #1：必须显式填，否则节点解析不到内网域名、永久卡 Installing）。记下 **子网 ID**。
+3. **（Turbo 才需要）创建 ENI 子网**：同上，名称 `capi-subnet-eni`，网段 `10.0.2.0/24`。
+4. **创建密钥对**：控制台 → 计算 → 弹性云服务器 ECS → 密钥对 → 创建密钥对。
+   - 名称：`capi-bastion-key`（跳板机/节点 SSH 用）。创建后浏览器自动下载私钥 `capi-bastion-key.pem`，**保存到本地并保留**。
+
+> 完成后把控制台记下的 VPC ID / 子网 ID / 密钥对名，作为后续步骤的 `CCE_DEPLOY_VPC` / `CCE_DEPLOY_SUBNET` / `CCE_DEPLOY_KEYPAIR` 使用。
+
 ### 步骤 2：创建跳板机 ECS
 
 ```bash
@@ -125,15 +163,20 @@ nocloud go run ./hack/deploy-bastion
 > ⚠️ **踩坑 #2（私钥）**：跳板机密钥对 `capi-bastion-key` 的私钥脚本会保存到本地 `capi-bastion-key.pem`。集群 A 的节点也改用此密钥对（而非 `capi-node-key`），这样节点异常时可 SSH 排查。
 >
 > ⚠️ **踩坑 #12（Ecs.0314）**：若报 `keypair does not match the user_id`，说明云上存在**其他用户**创建的同名密钥对。删除本地私钥文件（`rm -f capi-bastion-key.pem`）强制脚本新建即可。
-**替代方式：控制台创建跳板机**（不跑 `deploy-bastion` 时，本方式同样满足后续流程）：
+**方式二：控制台创建跳板机**（不跑 `deploy-bastion` 时，本方式同样满足后续流程）：
 
-| 控制台操作 | 参数建议 |
-|---|---|
-| 弹性云服务器 ECS → 购买弹性云服务器 | 区域 `cn-north-4`；镜像 EulerOS 2.0 x86_64；规格 `s6.small.1`（1C2G） |
-| 网络 | 选 `capi-vpc` + 节点子网 `capi-subnet-node`（**与集群 A 同 VPC**，便于访问内网 API） |
-| 密钥对 | 选择/新建 `capi-bastion-key`（**下载私钥并保留**，SSH 登录用） |
-| 安全组 | 新建 `capi-bastion-sg`，入方向放行 TCP 22（来源限公司 IP 或本机） |
-| 弹性公网 IP | 绑定一个 EIP（记录公网 IP 作为 `BASTION_PUBLIC_IP`） |
+1. 控制台 → 服务列表 → 计算 → 弹性云服务器 ECS → **购买弹性云服务器**。
+2. **计费模式**：按需计费（测试用，随时可删）。
+3. **基础配置**：
+   - 区域 `cn-north-4`；可用区 `cn-north-4a`。
+   - 规格 `s6.small.1`（1 vCPU / 2 GiB，最小通用型，够跑 kubectl/clusterctl）。
+   - 镜像 `EulerOS 2.0 x86_64`；系统盘默认 40 GiB 即可。
+4. **网络配置**：
+   - VPC 选 `capi-vpc`、子网选 `capi-subnet-node`（**与集群 A 同 VPC**，便于访问内网 API）。
+   - 安全组：新建 `capi-bastion-sg`，入方向放行 **TCP 22**（来源限本机/公司 IP，⚠️ 不要 0.0.0.0/0 全开）。
+5. **弹性公网 IP**：分配一个（按带宽计费，5 Mbps 即可），记录公网 IP 作为 `BASTION_PUBLIC_IP`。
+6. **登录方式**：密钥对 → 选择 `capi-bastion-key`（⚠️ 踩坑 #2：私钥必须保留；⚠️ 踩坑 #12：若报 Ecs.0314 说明云上已有同名密钥对，换名或先删本地 `capi-bastion-key.pem`）。
+7. 点击“立即购买” → 确认 → 等待 ECS 状态变为“运行中”。
 
 > 之后流程不变：`ssh -i capi-bastion-key.pem root@<BASTION_PUBLIC_IP>`。
 
@@ -170,13 +213,24 @@ nocloud CCE_DEPLOY_VPC="$CCE_DEPLOY_VPC" \
 >
 > ⚠️ **踩坑 #10（429 限流）**：连续写操作触发 CCE 写限流（10 次/分钟），且每次 429 重试也计入限流计数。`deploy-network`/`deploy-bastion`/`deploy-mgmt-cluster` 已内置 429 退避（自动等窗口清零再重试）；脚本间建议间隔 ≥60s。
 
-**替代方式：控制台创建管理集群 A**（不跑 `deploy-mgmt-cluster` 时，本方式同样满足后续流程）：
+**方式二：控制台创建管理集群 A**（不跑 `deploy-mgmt-cluster` 时，本方式同样满足后续流程）：
 
-| 控制台操作 | 参数建议 |
-|---|---|
-| 云容器引擎 CCE → 创建集群 | 区域 `cn-north-4`；版本 `v1.35`；规格 `cce.s1.small`；VPC/子网选 `capi-vpc` / `capi-subnet-node`；容器网段、服务网段自定义（与集群 B 不冲突） |
-| 添加节点池 | flavor `c6.large.2` ×2；SSH 密钥对 `capi-bastion-key`；AZ `cn-north-4a` |
-| 下载 kubeconfig | 集群详情 → 连接信息 → kubectl 配置，下载到本地，随后上传到跳板机 `/root/capi-mgmt.kubeconfig` |
+1. 控制台 → 服务列表 → 计算 → 云容器引擎 CCE → **购买集群**。
+2. **集群基础配置**：
+   - 集群类型：`CCE Standard`（标准版）。
+   - 集群版本：`v1.35`。
+   - 集群规模：`cce.s1.small`（50 节点以下，够用）。
+   - 计费模式：按需计费（⚠️ 集群 + 节点都计费，测试完记得删）。
+   - 集群名称：`capi-mgmt-xxxx`（自定义）。
+3. **网络配置**：
+   - VPC 选 `capi-vpc`；节点子网选 `capi-subnet-node`。
+   - 容器网段 / 服务网段：默认即可（⚠️ 与集群 B 不冲突；同 VPC 下多个集群的容器网段需唯一）。
+4. **节点池配置**：
+   - 节点规格 `c6.large.2`（2 vCPU / 4 GiB）× 2 个节点。
+   - SSH 密钥对 `capi-bastion-key`（保留私钥的，节点异常可 SSH 排查）。
+   - 可用区 `cn-north-4a`；其余默认（系统盘 40 GiB）。
+5. 确认配置 → 提交，等待集群状态变为“可用”（约 5-10 分钟）。
+6. **下载 kubeconfig**：集群详情 → 连接信息 → 下载 kubectl 配置文件，保存到本地，随后上传到跳板机 `/root/capi-mgmt.kubeconfig`。
 
 > ⚠️ 控制台创建的集群 `kubectl` 访问同样走内网 endpoint（踩坑 #3），跳板机同 VPC 可达；下载的 kubeconfig 内网 server 与脚本生成的一致。
 
@@ -829,6 +883,6 @@ webhook 证书已由 cert-manager 自动签发，**无需手动创建**；仅需
 kubectl -n cce-provider-system patch deployment cce-provider-controller-manager \
   --type=json -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"cce-provider-swr-secret"}]}]'
 kubectl -n cce-provider-system rollout restart deployment/cce-provider-controller-manager
-  ```
+```
 
 > **webhook 证书**：`webhook-service-cert` Secret 由 cert-manager 的 Certificate 自动创建并轮换（webhook 配置 caBundle 经 `inject-ca-from` 注入），不再手动 `openssl`/`create secret tls`。
