@@ -160,6 +160,7 @@ nocloud CCE_DEPLOY_VPC="$CCE_DEPLOY_VPC" \
 | `CCE_DEPLOY_KEYPAIR=capi-bastion-key` | 节点 SSH 密钥对（保留私钥的，可排查） |
 | `CCE_DEPLOY_K8S_VERSION=v1.35` | 集群 K8s 版本 |
 | 默认 flavor | 集群 `cce.s1.small`，节点 `c6.large.2` ×2 |
+| `CCE_DEPLOY_MGMT_AZS`（可选） | 多 AZ 列表（逗号分隔，如 `cn-north-4a,cn-north-4b`）；默认单 AZ（`CCE_DEPLOY_AZ`）。首个 AZ 为主节点池，其余作为扩展组（管理集群高可用） |
 | 输出 `capi-mgmt.kubeconfig` | **管理集群 kubeconfig（下载到本地）** |
 
 > ⚠️ **踩坑 #3（无公网 endpoint）**：管理集群 `publicAccess=true` 仍**只有 Internal endpoint**（`https://10.0.x.x:5443`）。kubeconfig 的 server 是内网 IP，本地无法直达，必须由跳板机访问。

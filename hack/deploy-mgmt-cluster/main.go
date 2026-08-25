@@ -30,6 +30,8 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //	CCE_DEPLOY_AZ                availability zone (default cn-north-4a)
 //	CCE_DEPLOY_MGMT_FLAVOR       node flavor (default c6.large.2)
 //	CCE_DEPLOY_MGMT_NODES        node count (default 2)
+//	CCE_DEPLOY_MGMT_AZS          comma-separated AZs (default single AZ;
+//	                             first AZ = pool AZ, rest = extension groups)
 //
 // Usage:
 //
@@ -153,21 +155,38 @@ func createPool(ctx context.Context, svc cce.Service, clusterID, kubeconfigPath 
 		fatal("CCE_DEPLOY_KEYPAIR is required to create a node pool")
 	}
 
+	// Multi-AZ (management-cluster HA): CCE_DEPLOY_MGMT_AZS is a comma-separated
+	// AZ list; the first AZ becomes the pool's own AZ, the rest become extension
+	// scale groups (same flavor). Unset = single AZ (current default).
+	var extensionGroups []cce.ExtensionScaleGroupInput
+	if azs := splitCSV(envOr("CCE_DEPLOY_MGMT_AZS")); len(azs) > 1 {
+		az = azs[0]
+		for i, a := range azs[1:] {
+			extensionGroups = append(extensionGroups, cce.ExtensionScaleGroupInput{
+				Name:             fmt.Sprintf("az-%d", i+2),
+				Flavor:           flavor,
+				AvailabilityZone: a,
+			})
+		}
+		fmt.Printf("multi-AZ node pool: %s + extensions %v", az, azs[1:])
+	}
+
 	poolID, err := svc.CreateNodePool(ctx, cce.CreateNodePoolInput{
 		ClusterID: clusterID,
 		Name:      "mgmt-pool-0",
 		Flavor:    flavor,
 		// OS is required (verified live: "OS:should not be empty"); valid
 		// value for current versions from official docs.
-		OS:             "Huawei Cloud EulerOS 2.0",
-		RootVolumeSize: 40,
-		RootVolumeType: "GPSSD",
+		OS:                  "Huawei Cloud EulerOS 2.0",
+		RootVolumeSize:      40,
+		RootVolumeType:      "GPSSD",
 		// Non-local-disk flavors (c6.large.2) require a data volume.
-		DataVolumes:      []cce.NodeVolumeInput{{Size: 100, Type: "GPSSD"}},
-		SSHKey:           keypair,
-		AvailabilityZone: az,
-		InitialNodeCount: nodeCount,
-		BillingMode:      0,
+		DataVolumes:         []cce.NodeVolumeInput{{Size: 100, Type: "GPSSD"}},
+		SSHKey:              keypair,
+		AvailabilityZone:    az,
+		InitialNodeCount:    nodeCount,
+		BillingMode:         0,
+		ExtensionScaleGroups: extensionGroups,
 	})
 	if err != nil {
 		fatalf("CreateNodePool: %v", err)
@@ -353,4 +372,19 @@ func fatal(msg string) {
 func fatalf(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "ERROR: "+format+"\n", args...)
 	os.Exit(1)
+}
+
+// splitCSV splits a comma-separated list, trimming whitespace and dropping
+// empty entries (e.g. CCE_DEPLOY_MGMT_AZS="cn-north-4a, cn-north-4b").
+func splitCSV(s string) []string {
+	if s == "" {
+		return nil
+	}
+	var out []string
+	for _, p := range strings.Split(s, ",") {
+		if t := strings.TrimSpace(p); t != "" {
+			out = append(out, t)
+		}
+	}
+	return out
 }
