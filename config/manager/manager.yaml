@@ -13,6 +13,10 @@ spec:
     metadata:
       labels:
         control-plane: controller-manager
+      annotations:
+        # cert-manager injects the CA into the webhook configs; the serving
+        # certificate Secret (webhook-service-cert) is signed by cert-manager.
+        cert-manager.io/inject-ca-from: cce-provider-system/serving-cert
     spec:
       securityContext:
         runAsNonRoot: true

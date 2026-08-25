@@ -796,53 +796,26 @@ images:
     newTag: latest
 EOF
 
-kubectl kustomize "$ARTIFACTS" > "$ARTIFACTS/infrastructure-components-raw.yaml"
-
-# 生成自签 CA + webhook server 证书（CN/SAN 见 server.conf）
-cd "$ARTIFACTS"
-openssl genrsa -out ca.key 2048 2>/dev/null
-openssl req -x509 -new -nodes -key ca.key -sha256 -days 365 -subj "/CN=cce-provider-ca" -out ca.crt 2>/dev/null
-openssl genrsa -out server.key 2048 2>/dev/null
-cat > server.conf <<'EOF'
-[req]
-distinguished_name = dn
-req_extensions = ext
-prompt = no
-[dn]
-CN = webhook-service.cce-provider-system.svc
-[ext]
-subjectAltName = @alt_names
-[alt_names]
-DNS.1 = webhook-service
-DNS.2 = webhook-service.cce-provider-system
-DNS.3 = webhook-service.cce-provider-system.svc
-DNS.4 = webhook-service.cce-provider-system.svc.cluster.local
-EOF
-openssl req -new -key server.key -out server.csr -config server.conf 2>/dev/null
-openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
-  -out server.crt -days 365 -sha256 -extfile server.conf -extensions ext 2>/dev/null
-cd ../..
-
-CABUNDLE="$(base64 < "$ARTIFACTS/ca.crt" | tr -d '\n')"
-awk -v cab="$CABUNDLE" '{ print; if ($0 == "  clientConfig:") print "    caBundle: " cab }' \
-  "$ARTIFACTS/infrastructure-components-raw.yaml" > "$ARTIFACTS/infrastructure-components.yaml"
+kubectl kustomize "$ARTIFACTS" > "$ARTIFACTS/infrastructure-components.yaml"
 ```
+
+> **证书说明**：webhook 证书现由 **cert-manager 自动签发**（`config/certmanager` 的 Issuer + Certificate 已随组件部署，webhook 配置带 `cert-manager.io/inject-ca-from` 注解注入 caBundle）。**无需**再手动 `openssl` 生成自签证书 / 注入 caBundle（旧流程已移除）。
 
 ## 附录 B：修复 Provider pod（跳板机）
 
+webhook 证书已由 cert-manager 自动签发，**无需手动创建**；仅需处理 Provider 镜像（SWR 私有仓库需 imagePullSecret；public SWR 免认证跳过）：
+
 ```bash
-# SWR 私有仓库 imagePullSecret
-kubectl create secret docker-registry cce-provider-swr-secret \
+  # SWR 私有仓库 imagePullSecret（方式 A；public SWR 方式 B 跳过此步）
+  kubectl create secret docker-registry cce-provider-swr-secret \
   --namespace cce-provider-system \
   --docker-server=swr.cn-north-4.myhuaweicloud.com \
   --docker-username='<SWR_USER>' --docker-password='<SWR_PASSWORD>' --docker-email='noreply@huawei.cloud'
 
-# webhook TLS Secret
-kubectl -n cce-provider-system create secret tls webhook-service-cert \
-  --cert=server.crt --key=server.key
-
-# 给 provider Deployment 加 imagePullSecrets 并重启
+  # 给 provider Deployment 加 imagePullSecrets 并重启（方式 B 仅重启）
 kubectl -n cce-provider-system patch deployment cce-provider-controller-manager \
   --type=json -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"cce-provider-swr-secret"}]}]'
 kubectl -n cce-provider-system rollout restart deployment/cce-provider-controller-manager
-```
+  ```
+
+> **webhook 证书**：`webhook-service-cert` Secret 由 cert-manager 的 Certificate 自动创建并轮换（webhook 配置 caBundle 经 `inject-ca-from` 注入），不再手动 `openssl`/`create secret tls`。

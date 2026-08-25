@@ -1,0 +1,17 @@
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: serving-cert
+  namespace: system
+spec:
+  # The webhook server serves TLS on this name; the certificate is stored in
+  # the webhook-service-cert Secret (same name the deployment mounts and the
+  # operator previously created by hand). cert-manager signs and renews it
+  # automatically, so `clusterctl init` completes without manual Secret setup.
+  dnsNames:
+    - webhook-service.cce-provider-system.svc
+    - webhook-service.cce-provider-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: selfsigned-issuer
+  secretName: webhook-service-cert
