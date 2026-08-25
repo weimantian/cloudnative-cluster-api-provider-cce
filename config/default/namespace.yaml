@@ -3,4 +3,4 @@ kind: Namespace
 metadata:
   labels:
     control-plane: controller-manager
-  name: cce-provider-system
+  name: cloudnative-cluster-api-provider-cce-system

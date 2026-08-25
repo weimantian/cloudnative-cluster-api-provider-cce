@@ -75,7 +75,7 @@ CAPA 的 reconciler 普遍使用 `Owns()`/`Watches()`/`WatchesRawSource()` 联�
 | 能力 | CAPA | 本项目 |
 |---|---|---|
 | ControllerIdentity（默认凭证） | 单例 CR + `AutoControllerIdentityCreator` gate 自动创建 | CRD 存在，但**无自动创建逻辑**（CP 无 identityRef 时直接走 env） |
-| StaticIdentity | Secret 引用 + allowedNamespaces | ✅ 等价（但 Secret namespace 硬编码 `cce-provider-system`，CAPA 用 controller 运行 namespace） |
+| StaticIdentity | Secret 引用 + allowedNamespaces | ✅ 等价（但 Secret namespace 硬编码 `cloudnative-cluster-api-provider-cce-system`，CAPA 用 controller 运行 namespace） |
 | RoleIdentity | STS AssumeRole 真实换凭证，支持链式 sourceIdentityRef、durationSeconds | 🔴 agency 丢弃（P0-3），无链式解析 |
 | allowedNamespaces | list+selector（OR） | ✅ 已实现同语义 |
 | 凭证回退链 | identityRef -> ControllerIdentity -> IRSA | identityRef -> per-cluster Secret -> env（normal 路径）/ 仅 per-cluster Secret（delete 路径，P0-2） |

@@ -9,5 +9,5 @@ roleRef:
   name: leader-election-role
 subjects:
 - kind: ServiceAccount
-  name: cce-provider-controller-manager
-  namespace: cce-provider-system
+  name: cloudnative-cluster-api-provider-cce-controller-manager
+  namespace: cloudnative-cluster-api-provider-cce-system

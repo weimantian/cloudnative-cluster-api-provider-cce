@@ -329,24 +329,24 @@ export KUBECONFIG=/root/capi-mgmt.kubeconfig
 
 # A.1 SWR imagePullSecret（Provider 镜像）
 nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> go run ./hack/swr-login   # 输出 SWR_USER/PASSWORD
-kubectl -n cce-provider-system create secret docker-registry cce-provider-swr-secret \
+kubectl -n cloudnative-cluster-api-provider-cce-system create secret docker-registry cce-provider-swr-secret \
   --docker-server=swr.cn-north-4.myhuaweicloud.com \
   --docker-username='<SWR_USER>' --docker-password='<SWR_PASSWORD>' --docker-email='noreply@huawei.cloud'
 
 # A.2 加 imagePullSecrets + 重启（方式 B 跳过此步）
-kubectl -n cce-provider-system patch deployment cce-provider-controller-manager \
+kubectl -n cloudnative-cluster-api-provider-cce-system patch deployment cloudnative-cluster-api-provider-cce-controller-manager \
   --type=json -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"cce-provider-swr-secret"}]}]'
-kubectl -n cce-provider-system rollout restart deployment/cce-provider-controller-manager
+kubectl -n cloudnative-cluster-api-provider-cce-system rollout restart deployment/cloudnative-cluster-api-provider-cce-controller-manager
 ```
 
 ### 方式 B：public SWR（已发布公开镜像）
 
-Provider 镜像已提前推到**公开** SWR 仓库（如 `swr.cn-north-4.myhuaweicloud.com/capi_cce/cce-provider-controller:latest` 设为 **public**），节点**免认证直拉**（对标 CAPA 官方镜像），**无需 imagePullSecret**：
+Provider 镜像已提前推到**公开** SWR 仓库（如 `swr.cn-north-4.myhuaweicloud.com/capi_cce/cloudnative-cluster-api-provider-cce:latest` 设为 **public**），节点**免认证直拉**（对标 CAPA 官方镜像），**无需 imagePullSecret**：
 
 ```bash
 # 跳板机
 export KUBECONFIG=/root/capi-mgmt.kubeconfig
-kubectl -n cce-provider-system rollout restart deployment/cce-provider-controller-manager
+kubectl -n cloudnative-cluster-api-provider-cce-system rollout restart deployment/cloudnative-cluster-api-provider-cce-controller-manager
 ```
 
 > 将 SWR 仓库设为 public：控制台 → 容器镜像服务 SWR → 仓库 → 管理 → 设置为"公开"（公开后任意账号/匿名均可 `docker pull`，适合 Provider 开源发布的场景）。
@@ -364,7 +364,7 @@ webhook 证书已由 **cert-manager 自动签发**（`config/certmanager` 的 Is
 
 | SWR 仓库（swr.cn-north-4.myhuaweicloud.com/capi_cce/） | 源镜像 | 用途 | 架构 |
 |---|---|---|---|
-| `cce-provider-controller:latest` | 本地构建 | CCE Provider 控制器（方式 B） | amd64 |
+| `cloudnative-cluster-api-provider-cce:latest` | 本地构建 | CCE Provider 控制器（方式 B） | amd64 |
 | `cluster-api-controller:v1.14.0` | registry.k8s.io/cluster-api | CAPI 核心 | amd64 |
 | `kubeadm-bootstrap-controller:v1.14.0` | registry.k8s.io/cluster-api | CAPI bootstrap-kubeadm | amd64 |
 | `kubeadm-control-plane-controller:v1.14.0` | registry.k8s.io/cluster-api | CAPI control-plane-kubeadm | amd64 |
@@ -436,7 +436,7 @@ nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_DEPLOY_REGION=cn-north-4 \
 ### Provider pod 卡在 ContainerCreating / ImagePullBackOff
 - **方式 A（私有 SWR）**：未建 `cce-provider-swr-secret` 或 SWR 凭据错误 → 执行步骤 8 方式 A（imagePullSecret + imagePullSecrets patch）。
 - **方式 B（public SWR）**：确认仓库已设为 public（免认证），否则拉取会 401/ImagePullBackOff。
-- **webhook 证书异常**：证书由 cert-manager 自动签发（Secret `webhook-service-cert`）。若未生成，检查 `cert-manager` pods Running + `Certificate serving-cert` Ready（`kubectl get certificate -n cce-provider-system`），再重启 provider。
+- **webhook 证书异常**：证书由 cert-manager 自动签发（Secret `webhook-service-cert`）。若未生成，检查 `cert-manager` pods Running + `Certificate serving-cert` Ready（`kubectl get certificate -n cloudnative-cluster-api-provider-cce-system`），再重启 provider。
 
 ### cert-manager / CAPI pod ImagePullBackOff（公网拉镜像失败）
 - 确认 NAT 网关 + SNAT 规则 ACTIVE（`hack/nat-egress -mode list`）。

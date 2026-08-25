@@ -215,7 +215,7 @@ docker login swr.cn-north-4.myhuaweicloud.com \
 ### 4.3 构建镜像
 
 ```bash
-# Makefile 默认 IMG = swr.cn-north-4.myhuaweicloud.com/$(IMAGE_ORG)/cce-provider-controller:latest
+# Makefile 默认 IMG = swr.cn-north-4.myhuaweicloud.com/$(IMAGE_ORG)/cloudnative-cluster-api-provider-cce:latest
 nocloud IMAGE_ORG=capi_cce make docker-build
 ```
 
@@ -227,7 +227,7 @@ nocloud IMAGE_ORG=capi_cce make docker-push
 
 **验证**:
 ```bash
-nocloud docker manifest inspect swr.cn-north-4.myhuaweicloud.com/capi_cce/cce-provider-controller:latest
+nocloud docker manifest inspect swr.cn-north-4.myhuaweicloud.com/capi_cce/cloudnative-cluster-api-provider-cce:latest
 # 应输出 manifest JSON,无报错
 ```
 
@@ -248,8 +248,8 @@ kind: Kustomization
 resources:
   - ../../config/default
 images:
-  - name: swr.cn-north-4.myhuaweicloud.com/cce-provider/controller
-    newName: swr.cn-north-4.myhuaweicloud.com/capi_cce/cce-provider-controller
+  - name: swr.cn-north-4.myhuaweicloud.com/capi_cce/cloudnative-cluster-api-provider-cce
+    newName: swr.cn-north-4.myhuaweicloud.com/capi_cce/cloudnative-cluster-api-provider-cce
     newTag: latest
 EOF
 
@@ -267,14 +267,14 @@ distinguished_name = dn
 req_extensions = ext
 prompt = no
 [dn]
-CN = webhook-service.cce-provider-system.svc
+CN = webhook-service.cloudnative-cluster-api-provider-cce-system.svc
 [ext]
 subjectAltName = @alt_names
 [alt_names]
 DNS.1 = webhook-service
-DNS.2 = webhook-service.cce-provider-system
-DNS.3 = webhook-service.cce-provider-system.svc
-DNS.4 = webhook-service.cce-provider-system.svc.cluster.local
+DNS.2 = webhook-service.cloudnative-cluster-api-provider-cce-system
+DNS.3 = webhook-service.cloudnative-cluster-api-provider-cce-system.svc
+DNS.4 = webhook-service.cloudnative-cluster-api-provider-cce-system.svc.cluster.local
 EOF
 openssl req -new -key server.key -out server.csr -config server.conf 2>/dev/null
 openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
@@ -334,21 +334,21 @@ nocloud kubectl get pods -A
 # cert-manager-* : Running
 # capi-controller-manager-* : Running
 # capi-kubeadm-*-controller-manager-* : Running
-# cce-provider-controller-manager-* : ContainerCreating ← 正常,下一步修复
+# cloudnative-cluster-api-provider-cce-controller-manager-* : ContainerCreating ← 正常,下一步修复
 ```
 
 ---
 
 ## 步骤 8:创建 Secrets
 
-### 8.1 SWR 拉镜像 Secret(cce-provider-system)
+### 8.1 SWR 拉镜像 Secret(cloudnative-cluster-api-provider-cce-system)
 
 ```bash
 SWR_USER='cn-north-4@<USER_ID>'
 SWR_TOKEN='<TOKEN>'
 
 nocloud kubectl create secret docker-registry cce-provider-swr-secret \
-  --namespace cce-provider-system \
+  --namespace cloudnative-cluster-api-provider-cce-system \
   --docker-server=swr.cn-north-4.myhuaweicloud.com \
   --docker-username="$SWR_USER" \
   --docker-password="$SWR_TOKEN" \
@@ -358,14 +358,14 @@ nocloud kubectl create secret docker-registry cce-provider-swr-secret \
 ### 8.2 Webhook TLS 证书
 
 ```bash
-nocloud kubectl -n cce-provider-system create secret tls webhook-service-cert \
+nocloud kubectl -n cloudnative-cluster-api-provider-cce-system create secret tls webhook-service-cert \
   --cert="$ARTIFACTS/server.crt" --key="$ARTIFACTS/server.key"
 ```
 
 ### 8.3 CCE 凭据 Secret
 
 ```bash
-nocloud kubectl -n cce-provider-system create secret generic cce-provider-credentials \
+nocloud kubectl -n cloudnative-cluster-api-provider-cce-system create secret generic cce-provider-credentials \
   --from-literal=accessKey="$CCE_DEPLOY_AK" \
   --from-literal=secretKey="$CCE_DEPLOY_SK"
 ```
@@ -373,11 +373,11 @@ nocloud kubectl -n cce-provider-system create secret generic cce-provider-creden
 ### 8.4 给 Provider Deployment 添加 imagePullSecrets 并重启
 
 ```bash
-nocloud kubectl -n cce-provider-system patch deployment cce-provider-controller-manager \
+nocloud kubectl -n cloudnative-cluster-api-provider-cce-system patch deployment cloudnative-cluster-api-provider-cce-controller-manager \
   --type='json' \
   -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"cce-provider-swr-secret"}]}]'
 
-nocloud kubectl -n cce-provider-system rollout restart deployment/cce-provider-controller-manager
+nocloud kubectl -n cloudnative-cluster-api-provider-cce-system rollout restart deployment/cloudnative-cluster-api-provider-cce-controller-manager
 ```
 
 ---
@@ -441,7 +441,7 @@ nocloud kubectl get pods -A | grep -E 'capi-|cert-manager|cce-provider'
 capi-kubeadm-bootstrap-system        capi-kubeadm-bootstrap-controller-manager-xxx    1/1 Running
 capi-kubeadm-control-plane-system    capi-kubeadm-control-plane-controller-manager-xxx 1/1 Running
 capi-system                          capi-controller-manager-xxx                      1/1 Running
-cce-provider-system                  cce-provider-controller-manager-xxx              1/1 Running
+cloudnative-cluster-api-provider-cce-system                  cloudnative-cluster-api-provider-cce-controller-manager-xxx              1/1 Running
 cert-manager                         cert-manager-xxx                                 1/1 Running
 cert-manager                         cert-manager-cainjector-xxx                      1/1 Running
 cert-manager                         cert-manager-webhook-xxx                         1/1 Running
@@ -449,7 +449,7 @@ cert-manager                         cert-manager-webhook-xxx                   
 
 **检查 Provider 日志**:
 ```bash
-nocloud kubectl -n cce-provider-system logs deploy/cce-provider-controller-manager --tail=30
+nocloud kubectl -n cloudnative-cluster-api-provider-cce-system logs deploy/cloudnative-cluster-api-provider-cce-controller-manager --tail=30
 ```
 
 应看到:
@@ -648,7 +648,7 @@ nocloud go run ./hack/survey-hw
 ### Provider pod 卡在 ContainerCreating
 
 ```bash
-nocloud kubectl -n cce-provider-system describe pod -l control-plane=controller-manager
+nocloud kubectl -n cloudnative-cluster-api-provider-cce-system describe pod -l control-plane=controller-manager
 ```
 
 常见原因:

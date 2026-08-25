@@ -201,8 +201,8 @@ kubectl get ccemanagedcontrolplane --watch
 1. **构建 Provider 镜像**(每个版本一次;正式发布会直接附带现成镜像 + `infrastructure-components.yaml`):
 
    ```bash
-   make docker-build           # 推送到真实仓库时 IMG=registry/org/cce-provider-controller:vX.Y.Z
-   # 本地 kind 开发循环用:docker build -t cce-provider-controller:dev .
+   make docker-build           # 推送到真实仓库时 IMG=registry/org/cloudnative-cluster-api-provider-cce:vX.Y.Z
+   # 本地 kind 开发循环用:docker build -t cloudnative-cluster-api-provider-cce:dev .
    ```
 
 2. **生成 `infrastructure-components.yaml`**(`clusterctl` 安装用的清单):
@@ -219,17 +219,17 @@ kubectl get ccemanagedcontrolplane --watch
 3. **Webhook TLS 证书**。manager 挂载 `/tmp/k8s-webhook-server/serving-certs`(`tls.crt`/`tls.key`)处的 Secret。不使用 cert-manager 时,自签一张 CN/SAN 匹配 webhook 服务的证书并创建 Secret:
 
    ```bash
-   # CN = webhook-service.cce-provider-system.svc;SAN:
-   #   webhook-service、webhook-service.cce-provider-system、
-   #   webhook-service.cce-provider-system.svc、
-   #   webhook-service.cce-provider-system.svc.cluster.local
-   kubectl -n cce-provider-system create secret tls webhook-service-cert \
+   # CN = webhook-service.cloudnative-cluster-api-provider-cce-system.svc;SAN:
+   #   webhook-service、webhook-service.cloudnative-cluster-api-provider-cce-system、
+   #   webhook-service.cloudnative-cluster-api-provider-cce-system.svc、
+   #   webhook-service.cloudnative-cluster-api-provider-cce-system.svc.cluster.local
+   kubectl -n cloudnative-cluster-api-provider-cce-system create secret tls webhook-service-cert \
      --cert=server.crt --key=server.key
    # 并把 `caBundle: <ca.crt 的 base64>` 注入 infrastructure-components.yaml 的每个 webhook
    # (scripts/deploy-kind.sh 已为你自动完成)
    ```
 
-   > RBAC 注意:leader-election RoleBinding 的 subject.namespace 必须是真实命名空间(`cce-provider-system`);kustomize 不会改写 RoleBinding 的 subjects。
+   > RBAC 注意:leader-election RoleBinding 的 subject.namespace 必须是真实命名空间(`cloudnative-cluster-api-provider-cce-system`);kustomize 不会改写 RoleBinding 的 subjects。
 
 4. **配置 clusterctl 并安装**(发布前使用本地源):
 
@@ -380,7 +380,7 @@ clusterctl delete --infrastructure cce
 ## FAQ / 故障排除
 
 - **`clusterctl init` 报 *"repository name must be canonical"*** —— `infrastructure-components.yaml` 中 manager 镜像不是三段式 `registry/org/repo:tag` 名称。用 kustomize 的 `images:` 转换覆盖(见 `scripts/deploy-kind.sh`)。
-- **`cce-provider-controller-manager` 卡在 `ContainerCreating`,报 "secret webhook-service-cert not found"** —— 创建 webhook TLS Secret(`kubectl -n cce-provider-system create secret tls webhook-service-cert --cert=server.crt --key=server.key`)并重启 Deployment。
+- **`cloudnative-cluster-api-provider-cce-controller-manager` 卡在 `ContainerCreating`,报 "secret webhook-service-cert not found"** —— 创建 webhook TLS Secret(`kubectl -n cloudnative-cluster-api-provider-cce-system create secret tls webhook-service-cert --cert=server.crt --key=server.key`)并重启 Deployment。
 - **`cert-manager` pod `ImagePullBackOff`(或 kind 上任何镜像拉取失败)** —— 你 shell 里的 `HTTP_PROXY`/`HTTPS_PROXY`(如失效的 `127.0.0.1:7890` 代理)被 kind 节点的 containerd 继承。去掉代理变量重建集群:`env -u http_proxy -u https_proxy kind create cluster ...`。
 - **集群创建报 `APIGW.0308`(429 限流)** —— 华为云限制写类 API 频率(实测 10 次/分钟)。控制器会自动退避重试,稍等即可(连续大量创建尝试后也会短暂出现此错误)。
 - **集群创建报 `CCE.01429004 Insufficient account balance`** —— 账户余额不足,无法创建计费的 CCE 资源。请充值,或改用接管已有集群的方式(见"分步部署"末尾说明)。

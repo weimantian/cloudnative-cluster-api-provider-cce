@@ -443,7 +443,7 @@ status:
   - `infrastructure-components.yaml`:CRD + Controller + RBAC + Webhook(同一 namespace,make generate 产物);
   - `cluster-template.yaml`:快速起集群模板(含 Secret 占位)。
 - `clusterctl init --infrastructure cce` 支持:发布到 GitHub Release 即构成 Provider 仓库(官方 clusterctl 合约);如需 `clusterctl` 预置列表需向上游提 PR(本项目不做,对标阿里云模式)。
-- 镜像:发布到华为云 SWR / ghcr,镜像名 `<org>/cce-provider-controller:vX.Y.Z`(对标 CAPHW 的 ghcr 发布模式)。
+- 镜像:发布到华为云 SWR / ghcr,镜像名 `<org>/cloudnative-cluster-api-provider-cce:vX.Y.Z`(对标 CAPHW 的 ghcr 发布模式)。
 - 文档:docs/book(对标 CAPHW:user-guide/dev-guide/reference)+ 华为云开发者社区博客 + 云商店开源镜像上架(用户已确认的发布策略)。
 
 ---
