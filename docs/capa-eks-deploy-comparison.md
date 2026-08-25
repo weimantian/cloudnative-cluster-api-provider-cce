@@ -118,6 +118,20 @@
 
 > 另有：集群 A 公网端点对齐（自动绑 EIP，`4a7c80f`）；控制台创建变体文档（`1b969ac`）。
 
+### 待规划：Provider 正式发布态改造（对标 CAPA clusterctl init 一步完成）
+
+**现状**：当前为开发态部署——组件走本地 file://、Provider 镜像私有 SWR、webhook 静态证书（预创建 Secret + 注入 caBundle），需额外步骤（SWR Secret + webhook cert）。
+
+**目标**：clusterctl init --infrastructure cce 对标 CAPA 一步完成（公网组件 + 公网镜像 + webhook 自动），需 3 项：
+
+1. **组件发布公网**：infrastructure-components.yaml + metadata.yaml 发布到 GitHub Release（clusterctl 从 release 拉取，取代本地 file://）。
+2. **镜像发布公网**：Provider 镜像推 GHCR（public），infrastructure-components.yaml 镜像地址从 SWR 改为 GHCR，节点公网直拉，省 SWR imagePullSecret。
+3. **webhook 改 cert-manager 自动签发**：config/ 加 cert-manager 配置（config/certmanager + deployment 注入注解 cert-manager.io/inject-ca-from），去掉手动 webhook-service-cert + caBundle。
+
+**说明**：无需改 Go 业务代码（控制器/服务逻辑与镜像/证书部署形态无关），仅改发布配置（config/ 清单 + 镜像地址）+ 发布动作（GitHub Release + GHCR）。
+
+**验收标准**：全新环境 clusterctl init --infrastructure cce 一步完成，无需 SWR Secret / 手动 webhook cert。
+
 ---
 
 ## 附录：本文档依据
