@@ -103,6 +103,11 @@ nocloud go run ./hack/smoke-setup
 
 > ⚠️ **踩坑 #1（DNS）**：脚本建子网时**必须指定 DNS**（`100.125.1.250` + `100.125.129.250`），否则节点拿到错误 DNS、cce-agent 下载失败、永久卡 Installing。已在脚本中修复。
 
+**DNS 说明（在哪设置 / 怎么获取 / 为什么）**：
+- **在哪设置**：DNS 是**子网属性**，在创建子网时配置。`smoke-setup` 调 VPC API `CreateSubnet` 时显式传 `primaryDns=100.125.1.250`、`secondaryDns=100.125.129.250`（`hack/smoke-setup/main.go`）；手动建子网则在 VPC 控制台 → 创建子网 → "DNS 服务器地址"填 `100.125.1.250,100.125.129.250`。
+- **怎么获取**：`100.125.1.250` / `100.125.129.250` 是华为云**云内 DNS 服务器地址**（各 region 固定提供，解析 OBS/SWR/IAM 等内网域名）。可查华为云 VPC 官方文档；或从已有子网获取（VPC API `ShowSubnet` / 控制台子网详情 / `hack/survey-hw` 输出）。
+- **为什么**：节点用子网 DNS 解析域名，若 DNS 不对（公网 DNS 或 VPC 默认值），解析不到华为云内网 OBS 域名 → cce-agent 下载失败 → 节点永久卡 `Installing`。
+
 ### 步骤 2：创建跳板机 ECS
 
 ```bash
