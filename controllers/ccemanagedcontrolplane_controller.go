@@ -22,9 +22,13 @@ import (
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
 	ctrl "sigs.k8s.io/controller-runtime"
+	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/controller"
 	"sigs.k8s.io/controller-runtime/pkg/controller/controllerutil"
+	"sigs.k8s.io/controller-runtime/pkg/handler"
+	"sigs.k8s.io/controller-runtime/pkg/predicate"
+	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
@@ -43,6 +47,12 @@ const ControlPlaneFinalizer = "ccemanagedcontrolplane.controlplane.cluster.x-k8s
 // kubeconfigValidityDays is the requested certificate validity (questionnaire
 // Q2: -1 or [1,1827]; 365 = one year).
 const kubeconfigValidityDays = 365
+
+// credentialsSecretSuffix is the suffix of the per-cluster credentials Secret
+// (<clusterName>-credentials) that carries the AK/SK used by the provider to
+// drive the CCE API. The controller watches it so rotating the Secret takes
+// effect without restarting the provider.
+const credentialsSecretSuffix = "-credentials"
 
 // CCEManagedControlPlaneReconciler reconciles CCEManagedControlPlane objects
 // (ControlPlane). It drives the CCE cluster lifecycle and kubeconfig Secret.
@@ -583,9 +593,41 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 func (r *CCEManagedControlPlaneReconciler) SetupWithManager(ctx context.Context, mgr ctrl.Manager, opts controller.Options) error {
 	return ctrl.NewControllerManagedBy(mgr).
 		For(&controlplanev1beta2.CCEManagedControlPlane{}).
+		// Watch the per-cluster credentials Secret (<clusterName>-credentials) so
+		// rotating AK/SK (or the identity Secret) takes effect on the next
+		// reconcile without restarting the provider.
+		Watches(
+			&corev1.Secret{},
+			handler.EnqueueRequestsFromMapFunc(r.credentialsSecretToControlPlane),
+			builder.WithPredicates(predicate.NewPredicateFuncs(func(o client.Object) bool {
+				return strings.HasSuffix(o.GetName(), credentialsSecretSuffix)
+			})),
+		).
 		WithOptions(opts).
 		Named("ccemanagedcontrolplane").
 		Complete(r)
+}
+
+// credentialsSecretToControlPlane maps a credentials Secret event to the
+// CCEManagedControlPlane(s) whose clusterName matches the Secret name
+// (<clusterName>-credentials), so a Secret update re-reconciles them.
+func (r *CCEManagedControlPlaneReconciler) credentialsSecretToControlPlane(ctx context.Context, o client.Object) []reconcile.Request {
+	secret, ok := o.(*corev1.Secret)
+	if !ok || !strings.HasSuffix(secret.Name, credentialsSecretSuffix) {
+		return nil
+	}
+	clusterName := strings.TrimSuffix(secret.Name, credentialsSecretSuffix)
+	cps := &controlplanev1beta2.CCEManagedControlPlaneList{}
+	if err := r.Client.List(ctx, cps, client.MatchingLabels{clusterv1.ClusterNameLabel: clusterName}); err != nil {
+		return nil
+	}
+	var reqs []reconcile.Request
+	for i := range cps.Items {
+		reqs = append(reqs, reconcile.Request{
+			NamespacedName: types.NamespacedName{Namespace: cps.Items[i].Namespace, Name: cps.Items[i].Name},
+		})
+	}
+	return reqs
 }
 
 // ---- helpers ----

@@ -705,6 +705,31 @@ nocloud go run ./hack/deploy-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
 | 22 | 删除集群时 `CCEManagedMachinePool` 停在 "Node pool deletion requested, waiting"，需 touch 才继续 | reconcileDelete 的 `RequeueAfter` 被 workqueue dedup 吞掉（对象 terminating 时），删节点池轮询停止 | reconcileDelete 删节点池时 bump annotation 触发 watch 兜底（683c99d） | ✅ 已修复 |
 
 ---
+## 凭证轮换
+
+### AK/SK 轮换（静态凭证）
+
+更新 `<clusterName>-credentials` Secret 的 `accessKey` / `secretKey` 即可，**无需重启 provider**：provider 每次 reconcile 读取最新值，且 controller watch 该 Secret，更新后自动重新 reconcile。
+
+```bash
+# 跳板机：原地更新 credentials Secret（新 AK/SK）
+kubectl create secret generic my-cce-cluster-credentials \
+  --namespace default \
+  --from-literal=accessKey='<新AK>' --from-literal=secretKey='<新SK>' \
+  --dry-run=client -o yaml | kubectl apply -f -
+
+# 验证：观察 provider 用新凭证继续正常（日志无鉴权错误）
+kubectl -n cce-provider-system logs deploy/cce-provider-controller-manager --tail=20
+```
+
+### IAM 委托（agency）凭证
+
+当 `CCEClusterIdentity` 引用委托（agency）时，provider 通过 **STS `AssumeAgency`** 获取临时凭证，**每次 reconcile 自动刷新**（对标 CAPA 的 EC2 IAM 角色），无过期运维负担；仅需确保委托的信任策略与权限覆盖 CCE 操作。
+
+> 本项目静态 AK/SK 与 agency 委托两条路径均已支持：默认用 `<clusterName>-credentials` Secret；`spec.identityRef` 指向 `CCEClusterIdentity` 时走委托/STS。
+
+---
+
 
 ## 环境变量速查
 
