@@ -361,7 +361,7 @@ nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_DEPLOY_REGION=cn-north-4 \
 - 若绑 EIP 失败，手动 `nocloud go run ./hack/bind-eip -cluster <MGMT_CLUSTER_ID>`。
 
 ### 集群创建失败 `APIGW.0308`（429 限流）
-CCE 写限流 10 次/分钟，停止写操作等窗口清零（1-10 分钟）。
+CCE 写限流 10 次/分钟（429 重试也计数）。`deploy-network`/`deploy-bastion`/`deploy-mgmt-cluster` 已内置 429 退避（自动等窗口清零再重试）；脚本间建议间隔 ≥60s；密集 429 后停止写操作 1-10 分钟。
 
 ### 代理导致连接失败
 所有命令前加 `nocloud`（剥离本地代理）。

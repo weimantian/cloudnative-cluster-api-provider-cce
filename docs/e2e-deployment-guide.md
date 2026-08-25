@@ -168,7 +168,7 @@ nocloud CCE_DEPLOY_VPC="$CCE_DEPLOY_VPC" \
 
 > ⚠️ **踩坑 #3（无公网 endpoint）**：CCE 不自动分配公网 IP——`publicAccess=true` 时仍只有 Internal endpoint。现已由 `deploy-mgmt-cluster` 创建后**自动绑定 EIP**（复用 `hack/bind-eip`）开放公网（对标 CAPA EKS 默认公网+私有端点）；若设 `CCE_DEPLOY_PUBLIC=false` 则保持纯内网，kubeconfig 的 server 是内网 IP，本地无法直达，必须由跳板机访问。
 >
-> ⚠️ **踩坑 #10（429 限流）**：连续写操作触发 CCE 写限流（10 次/分钟），且每次 429 重试也计入限流计数。需停止写操作等窗口清零（1-10 分钟），或后台自动重试。
+> ⚠️ **踩坑 #10（429 限流）**：连续写操作触发 CCE 写限流（10 次/分钟），且每次 429 重试也计入限流计数。`deploy-network`/`deploy-bastion`/`deploy-mgmt-cluster` 已内置 429 退避（自动等窗口清零再重试）；脚本间建议间隔 ≥60s。
 
 **替代方式：控制台创建管理集群 A**（不跑 `deploy-mgmt-cluster` 时，本方式同样满足后续流程）：
 
@@ -694,7 +694,7 @@ nocloud go run ./hack/deploy-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
 | 7 | `docker pull --platform linux/amd64` 拉到 arm64 | Docker Desktop 对 multi-arch 的 pull --platform 不生效 | `docker buildx imagetools create --platform linux/amd64` | ✅ 已修复 |
 | 8 | NAT 网关创建失败 `CBC.30060005` | 余额不足 | 零公网方案不需要 NAT；充值余额 | ✅ 已记录 |
 | 9 | Installing 节点无法删除（`CCE_CM.0002`/`CCE.01403006`/`CCE.01400024` 死锁） | CCE 限制 | ECS 层强删节点 → 等 CCE 检测 → 删集群 | ✅ 已记录 |
-| 10 | 连续 429 限流（`APIGW.0308`） | CCE 写限流 10 次/分钟，429 重试也计数 | 停止写操作等窗口清零，或后台自动重试 | ✅ 已记录 |
+| 10 | 连续 429 限流（`APIGW.0308`） | CCE 写限流 10 次/分钟，429 重试也计数；部署脚本写操作集中（一次部署 ~10 次写）且无退避 | ① hack 脚本（deploy-network/bastion/mgmt-cluster）已内置 429 退避（等窗口清零再重试）；② 脚本间建议间隔 ≥60s；③ 密集 429 后停止写操作 1-10 分钟 | ✅ 已修复（b3bfb4b） |
 | 11 | 删 VPC 报 `vpc contain peering` / `exroutes exists` | 遗留 VPC 对等连接 + 路由 | 先删 peering → 清空路由表 peering 路由 → 删 VPC | ✅ 已记录 |
 | 12 | ECS 创建报 `Ecs.0314 keypair does not match user_id` | 云上存在其他用户同名密钥对 | 删本地私钥文件强制新建密钥对 | ✅ 已记录 |
 | 13 | CreateCluster 报 `CCE_CM.0402 Version is not support, Version format error` | CCE CreateCluster API 只接受 `v1.35`（major.minor），而 webhook 要求完整 semver `v1.35.0` | cce.go 加 `cceClusterVersion` 去 patch（v1.35.0→v1.35） | ✅ 已修复 |
