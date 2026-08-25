@@ -301,6 +301,32 @@ clusterctl init --infrastructure cce
 
 > 部署后需修复 provider pod（SWR 私有仓库 imagePullSecret + webhook TLS Secret），详见"附录 B"。
 
+### 步骤 8.5：使用 `clusterctl generate cluster` 生成集群 B（推荐，替代手写）
+
+provider 提供 clusterctl 模板（Standard 默认 + Turbo flavor），支持 `clusterctl generate cluster` 自动生成 5 个对象的清单。
+
+```bash
+# 跳板机：安装模板到 clusterctl overrides 目录（目录名 = provider 标签/版本）
+mkdir -p ~/.cluster-api/overrides/infrastructure-cce/v0.1.0
+cp /root/cluster-template-clusterctl.yaml ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template.yaml
+cp /root/cluster-template-turbo.yaml    ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-turbo.yaml
+
+# 生成 Standard 集群 B 清单（默认 flavor）
+clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 > my-cluster.yaml
+
+# 生成 Turbo 集群 B 清单（eni 网络模式）
+clusterctl generate cluster my-cce-cluster --flavor turbo --kubernetes-version v1.35.0 > my-cluster-turbo.yaml
+```
+
+| 参数 | 含义 |
+|---|---|
+| `--flavor turbo` | 选择 Turbo（eni）模板；省略则用默认 Standard（vpc-router）模板 |
+| `--kubernetes-version` | K8s 版本（替换 `${KUBERNETES_VERSION}`） |
+| `${CLUSTER_NAME}` / `${WORKER_MACHINE_COUNT}` | clusterctl 自动替换；`--worker-machine-count` 控制节点数 |
+
+> ⚠️ 生成后仍需替换 **`VERIFY-*` 占位符**（region/VPC/子网/ENI 子网/密钥对/AZ，clusterctl 不替换这些），再创建 credentials/bootstrap Secret 并 `kubectl apply`（见步骤 9 后半段）。
+> 模板源文件：`config/samples/cluster-template-clusterctl.yaml`（Standard）与 `config/samples/cluster-template-turbo.yaml`（Turbo）；纯 kubectl apply 的手写模板仍保留在 `config/samples/cluster-template.yaml`。
+
 ### 步骤 9：生成集群 B 配置（托管节点组）+ kubectl apply
 
 > "托管节点组" = CAPI `MachinePool` + 本项目 `CCEManagedMachinePool`（CCE 节点池）。模板在 `config/samples/cluster-template.yaml`。

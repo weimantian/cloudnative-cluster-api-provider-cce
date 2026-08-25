@@ -1,0 +1,109 @@
+# clusterctl generate cluster template for cloudnative-cluster-api-provider-cce.
+#
+# This is the DEFAULT (Standard, vpc-router) flavor consumed by:
+#   clusterctl generate cluster <name> --kubernetes-version v1.35.0
+#
+# Install under ~/.cluster-api/overrides/infrastructure-cce/<version>/ and run
+# clusterctl generate cluster; it substitutes ${CLUSTER_NAME}, ${KUBERNETES_VERSION}
+# and ${WORKER_MACHINE_COUNT}. VERIFY-* placeholders are NOT substituted by
+# clusterctl — fill them in the generated manifest before applying.
+#
+# The plain kubectl-apply sample remains at config/samples/cluster-template.yaml.
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: default
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks: ["10.245.0.0/16"] # must not overlap other clusters in the same VPC
+    services:
+      cidrBlocks: ["10.248.0.0/16"]
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+    kind: CCECluster
+    name: ${CLUSTER_NAME}
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+    kind: CCEManagedControlPlane
+    name: ${CLUSTER_NAME}-control-plane
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCECluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  region: VERIFY-REGION
+  network:
+    vpc:
+      id: VERIFY-VPC-ID
+    subnets:
+      - id: VERIFY-SUBNET-ID # node subnet
+        availabilityZone: VERIFY-AZ
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: CCEManagedControlPlane
+metadata:
+  name: ${CLUSTER_NAME}-control-plane
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  version: ${KUBERNETES_VERSION} # full semver; provider strips patch for the CCE API
+  flavor: cce.s1.small
+  containerNetwork:
+    mode: vpc-router # Standard (Turbo uses --flavor turbo)
+    cidr: 10.245.0.0/16
+  serviceNetwork:
+    cidr: 10.248.0.0/16
+  endpointAccess:
+    public: false
+  billing:
+    mode: 0
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachinePool
+metadata:
+  name: ${CLUSTER_NAME}-pool-0
+  namespace: default
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${WORKER_MACHINE_COUNT}
+  template:
+    spec:
+      clusterName: ${CLUSTER_NAME}
+      version: ${KUBERNETES_VERSION}
+      bootstrap:
+        dataSecretName: ${CLUSTER_NAME}-bootstrap
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: CCEManagedMachinePool
+        name: ${CLUSTER_NAME}-pool-0
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCEManagedMachinePool
+metadata:
+  name: ${CLUSTER_NAME}-pool-0
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  nodePoolName: pool-0
+  flavor: c6.large.2 # Standard: any general-purpose flavor
+  os: Huawei Cloud EulerOS 2.0
+  rootVolume:
+    size: 40
+    type: GPSSD
+  dataVolumes:
+    - size: 100
+      type: GPSSD
+  sshKey: VERIFY-KEYPAIR-NAME
+  availabilityZone: VERIFY-AZ
+  replicas: ${WORKER_MACHINE_COUNT}
+  billingMode: 0

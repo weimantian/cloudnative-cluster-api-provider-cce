@@ -1,0 +1,116 @@
+# clusterctl generate cluster template — Turbo (eni) flavor.
+#
+# Consumed by:
+#   clusterctl generate cluster <name> --flavor turbo --kubernetes-version v1.35.0
+#
+# Turbo differences vs the default (Standard) flavor:
+#   - containerNetwork.mode: eni + eniSubnets (neutron_subnet_id, webhook-required)
+#   - CCECluster additionally references the ENI subnet (type: eni)
+#   - category: Turbo (eni mode also auto-infers Turbo)
+#   - node flavor must have sub-ENI quota > 0 (e.g. c7.large.2; c6sne is abandoned)
+#
+# clusterctl substitutes ${CLUSTER_NAME}, ${KUBERNETES_VERSION}, ${WORKER_MACHINE_COUNT};
+# fill VERIFY-* placeholders before applying.
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: default
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks: ["10.245.0.0/16"] # must not overlap other clusters in the same VPC
+    services:
+      cidrBlocks: ["10.248.0.0/16"]
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+    kind: CCECluster
+    name: ${CLUSTER_NAME}
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+    kind: CCEManagedControlPlane
+    name: ${CLUSTER_NAME}-control-plane
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCECluster
+metadata:
+  name: ${CLUSTER_NAME}
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  region: VERIFY-REGION
+  network:
+    vpc:
+      id: VERIFY-VPC-ID
+    subnets:
+      - id: VERIFY-SUBNET-ID # node subnet
+        availabilityZone: VERIFY-AZ
+      - id: VERIFY-ENI-SUBNET-ID # Turbo ENI container subnet
+        type: eni
+        neutronSubnetId: VERIFY-ENI-NEUTRON-ID
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: CCEManagedControlPlane
+metadata:
+  name: ${CLUSTER_NAME}-control-plane
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  category: Turbo
+  version: ${KUBERNETES_VERSION} # full semver; provider strips patch for the CCE API
+  flavor: cce.s1.small
+  containerNetwork:
+    mode: eni # Turbo: container CIDR comes from the ENI subnet
+    eniSubnets:
+      - VERIFY-ENI-NEUTRON-ID # webhook requires it; eniNetwork API uses the neutron ID
+  serviceNetwork:
+    cidr: 10.248.0.0/16
+  endpointAccess:
+    public: false
+  billing:
+    mode: 0
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachinePool
+metadata:
+  name: ${CLUSTER_NAME}-pool-0
+  namespace: default
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${WORKER_MACHINE_COUNT}
+  template:
+    spec:
+      clusterName: ${CLUSTER_NAME}
+      version: ${KUBERNETES_VERSION}
+      bootstrap:
+        dataSecretName: ${CLUSTER_NAME}-bootstrap
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: CCEManagedMachinePool
+        name: ${CLUSTER_NAME}-pool-0
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCEManagedMachinePool
+metadata:
+  name: ${CLUSTER_NAME}-pool-0
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  nodePoolName: pool-0
+  flavor: c7.large.2 # Turbo requires sub-ENI quota > 0 (c6sne is abandoned)
+  os: Huawei Cloud EulerOS 2.0
+  rootVolume:
+    size: 40
+    type: GPSSD
+  dataVolumes:
+    - size: 100
+      type: GPSSD
+  sshKey: VERIFY-KEYPAIR-NAME
+  availabilityZone: VERIFY-AZ
+  replicas: ${WORKER_MACHINE_COUNT}
+  billingMode: 0
