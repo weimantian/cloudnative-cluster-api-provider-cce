@@ -97,9 +97,9 @@ nocloud go run ./hack/deploy-network
 |---|---|
 | `CLOUD_SDK_AK` / `CLOUD_SDK_SK` | 华为云访问密钥，调用 VPC/ECS API |
 | `CCE_DEPLOY_REGION` | 区域，默认 `cn-north-4` |
-| 输出 `CCE_DEPLOY_VPC` | VPC ID（`capi-smoke-vpc`，CIDR 10.0.0.0/16） |
-| 输出 `CCE_DEPLOY_SUBNET` | 节点子网 ID（`capi-smoke-subnet-node`，10.0.1.0/24） |
-| 输出 `CCE_DEPLOY_KEYPAIR` | 密钥对名（`capi-smoke-key`，私钥被丢弃，仅节点登录用） |
+| 输出 `CCE_DEPLOY_VPC` | VPC ID（`capi-vpc`，CIDR 10.0.0.0/16） |
+| 输出 `CCE_DEPLOY_SUBNET` | 节点子网 ID（`capi-subnet-node`，10.0.1.0/24） |
+| 输出 `CCE_DEPLOY_KEYPAIR` | 密钥对名（`capi-node-key`，私钥被丢弃，仅节点登录用） |
 
 > ⚠️ **踩坑 #1（DNS）**：脚本建子网时**必须指定 DNS**（`100.125.1.250` + `100.125.129.250`），否则节点拿到错误 DNS、cce-agent 下载失败、永久卡 Installing。已在脚本中修复。
 
@@ -121,7 +121,7 @@ nocloud go run ./hack/deploy-bastion
 | 输出 `BASTION_PUBLIC_IP` | 跳板机公网 IP（SSH 登录用） |
 | 输出 `capi-bastion-key.pem` | **跳板机私钥（必须保留，SSH 登录用）** |
 
-> ⚠️ **踩坑 #2（私钥）**：跳板机密钥对 `capi-bastion-key` 的私钥脚本会保存到本地 `capi-bastion-key.pem`。集群 A 的节点也改用此密钥对（而非 `capi-smoke-key`），这样节点异常时可 SSH 排查。
+> ⚠️ **踩坑 #2（私钥）**：跳板机密钥对 `capi-bastion-key` 的私钥脚本会保存到本地 `capi-bastion-key.pem`。集群 A 的节点也改用此密钥对（而非 `capi-node-key`），这样节点异常时可 SSH 排查。
 >
 > ⚠️ **踩坑 #12（Ecs.0314）**：若报 `keypair does not match the user_id`，说明云上存在**其他用户**创建的同名密钥对。删除本地私钥文件（`rm -f capi-bastion-key.pem`）强制脚本新建即可。
 
@@ -451,10 +451,10 @@ kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes
 
 ### 步骤 12：确认 ENI 子网（阶段一已自动创建）
 
-阶段一 `hack/deploy-network` 会额外创建 ENI 子网 `capi-smoke-subnet-eni`（10.0.2.0/24）并输出 `CCE_DEPLOY_ENI_SUBNET`。
+阶段一 `hack/deploy-network` 会额外创建 ENI 子网 `capi-subnet-eni`（10.0.2.0/24）并输出 `CCE_DEPLOY_ENI_SUBNET`。
 
 > ⚠️ **踩坑 #21（neutron_subnet_id）**：CCE `eniNetwork.subnets[].subnetID` 要求 **neutron_subnet_id**（不是 VPC 网络的 subnet ID）。
-> deploy-network 刚建子网时 neutron ID 可能尚未同步（输出为空），稍后用 `hack/survey-hw` 或 VPC 控制台重新查询 `capi-smoke-subnet-eni` 的 `neutron_subnet_id` 即可。
+> deploy-network 刚建子网时 neutron ID 可能尚未同步（输出为空），稍后用 `hack/survey-hw` 或 VPC 控制台重新查询 `capi-subnet-eni` 的 `neutron_subnet_id` 即可。
 
 ### 步骤 13：生成 Turbo 集群 B 配置
 

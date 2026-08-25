@@ -10,7 +10,7 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //   - one VPC (10.0.0.0/16)
 //   - two subnets: node subnet (10.0.1.0/24) and eni/container subnet
 //     (10.0.2.0/24)
-//   - one SSH keypair (capi-smoke-key)
+//   - one SSH keypair (capi-node-key)
 //   - cheapest 2vCPU/4GiB ECS flavor in the region (CCE node minimum)
 //
 // It prints a CCE_DEPLOY_* env snippet consumed by the deploy guide (stage 1)
@@ -37,10 +37,10 @@ import (
 )
 
 const (
-	vpcName     = "capi-smoke-vpc"
-	subnetNode  = "capi-smoke-subnet-node"
-	subnetENI   = "capi-smoke-subnet-eni"
-	keypairName = "capi-smoke-key"
+	vpcName     = "capi-vpc"
+	subnetNode  = "capi-subnet-node"
+	subnetENI   = "capi-subnet-eni"
+	keypairName = "capi-node-key"
 	vpcCIDR     = "10.0.0.0/16"
 )
 

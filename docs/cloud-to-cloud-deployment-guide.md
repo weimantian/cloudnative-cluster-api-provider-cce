@@ -98,17 +98,17 @@ nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_DEPLOY_REGION=cn-north-4 \
 
 输出示例:
 ```
-VPC: capi-smoke-vpc (9c4c6207-...)
-Node subnet: capi-smoke-subnet-node (..., id=..., neutron=...)
-ENI  subnet: capi-smoke-subnet-eni  (..., id=..., neutron=...)
-Keypair: capi-smoke-key (created)
+VPC: capi-vpc (9c4c6207-...)
+Node subnet: capi-subnet-node (..., id=..., neutron=...)
+ENI  subnet: capi-subnet-eni  (..., id=..., neutron=...)
+Keypair: capi-node-key (created)
 
 --- export for scripts/smoke-cce.sh ---
 export CCE_DEPLOY_REGION="cn-north-4"
 export CCE_DEPLOY_VPC="9c4c6207-..."
 export CCE_DEPLOY_SUBNET="..."
 export CCE_DEPLOY_ENI_SUBNET="..."  # neutron_subnet_id
-export CCE_DEPLOY_KEYPAIR="capi-smoke-key"
+export CCE_DEPLOY_KEYPAIR="capi-node-key"
 export CCE_DEPLOY_CASES='cluster,pool,scale,delete'
 ```
 
@@ -713,7 +713,7 @@ CCE 要求显式指定 OS。模板中已设 `os: Huawei Cloud EulerOS 2.0`。其
 | `CCE_DEPLOY_VPC` | VPC ID | `cb3f7bfb-...` |
 | `CCE_DEPLOY_SUBNET` | 节点子网 ID | `2aa8f43c-...` |
 | `CCE_DEPLOY_ENI_SUBNET` | ENI 子网 neutron ID (smoke 测试) | `16e607b7-...` |
-| `CCE_DEPLOY_KEYPAIR` | SSH 密钥对名 | `capi-smoke` |
+| `CCE_DEPLOY_KEYPAIR` | SSH 密钥对名 | `capi-node-key` |
 | `CCE_DEPLOY_AZ` | 可用区 | `cn-north-4a` |
 | `CCE_DEPLOY_CASES` | smoke 测试用例 | `cluster,pool,scale,delete` |
 | `E2E_MANAGEMENT_KUBECONFIG` | 管理集群 kubeconfig 路径 | `./capi-mgmt.kubeconfig` |
