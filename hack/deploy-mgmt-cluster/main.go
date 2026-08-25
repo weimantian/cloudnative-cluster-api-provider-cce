@@ -32,7 +32,12 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //	CCE_DEPLOY_MGMT_NODES        node count (default 2)
 //	CCE_DEPLOY_MGMT_AZS          comma-separated AZs (default single AZ;
 //	                             first AZ = pool AZ, rest = extension groups)
+//	CCE_DEPLOY_PUBLIC            bind a public EIP after create (default true,
+//	                             mirrors CAPA EKS public+private endpoint)
+//	CCE_DEPLOY_PUBLIC_CIDRS      comma-separated source CIDR whitelist for the
+//	                             public endpoint (empty = all sources)
 //
+// Usage:
 // Usage:
 //
 //	go run ./hack/deploy-mgmt-cluster
@@ -46,6 +51,8 @@ import (
 	"flag"
 	"fmt"
 	"os"
+	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 
@@ -110,6 +117,8 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 	}
 
 	name := "capi-mgmt-" + fmt.Sprintf("%d", time.Now().Unix()%100000)
+	public := envBool("CCE_DEPLOY_PUBLIC", true)
+	publicCIDRs := splitCSV(envOr("CCE_DEPLOY_PUBLIC_CIDRS"))
 	fmt.Printf("creating management cluster %q (region %s, vpc %s, subnet %s)…\n",
 		name, envDefault("CCE_DEPLOY_REGION", "cn-north-4"), vpcID, subnetID)
 
@@ -123,8 +132,12 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 		HostNetworkVpcID:     vpcID,
 		HostNetworkSubnetID:  subnetID,
 		ServiceCIDR:          "10.247.0.0/16",
-		PublicAccess:         true, // management API server reachable from the laptop
-		BillingMode:          0,
+		// Public access mirrors the CAPA EKS control-plane endpoint (public +
+		// private). CCE does not allocate a public IP automatically, so we bind
+		// an EIP afterwards when public is enabled (CCE_DEPLOY_PUBLIC, default true).
+		PublicAccess:      public,
+		PublicAccessCIDRs: publicCIDRs,
+		BillingMode:       0,
 	})
 	if err != nil {
 		fatalf("CreateCluster: %v", err)
@@ -138,6 +151,18 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 	fmt.Printf("cluster Available: version=%s\n", info.Version)
 	for _, ep := range info.Endpoints {
 		fmt.Printf("  endpoint type=%s url=%s\n", ep.Type, ep.URL)
+	}
+
+	// Bind a public EIP to mirror the CAPA EKS default public+private control-
+	// plane endpoint. Reuses hack/bind-eip so the logic lives in one place;
+	// with CCE_DEPLOY_PUBLIC=false the management API stays VPC-private.
+	if public {
+		fmt.Println("binding public EIP (hack/bind-eip)…")
+		cmd := exec.Command("go", "run", "./hack/bind-eip", "-cluster", id)
+		cmd.Stdout, cmd.Stderr = os.Stdout, os.Stderr
+		if err := cmd.Run(); err != nil {
+			fmt.Printf("bind-eip failed: %v (management API stays private; run hack/bind-eip -cluster %s later)\n", err, id)
+		}
 	}
 
 	createPool(ctx, svc, id, kubeconfigPath)
@@ -362,6 +387,19 @@ func int32Env(key string, def int32) int32 {
 		}
 	}
 	return def
+}
+
+// envBool parses a boolean env var; default used when unset or unparseable.
+func envBool(key string, def bool) bool {
+	v := os.Getenv(key)
+	if v == "" {
+		return def
+	}
+	b, err := strconv.ParseBool(v)
+	if err != nil {
+		return def
+	}
+	return b
 }
 
 func fatal(msg string) {

@@ -162,9 +162,10 @@ nocloud CCE_DEPLOY_VPC="$CCE_DEPLOY_VPC" \
 | `CCE_DEPLOY_K8S_VERSION=v1.35` | 集群 K8s 版本 |
 | 默认 flavor | 集群 `cce.s1.small`，节点 `c6.large.2` ×2 |
 | `CCE_DEPLOY_MGMT_AZS`（可选） | 多 AZ 列表（逗号分隔，如 `cn-north-4a,cn-north-4b`）；默认单 AZ（`CCE_DEPLOY_AZ`）。首个 AZ 为主节点池，其余作为扩展组（管理集群高可用） |
+| `CCE_DEPLOY_PUBLIC` / `CCE_DEPLOY_PUBLIC_CIDRS`（可选） | 公网访问开关（默认 `true`）+ 来源 IP 白名单（逗号分隔 CIDR，空=全部开放）。对标 CAPA EKS 控制面"公网+私有"端点：默认自动绑定 EIP 开放公网；设 `false` 则仅内网 |
 | 输出 `capi-mgmt.kubeconfig` | **管理集群 kubeconfig（下载到本地）** |
 
-> ⚠️ **踩坑 #3（无公网 endpoint）**：管理集群 `publicAccess=true` 仍**只有 Internal endpoint**（`https://10.0.x.x:5443`）。kubeconfig 的 server 是内网 IP，本地无法直达，必须由跳板机访问。
+> ⚠️ **踩坑 #3（无公网 endpoint）**：CCE 不自动分配公网 IP——`publicAccess=true` 时仍只有 Internal endpoint。现已由 `deploy-mgmt-cluster` 创建后**自动绑定 EIP**（复用 `hack/bind-eip`）开放公网（对标 CAPA EKS 默认公网+私有端点）；若设 `CCE_DEPLOY_PUBLIC=false` 则保持纯内网，kubeconfig 的 server 是内网 IP，本地无法直达，必须由跳板机访问。
 >
 > ⚠️ **踩坑 #10（429 限流）**：连续写操作触发 CCE 写限流（10 次/分钟），且每次 429 重试也计入限流计数。需停止写操作等窗口清零（1-10 分钟），或后台自动重试。
 
