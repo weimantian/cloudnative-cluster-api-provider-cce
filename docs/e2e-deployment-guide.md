@@ -279,15 +279,109 @@ clusterctl init --infrastructure cce
 > "托管节点组" = CAPI `MachinePool` + 本项目 `CCEManagedMachinePool`（CCE 节点池）。模板在 `config/samples/cluster-template.yaml`。
 
 ```bash
-# 跳板机：复制模板并替换占位符（模板已上传到跳板机）
-cp cluster-template.yaml my-cluster.yaml
-
-# 替换三个占位符
-sed -i \
-  -e 's/VERIFY-VPC-ID/<VPC-ID>/' \
-  -e 's/VERIFY-SUBNET-ID/<节点子网-ID>/' \
-  -e 's/VERIFY-KEYPAIR-NAME/capi-bastion-key/' \
-  my-cluster.yaml
+# 跳板机：写入标准版（vpc-router）my-cluster.yaml —— 替换 VERIFY-* 占位符
+# 模板亦见 config/samples/cluster-template.yaml（本配置为占位符替换后的完整版）
+cat > my-cluster.yaml <<'EOF'
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: my-cce-cluster
+  namespace: default
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks: ["10.245.0.0/16"] # 需与同 VPC 其他集群不冲突
+    services:
+      cidrBlocks: ["10.248.0.0/16"]
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+    kind: CCECluster
+    name: my-cce-cluster
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+    kind: CCEManagedControlPlane
+    name: my-cce-cluster-control-plane
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCECluster
+metadata:
+  name: my-cce-cluster
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster
+spec:
+  region: cn-north-4
+  network:
+    vpc:
+      id: VERIFY-VPC-ID
+    subnets:
+      - id: VERIFY-SUBNET-ID # 节点子网
+        availabilityZone: cn-north-4a
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: CCEManagedControlPlane
+metadata:
+  name: my-cce-cluster-control-plane
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster
+spec:
+  clusterName: my-cce-cluster
+  category: CCE # 默认即 CCE，可省略
+  version: "v1.35.0" # webhook 要求完整 semver；provider 内部去 patch 调 CCE API
+  flavor: cce.s1.small
+  containerNetwork:
+    mode: vpc-router # Standard（区别于 Turbo 的 eni）
+    cidr: 10.245.0.0/16
+  serviceNetwork:
+    cidr: 10.248.0.0/16
+  endpointAccess:
+    public: false
+  billing:
+    mode: 0
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachinePool
+metadata:
+  name: my-cce-cluster-pool-0
+  namespace: default
+spec:
+  clusterName: my-cce-cluster
+  replicas: 1
+  template:
+    spec:
+      clusterName: my-cce-cluster
+      version: v1.35.0 # CAPI 要求完整 semver
+      bootstrap:
+        dataSecretName: my-cce-cluster-bootstrap
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: CCEManagedMachinePool
+        name: my-cce-cluster-pool-0
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCEManagedMachinePool
+metadata:
+  name: my-cce-cluster-pool-0
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster
+spec:
+  clusterName: my-cce-cluster
+  nodePoolName: pool-0
+  flavor: c6.large.2 # Standard 任意通用型即可
+  os: Huawei Cloud EulerOS 2.0
+  rootVolume:
+    size: 40
+    type: GPSSD
+  dataVolumes:
+    - size: 100
+      type: GPSSD
+  sshKey: VERIFY-KEYPAIR-NAME
+  availabilityZone: cn-north-4a
+  replicas: 1
+  billingMode: 0
+EOF
 
 # 创建凭据 Secret + bootstrap Secret（CAPI v1.14 MachinePool 契约要求）
 kubectl create secret generic my-cce-cluster-credentials \
