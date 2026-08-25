@@ -24,7 +24,7 @@
 2. **manager 无 webhook 证书卷**:`/tmp/k8s-webhook-server/serving-certs/tls.crt` 不存在 → manager 启动即崩溃。
    **修复**:`config/manager/manager.yaml` 挂载 `webhook-service-cert` Secret(证书由部署方预创建或 cert-manager 注入)。
 3. **缺 leader election RBAC**:ServiceAccount 无 `coordination.k8s.io/leases` 权限 → controller 无法选主。
-   **修复**:新增 `config/rbac/leader_election_role.yaml` + `leader_election_role_binding.yaml`;**注意 kustomize 不会改写 RoleBinding 的 subject.namespace**,必须直接写真实命名空间 `cloudnative-cluster-api-provider-cce-system`(kubebuilder 模板的 `system` 占位会失效)。
+   **修复**:新增 `config/rbac/leader_election_role.yaml` + `leader_election_role_binding.yaml`;**注意 kustomize 不会改写 RoleBinding 的 subject.namespace**,必须直接写真实命名空间 `capi-cce-system`(kubebuilder 模板的 `system` 占位会失效)。
 4. **CCECluster 缺 CAPI 契约字段**:CAPI Cluster controller 依据 infra cluster 的 **`status.initialization.provisioned`**(contract 路径)设置 `Cluster.Status.Initialization.InfrastructureProvisioned`,而非 Ready 条件。仅设 `status.ready`/Ready 条件不够。
    **修复**:`CCEClusterStatus` 增加 `Initialization.Provisioned`,controller 置位 + 补充 `Ready` 条件。
 5. **CreateCluster 非幂等**:限流(APIGW.0308,写操作实测 10 次/分钟)边界下创建成功但响应丢失,重试报 `CCE_CM.0410` 网段冲突且永久失败。
@@ -50,8 +50,8 @@ clusterctl init --infrastructure cce --wait-providers
 
 # 3. webhook 证书(未用 cert-manager 注入时的自签方案)
 openssl genrsa -out ca.key 2048 && openssl req -x509 -new -key ca.key -sha256 -days 30 -subj "/CN=cce-ca" -out ca.crt
-# ... 签发 server.crt(SAN 含 webhook-service.cloudnative-cluster-api-provider-cce-system.svc)...
-kubectl -n cloudnative-cluster-api-provider-cce-system create secret tls webhook-service-cert --cert=server.crt --key=server.key
+# ... 签发 server.crt(SAN 含 webhook-service.capi-cce-system.svc)...
+kubectl -n capi-cce-system create secret tls webhook-service-cert --cert=server.crt --key=server.key
 # components 中 6 个 webhook 的 clientConfig.caBundle = base64(ca.crt)
 
 # 4. 工作负载集群(Standard/vpc-router 示例)

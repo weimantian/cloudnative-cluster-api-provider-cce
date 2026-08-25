@@ -1,4 +1,4 @@
-# cce-provider-for-cluster-api — 调研依据与事实清单(带来源)
+# capi-cce — 调研依据与事实清单(带来源)
 
 > 本文档是架构设计文档与需求设计文档的"事实底座"。所有设计结论都必须能回溯到本文档列出的真实来源;
 > 凡是无法从真实来源确认、需要对接华为云 CCE 实测/咨询的条目,一律标注 **[需验证]**。
@@ -7,7 +7,7 @@
 
 ## 0. 背景与目标(来自用户既有调研)
 
-- 用户目标:开发 `cce-provider-for-cluster-api` —— 一个管理**华为云 CCE 托管集群**的 Cluster API 基础设施 Provider,
+- 用户目标:开发 `capi-cce` —— 一个管理**华为云 CCE 托管集群**的 Cluster API 基础设施 Provider,
   对标 `CAPI + AWS EKS 托管模式`(CAPA 的 EKS 模式)。
 - 已知事实(用户在聊天中确认):华为云官方现有 `cluster-api-provider-huawei`(CAPHW)
   只支持在 ECS 上**自建** Kubernetes 集群,不管理 CCE 托管集群 —— 这正是本项目要填补的空缺。

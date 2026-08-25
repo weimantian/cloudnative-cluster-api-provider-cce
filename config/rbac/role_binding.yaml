@@ -1,12 +1,12 @@
 apiVersion: rbac.authorization.k8s.io/v1
 kind: ClusterRoleBinding
 metadata:
-  name: cce-provider-manager-rolebinding
+  name: capi-cce-manager-rolebinding
 roleRef:
   apiGroup: rbac.authorization.k8s.io
   kind: ClusterRole
   name: manager-role
 subjects:
   - kind: ServiceAccount
-    name: cloudnative-cluster-api-provider-cce-controller-manager
-    namespace: cloudnative-cluster-api-provider-cce-system
+    name: capi-cce-controller-manager
+    namespace: capi-cce-system

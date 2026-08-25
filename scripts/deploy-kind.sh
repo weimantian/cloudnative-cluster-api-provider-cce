@@ -21,7 +21,7 @@
 #   scripts/deploy-kind.sh
 #
 # Env overrides (all optional):
-#   IMG=...            provider image tag (default cloudnative-cluster-api-provider-cce:dev)
+#   IMG=...            provider image tag (default cluster-api-cce-controller:dev)
 #   KIND_CLUSTER=...   kind cluster name (default cce-mgmt)
 #   CCE_PROVIDER_VERSION=v0.1.0   provider version string for clusterctl
 #
@@ -30,7 +30,7 @@
 # -----------------------------------------------------------------------------
 set -euo pipefail
 
-IMG="${IMG:-cloudnative-cluster-api-provider-cce:dev}"
+IMG="${IMG:-cluster-api-cce-controller:dev}"
 KIND_CLUSTER="${KIND_CLUSTER:-cce-mgmt}"
 CCE_PROVIDER_VERSION="${CCE_PROVIDER_VERSION:-v0.1.0}"
 
@@ -64,13 +64,13 @@ kind: Kustomization
 resources:
   - ../config/default
 images:
-  - name: swr.cn-north-4.myhuaweicloud.com/capi_cce/cloudnative-cluster-api-provider-cce
+  - name: swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller
     newName: docker.io/library/${IMG%%:*}
     newTag: ${IMG##*:}
 patches:
   - target:
       kind: Deployment
-      name: cloudnative-cluster-api-provider-cce-controller-manager
+      name: capi-cce-controller-manager
     patch: |-
       - op: replace
         path: /spec/template/spec/containers/0/imagePullPolicy
@@ -82,7 +82,7 @@ echo "== [3/6] Generating webhook certs and injecting caBundle =="
 (
   cd "$ARTIFACTS"
   openssl genrsa -out ca.key 2048 2>/dev/null
-  openssl req -x509 -new -nodes -key ca.key -sha256 -days 365 -subj "/CN=cce-provider-ca" -out ca.crt 2>/dev/null
+  openssl req -x509 -new -nodes -key ca.key -sha256 -days 365 -subj "/CN=capi-cce-ca" -out ca.crt 2>/dev/null
   openssl genrsa -out server.key 2048 2>/dev/null
   cat > server.conf <<'EOF2'
 [req]
@@ -90,23 +90,23 @@ distinguished_name = dn
 req_extensions = ext
 prompt = no
 [dn]
-CN = webhook-service.cloudnative-cluster-api-provider-cce-system.svc
+CN = webhook-service.capi-cce-system.svc
 [ext]
 subjectAltName = @alt_names
 [alt_names]
 DNS.1 = webhook-service
-DNS.2 = webhook-service.cloudnative-cluster-api-provider-cce-system
-DNS.3 = webhook-service.cloudnative-cluster-api-provider-cce-system.svc
-DNS.4 = webhook-service.cloudnative-cluster-api-provider-cce-system.svc.cluster.local
+DNS.2 = webhook-service.capi-cce-system
+DNS.3 = webhook-service.capi-cce-system.svc
+DNS.4 = webhook-service.capi-cce-system.svc.cluster.local
 EOF2
   openssl req -new -key server.key -out server.csr -config server.conf 2>/dev/null
   cat > server.ext <<'EOF2'
 subjectAltName = @alt_names
 [alt_names]
 DNS.1 = webhook-service
-DNS.2 = webhook-service.cloudnative-cluster-api-provider-cce-system
-DNS.3 = webhook-service.cloudnative-cluster-api-provider-cce-system.svc
-DNS.4 = webhook-service.cloudnative-cluster-api-provider-cce-system.svc.cluster.local
+DNS.2 = webhook-service.capi-cce-system
+DNS.3 = webhook-service.capi-cce-system.svc
+DNS.4 = webhook-service.capi-cce-system.svc.cluster.local
 EOF2
   openssl x509 -req -in server.csr -CA ca.crt -CAkey ca.key -CAcreateserial \
     -out server.crt -days 365 -sha256 -extfile server.ext 2>/dev/null
@@ -137,12 +137,12 @@ echo "== [5/6] clusterctl init (cert-manager + CAPI core + bootstrap/control-pla
 clusterctl init --infrastructure cce
 
 echo "== [6/6] Creating webhook certificate Secret and waiting for the provider =="
-kubectl -n cloudnative-cluster-api-provider-cce-system get secret webhook-service-cert >/dev/null 2>&1 || \
-  kubectl -n cloudnative-cluster-api-provider-cce-system create secret tls webhook-service-cert \
+kubectl -n capi-cce-system get secret webhook-service-cert >/dev/null 2>&1 || \
+  kubectl -n capi-cce-system create secret tls webhook-service-cert \
     --cert="$ARTIFACTS/server.crt" --key="$ARTIFACTS/server.key"
 
-kubectl -n cloudnative-cluster-api-provider-cce-system rollout restart deployment/cloudnative-cluster-api-provider-cce-controller-manager
-kubectl -n cloudnative-cluster-api-provider-cce-system wait --for=condition=Available deployment/cloudnative-cluster-api-provider-cce-controller-manager --timeout=180s
+kubectl -n capi-cce-system rollout restart deployment/capi-cce-controller-manager
+kubectl -n capi-cce-system wait --for=condition=Available deployment/capi-cce-controller-manager --timeout=180s
 kubectl wait --for=condition=Available -n cert-manager --all --timeout=180s deployment 2>/dev/null || true
 kubectl wait --for=condition=Available -n capi-system --all --timeout=180s deployment 2>/dev/null || true
 

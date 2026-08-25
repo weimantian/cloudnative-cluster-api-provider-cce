@@ -185,7 +185,7 @@ func (g *GarbageCollector) sweep(ctx context.Context) {
 //
 // Mirrors CAPA's ExternalResourceGCAnnotation opt-out (any truthy value
 // means opt-out: true/yes/1/on, case-insensitive).
-const skipGCAnnotationKey = "cce-provider/skip-gc"
+const skipGCAnnotationKey = "capi-cce/skip-gc"
 
 // skipGCAnnotation reports whether the given Cluster CR requests GC opt-out.
 func skipGCAnnotation(c *clusterv1.Cluster) bool {

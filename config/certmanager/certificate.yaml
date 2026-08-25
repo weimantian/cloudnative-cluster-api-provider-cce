@@ -9,8 +9,8 @@ spec:
   # operator previously created by hand). cert-manager signs and renews it
   # automatically, so `clusterctl init` completes without manual Secret setup.
   dnsNames:
-    - webhook-service.cloudnative-cluster-api-provider-cce-system.svc
-    - webhook-service.cloudnative-cluster-api-provider-cce-system.svc.cluster.local
+    - webhook-service.capi-cce-system.svc
+    - webhook-service.capi-cce-system.svc.cluster.local
   issuerRef:
     kind: Issuer
     name: selfsigned-issuer

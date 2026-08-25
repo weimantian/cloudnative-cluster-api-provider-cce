@@ -96,7 +96,7 @@ func TestResolveIdentityStatic(t *testing.T) {
 			Spec:       infrav1beta2.CCEClusterStaticIdentitySpec{SecretRef: "my-secret"},
 		},
 		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "cloudnative-cluster-api-provider-cce-system"},
+			ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "capi-cce-system"},
 			Data:       map[string][]byte{"accessKey": []byte("AK"), "secretKey": []byte("SK")},
 		},
 	).Build()
@@ -126,7 +126,7 @@ func TestResolveIdentityAllowedNamespace(t *testing.T) {
 			},
 		},
 		&corev1.Secret{
-			ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "cloudnative-cluster-api-provider-cce-system"},
+			ObjectMeta: metav1.ObjectMeta{Name: "my-secret", Namespace: "capi-cce-system"},
 			Data:       map[string][]byte{"accessKey": []byte("AK"), "secretKey": []byte("SK")},
 		},
 	).Build()

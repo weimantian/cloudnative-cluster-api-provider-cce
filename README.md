@@ -119,7 +119,7 @@ Key flows:
 flowchart LR
     subgraph MGMT["Management Cluster"]
         CAPI["cluster-api (core)<br/>Cluster / MachinePool"]
-        P["cce-provider-for-cluster-api<br/>(this provider)"]
+        P["capi-cce<br/>(this provider)"]
         CAPI -->|infrastructureRef / controlPlaneRef| P
     end
     P -->|Huawei Cloud Go SDK| HW["Huawei Cloud (target project)"]
@@ -210,8 +210,8 @@ kubectl get ccemanagedcontrolplane --watch
 1. **Build the provider image** (a published release already ships a ready-made image + `infrastructure-components.yaml`; for local development use the default tag):
 
    ```bash
-   make docker-build           # IMG=registry/org/cloudnative-cluster-api-provider-cce:vX.Y.Z for a real registry
-   # or, for a local kind dev loop:  docker build -t cloudnative-cluster-api-provider-cce:dev .
+   make docker-build           # IMG=registry/org/cluster-api-cce-controller:vX.Y.Z for a real registry
+   # or, for a local kind dev loop:  docker build -t cluster-api-cce-controller:dev .
    ```
 
 2. **Generate `infrastructure-components.yaml`** (the manifest `clusterctl` installs):
@@ -236,18 +236,18 @@ kubectl get ccemanagedcontrolplane --watch
    create the Secret:
 
    ```bash
-   # CN = webhook-service.cloudnative-cluster-api-provider-cce-system.svc; SANs:
-   #   webhook-service, webhook-service.cloudnative-cluster-api-provider-cce-system,
-   #   webhook-service.cloudnative-cluster-api-provider-cce-system.svc,
-   #   webhook-service.cloudnative-cluster-api-provider-cce-system.svc.cluster.local
-   kubectl -n cloudnative-cluster-api-provider-cce-system create secret tls webhook-service-cert \
+   # CN = webhook-service.capi-cce-system.svc; SANs:
+   #   webhook-service, webhook-service.capi-cce-system,
+   #   webhook-service.capi-cce-system.svc,
+   #   webhook-service.capi-cce-system.svc.cluster.local
+   kubectl -n capi-cce-system create secret tls webhook-service-cert \
      --cert=server.crt --key=server.key
    # and inject `caBundle: <base64 of ca.crt>` into every webhook in
    # infrastructure-components.yaml (scripts/deploy-kind.sh does this for you)
    ```
 
    > RBAC note: the leader-election RoleBinding subject namespace must be the
-   > real namespace (`cloudnative-cluster-api-provider-cce-system`); kustomize does not rewrite
+   > real namespace (`capi-cce-system`); kustomize does not rewrite
    > RoleBinding subjects.
 
 4. **Configure clusterctl and install** (local source before a release is published):
@@ -437,7 +437,7 @@ clusterctl delete --infrastructure cce
 ## FAQ / Troubleshooting
 
 - **`clusterctl init` fails with *"repository name must be canonical"*** — the manager image in `infrastructure-components.yaml` is not a three-part `registry/org/repo:tag` name. Override it with a kustomize `images:` transform (see `scripts/deploy-kind.sh`).
-- **`cloudnative-cluster-api-provider-cce-controller-manager` stuck in `ContainerCreating` with "secret webhook-service-cert not found"** — create the webhook TLS Secret (`kubectl -n cloudnative-cluster-api-provider-cce-system create secret tls webhook-service-cert --cert=server.crt --key=server.key`) and restart the deployment.
+- **`capi-cce-controller-manager` stuck in `ContainerCreating` with "secret webhook-service-cert not found"** — create the webhook TLS Secret (`kubectl -n capi-cce-system create secret tls webhook-service-cert --cert=server.crt --key=server.key`) and restart the deployment.
 - **`cert-manager` pods `ImagePullBackOff` (or any image pull fails on kind)** — your shell's `HTTP_PROXY`/`HTTPS_PROXY` env vars (e.g. a dead `127.0.0.1:7890` proxy) are inherited by the kind node's containerd. Recreate the cluster with the proxy vars unset: `env -u http_proxy -u https_proxy kind create cluster ...`.
 - **Cluster creation fails with `APIGW.0308` (429 throttling)** — Huawei Cloud limits write API calls (observed 10/minute). The controller backs off and retries automatically; just wait. (The same message appears transiently right after many rapid create attempts.)
 - **Cluster creation fails with `CCE.01429004 Insufficient account balance`** — the account has no balance to create billed CCE resources. Top up the account, or adopt an existing cluster instead (see the note at the end of Step-by-Step Deployment).

@@ -96,7 +96,7 @@ func ResolveIdentity(ctx context.Context, c client.Client, namespace string, ide
 			return nil, "", err
 		}
 		secret := &corev1.Secret{}
-		if err := c.Get(ctx, types.NamespacedName{Namespace: "cloudnative-cluster-api-provider-cce-system", Name: id.Spec.SecretRef}, secret); err != nil {
+		if err := c.Get(ctx, types.NamespacedName{Namespace: "capi-cce-system", Name: id.Spec.SecretRef}, secret); err != nil {
 			return nil, "", errors.Wrapf(err, "failed to read static identity Secret %s", id.Spec.SecretRef)
 		}
 		ak, sk := string(secret.Data["accessKey"]), string(secret.Data["secretKey"])

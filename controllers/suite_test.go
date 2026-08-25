@@ -210,12 +210,12 @@ func hasFinalizer(finalizers []string, name string) bool {
 func boolPtr(b bool) *bool { return &b }
 
 // createStaticIdentity creates a CCEClusterStaticIdentity plus its Secret in
-// the controller namespace (cloudnative-cluster-api-provider-cce-system), for tests that provision
+// the controller namespace (capi-cce-system), for tests that provision
 // clusters via spec.identityRef instead of the per-cluster credentials
 // Secret.
 func createStaticIdentity(t *testing.T, name string) {
 	t.Helper()
-	createNamespace(t, "cloudnative-cluster-api-provider-cce-system")
+	createNamespace(t, "capi-cce-system")
 	id := &infrav1beta2.CCEClusterStaticIdentity{
 		ObjectMeta: metav1.ObjectMeta{Name: name},
 		Spec:       infrav1beta2.CCEClusterStaticIdentitySpec{SecretRef: name + "-secret"},
@@ -224,7 +224,7 @@ func createStaticIdentity(t *testing.T, name string) {
 		t.Fatalf("failed to create CCEClusterStaticIdentity: %v", err)
 	}
 	secret := &corev1.Secret{
-		ObjectMeta: metav1.ObjectMeta{Name: name + "-secret", Namespace: "cloudnative-cluster-api-provider-cce-system"},
+		ObjectMeta: metav1.ObjectMeta{Name: name + "-secret", Namespace: "capi-cce-system"},
 		Data:       map[string][]byte{"accessKey": []byte("AK"), "secretKey": []byte("SK")},
 	}
 	if err := k8sClient.Create(context.Background(), secret); err != nil {

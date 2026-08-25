@@ -255,7 +255,7 @@ if obsAtStart < cp.Generation {  // CAPA b5d6d3081
 |---|---|---|
 | #2 cluster API 限流 | ✅ 已实施 | throttleRoundTripper 共享 network 包现有实现 |
 | #3 wait package | ✅ 已实施 | 复制 CAPA wait.go 指数退避（~5m budget） |
-| #4 GC annotation opt-out | ✅ 已实施 | annotation key `cce-provider/skip-gc` |
+| #4 GC annotation opt-out | ✅ 已实施 | annotation key `capi-cce/skip-gc` |
 | #5 Webhook 校验密度补齐 | ✅ 已实施 | 上轮仅 1 条（clusterName 不可变）；完整翻译于 2026-08-24 落地（c936f53 + a00b656）：CCM/CCECluster/CMP 三处校验补齐 + 9 测试，3 个 template webhook 靠委托自动继承，identity 上轮 P1-#7 已做 |
 | #6 Conditions 失败原因细分 | ✅ 已实施 | 增 28 个专用 reason 常量（未改 controller 调用，后续 PR 切换） |
 | #7 身份 webhook 不可变 | ✅ 已实施 | 3 个 webhook 都有 spec 不可变 + 单例约束 |

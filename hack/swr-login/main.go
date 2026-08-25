@@ -57,7 +57,7 @@ func main() {
 	fmt.Printf("SWR_USER=%s\n", auth.user)
 	fmt.Printf("SWR_PASSWORD=%s\n", auth.pass)
 	fmt.Printf("SWR_ORG=%s\n", org)
-	fmt.Printf("SWR_IMAGE=%s/%s/cloudnative-cluster-api-provider-cce:latest\n", registry(region), org)
+	fmt.Printf("SWR_IMAGE=%s/%s/cluster-api-cce-controller:latest\n", registry(region), org)
 }
 
 type login struct{ user, pass string }

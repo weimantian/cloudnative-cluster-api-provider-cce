@@ -67,7 +67,7 @@ func main() {
 	flag.BoolVar(&enableLeaderElection, "leader-elect", false,
 		"Enable leader election for controller manager. "+
 			"Enabling this will ensure there is only one active controller manager.")
-	flag.StringVar(&leaderElectionID, "leader-election-id", "cce-provider-leader-election", "Leader election ID.")
+	flag.StringVar(&leaderElectionID, "leader-election-id", "capi-cce-leader-election", "Leader election ID.")
 	flag.StringVar(&featureGates, "feature-gates", "",
 		"Comma-separated list of feature gate overrides, e.g. 'NodePoolAutoscaling=true'.")
 	flag.StringVar(&validFlavors, "valid-flavors", "",

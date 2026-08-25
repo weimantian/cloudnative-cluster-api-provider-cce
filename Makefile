@@ -7,7 +7,7 @@ BIN_DIR := bin
 MANAGER_BIN := $(BIN_DIR)/manager
 CONTROLLER_GEN ?= $(BIN_DIR)/controller-gen
 CONTROLLER_TOOLS_VERSION ?= v0.21.0
-IMG ?= swr.cn-north-4.myhuaweicloud.com/$(IMAGE_ORG)/cloudnative-cluster-api-provider-cce:latest
+IMG ?= swr.cn-north-4.myhuaweicloud.com/$(IMAGE_ORG)/cluster-api-cce-controller:latest
 
 .PHONY: all
 all: generate manifests build

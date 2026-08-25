@@ -27,5 +27,5 @@ import (
 func TestE2E(t *testing.T) {
 	ctrl.SetLogger(klog.Background())
 	gomega.RegisterFailHandler(ginkgo.Fail)
-	ginkgo.RunSpecs(t, "cce-provider-e2e")
+	ginkgo.RunSpecs(t, "capi-cce-e2e")
 }

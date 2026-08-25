@@ -1,7 +1,7 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: cloudnative-cluster-api-provider-cce-controller-manager
+  name: capi-cce-controller-manager
   labels:
     control-plane: controller-manager
 spec:
@@ -16,13 +16,13 @@ spec:
       annotations:
         # cert-manager injects the CA into the webhook configs; the serving
         # certificate Secret (webhook-service-cert) is signed by cert-manager.
-        cert-manager.io/inject-ca-from: cloudnative-cluster-api-provider-cce-system/serving-cert
+        cert-manager.io/inject-ca-from: capi-cce-system/serving-cert
     spec:
       securityContext:
         runAsNonRoot: true
       containers:
         - name: manager
-          image: swr.cn-north-4.myhuaweicloud.com/capi_cce/cloudnative-cluster-api-provider-cce:latest
+          image: swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller:latest
           imagePullPolicy: IfNotPresent
           args:
             - --leader-elect
@@ -33,13 +33,13 @@ spec:
             - name: CLOUD_SDK_AK
               valueFrom:
                 secretKeyRef:
-                  name: cce-provider-credentials
+                  name: capi-cce-credentials
                   key: accessKey
                   optional: true
             - name: CLOUD_SDK_SK
               valueFrom:
                 secretKeyRef:
-                  name: cce-provider-credentials
+                  name: capi-cce-credentials
                   key: secretKey
                   optional: true
           ports:
@@ -82,5 +82,5 @@ spec:
         - name: webhook-certs
           secret:
             secretName: webhook-service-cert
-      serviceAccountName: cloudnative-cluster-api-provider-cce-controller-manager
+      serviceAccountName: capi-cce-controller-manager
       terminationGracePeriodSeconds: 10

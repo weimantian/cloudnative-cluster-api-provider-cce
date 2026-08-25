@@ -155,14 +155,14 @@ Controller 侧内联状态（无统一封装）：
 2. `ResolveIdentity`：按 identityRef Kind——
    - nil → env creds。
    - `CCEClusterControllerIdentity` → 校验 allowedNamespaces → env creds。
-   - `CCEClusterStaticIdentity` → 校验 allowedNamespaces → 读 `cloudnative-cluster-api-provider-cce-system` 命名空间下 Secret（**硬编码命名空间**）。
+   - `CCEClusterStaticIdentity` → 校验 allowedNamespaces → 读 `capi-cce-system` 命名空间下 Secret（**硬编码命名空间**）。
    - `CCEClusterRoleIdentity` → 校验 allowedNamespaces → env creds + `agencyName`（**无 SourceIdentityRef 递归、无 provider 链**）。
    - default → 报错。
 3. 无限流结构；依赖 SDK 自带 backoff + controller 退避重试（README 记载 APIGW.0308 429 场景）。
 
 **差异点**：
 - CAPA RoleIdentity 支持 `SourceIdentityRef` 递归 assume-role 链；CCE RoleIdentity 仅"env creds + agency name"，无链式解析。
-- CAPA StaticIdentity Secret 命名空间取自 `system.GetManagerNamespace()`；CCE 硬编码 `cloudnative-cluster-api-provider-cce-system`。
+- CAPA StaticIdentity Secret 命名空间取自 `system.GetManagerNamespace()`；CCE 硬编码 `capi-cce-system`。
 - CAPA 有 per-service throttle limiters；CCE 无。
 
 ---
@@ -218,7 +218,7 @@ Controller 侧内联状态（无统一封装）：
 ### P1（功能差距 / 重要补充）
 
 1. **RoleIdentity 无 SourceIdentityRef 链式 assume-role**（§4）：仅"env creds + agency name"，无法表达嵌套角色链。
-2. **StaticIdentity Secret 命名空间硬编码** `cloudnative-cluster-api-provider-cce-system`（§4）：应取 manager namespace（对齐 CAPA `system.GetManagerNamespace()`），否则部署到非默认命名空间时失效。
+2. **StaticIdentity Secret 命名空间硬编码** `capi-cce-system`（§4）：应取 manager namespace（对齐 CAPA `system.GetManagerNamespace()`），否则部署到非默认命名空间时失效。
 3. **无 per-object scope struct**（§1/§2）：导致 session/limiter/logger/patchHelper 无法跨 reconcile 复用，controller 重复内联构造；也偏离包注释承诺的 CAPA 模式。
 
 ### P2（结构性改进）

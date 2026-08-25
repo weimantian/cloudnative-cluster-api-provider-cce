@@ -166,7 +166,7 @@
 | #1 网络拓扑托管 | ✅ 已实施 | 三态（创建/收养/BYO） |
 | #2 cluster API 限流 | ✅ 已实施 | throttleRoundTripper 共享 network 包 |
 | #3 wait package | ✅ 已实施 | 复制 CAPA wait.go 指数退避（~5m budget） |
-| #4 GC annotation opt-out | ✅ 已实施 | annotation key `cce-provider/skip-gc` |
+| #4 GC annotation opt-out | ✅ 已实施 | annotation key `capi-cce/skip-gc` |
 | #5 Webhook 校验密度补齐 | ✅ 已实施 | CCM（版本降级、IPv6 最小版本 + IPv6CIDR 必填、CIDR 格式、加密与身份引用不可变、ipv6enable 不可变）；CCECluster（region + VPC ID 不可变、VPC/subnet CIDR）；CMP（NodePoolName 不可变、autoscaling 边界）。+9 测试；3 个 template webhook 靠委托自动继承；access-entry/launch-template 已由 CRD marker + 既有 webhook 覆盖 |
 | #6 Conditions 失败原因细分 | ✅ 已实施 | 增 28 个专用 reason + 32 处通用 reason 切换为专用 |
 | #7 身份 webhook 不可变 | ✅ 已实施 | 3 个 webhook 都有 spec 不可变 + 单例约束 |

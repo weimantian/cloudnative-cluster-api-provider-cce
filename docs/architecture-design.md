@@ -1,4 +1,4 @@
-# cce-provider-for-cluster-api 架构设计文档
+# capi-cce 架构设计文档
 
 - 版本:v0.2(设计+PoC 验证版)
 - 状态:设计定稿(实现已按本设计落地,并经真实 CCE 冒烟与 clusterctl 部署验证)
@@ -17,7 +17,7 @@
 
 华为云官方现有的 Cluster API Provider(CAPHW,`cluster-api-provider-huawei`)定位是"在华为云 ECS 上自建 Kubernetes 集群"(调用 ECS/VPC 等 IaaS API + kubeadm 引导),**不管理 CCE 托管集群**(用户已确认;代码事实见 research-sources.md §3.4)。
 
-本项目 `cce-provider-for-cluster-api` 的目标是:**开发一个管理华为云 CCE 托管集群的 Cluster API 基础设施 Provider**,对标 `CAPI + AWS EKS 托管模式`(CAPA 的 EKS 模式),同时参考阿里云 ACK Provider(`alibabacloud-provider-for-Cluster-API`,阿里云官方实现"创建/删除 ACK 托管集群",README 明示遵循 CAPI 规范、兼容 clusterctl)。
+本项目 `capi-cce` 的目标是:**开发一个管理华为云 CCE 托管集群的 Cluster API 基础设施 Provider**,对标 `CAPI + AWS EKS 托管模式`(CAPA 的 EKS 模式),同时参考阿里云 ACK Provider(`alibabacloud-provider-for-Cluster-API`,阿里云官方实现"创建/删除 ACK 托管集群",README 明示遵循 CAPI 规范、兼容 clusterctl)。
 
 ### 1.2 定位与边界
 
@@ -53,7 +53,7 @@
 │  └──────────┬────────────┘                                                         │
 │             │ ownerRef / infrastructureRef / controlPlaneRef                        │
 │  ┌──────────▼───────────────────────────────────────────────────────────┐          │
-│  │              cce-provider-for-cluster-api (本 Provider)              │          │
+│  │              capi-cce (本 Provider)              │          │
 │  │  ┌──────────────────────────────────────────────────────────────┐    │          │
 │  │  │ CCECluster 控制器   CCEManagedControlPlane 控制器             │    │          │
 │  │  │ CCEManagedMachinePool 控制器  (CCEMachine 控制器,单节点)      │    │          │
@@ -443,7 +443,7 @@ status:
   - `infrastructure-components.yaml`:CRD + Controller + RBAC + Webhook(同一 namespace,make generate 产物);
   - `cluster-template.yaml`:快速起集群模板(含 Secret 占位)。
 - `clusterctl init --infrastructure cce` 支持:发布到 GitHub Release 即构成 Provider 仓库(官方 clusterctl 合约);如需 `clusterctl` 预置列表需向上游提 PR(本项目不做,对标阿里云模式)。
-- 镜像:发布到华为云 SWR / ghcr,镜像名 `<org>/cloudnative-cluster-api-provider-cce:vX.Y.Z`(对标 CAPHW 的 ghcr 发布模式)。
+- 镜像:发布到华为云 SWR / ghcr,镜像名 `<org>/cluster-api-cce-controller:vX.Y.Z`(对标 CAPHW 的 ghcr 发布模式)。
 - 文档:docs/book(对标 CAPHW:user-guide/dev-guide/reference)+ 华为云开发者社区博客 + 云商店开源镜像上架(用户已确认的发布策略)。
 
 ---
@@ -453,7 +453,7 @@ status:
 ### 12.1 仓库布局(对照 CAPA/ACK Provider/CAPHW)
 
 ```
-cce-provider-for-cluster-api/
+capi-cce/
 ├── api/
 │   ├── infrastructure/v1beta2/     # CCECluster, CCEMachine(二期), CCEMachineTemplate(二期)
 │   ├── controlplane/v1beta2/       # CCEManagedControlPlane

@@ -243,11 +243,11 @@ nocloud go run ./hack/swr-login
 
 # 4.2 构建 provider 镜像（amd64，禁用 attestation）
 docker build --platform linux/amd64 --provenance=false --sbom=false \
-  -t swr.cn-north-4.myhuaweicloud.com/capi_cce/cloudnative-cluster-api-provider-cce:latest .
+  -t swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller:latest .
 
 # 4.3 登录 + 推送
 echo '<SWR_PASSWORD>' | docker login swr.cn-north-4.myhuaweicloud.com -u '<SWR_USER>' --password-stdin
-docker push swr.cn-north-4.myhuaweicloud.com/capi_cce/cloudnative-cluster-api-provider-cce:latest
+docker push swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller:latest
 
 # 4.4 搬运 CAPI + cert-manager 镜像到 SWR（零公网）
 for img in \
@@ -275,7 +275,7 @@ done
 
 | SWR 仓库（swr.cn-north-4.myhuaweicloud.com/capi_cce/） | 源镜像 | 用途 | 架构 |
 |---|---|---|---|
-| `cloudnative-cluster-api-provider-cce:latest` | 本地构建 | CCE Provider 控制器 | amd64 |
+| `cluster-api-cce-controller:latest` | 本地构建 | CCE Provider 控制器 | amd64 |
 | `cluster-api-controller:v1.14.0` | registry.k8s.io/cluster-api | CAPI 核心 | amd64 |
 | `kubeadm-bootstrap-controller:v1.14.0` | registry.k8s.io/cluster-api | CAPI bootstrap-kubeadm | amd64 |
 | `kubeadm-control-plane-controller:v1.14.0` | registry.k8s.io/cluster-api | CAPI control-plane-kubeadm | amd64 |
@@ -790,7 +790,7 @@ kubectl create secret generic my-cce-cluster-credentials \
   --dry-run=client -o yaml | kubectl apply -f -
 
 # 验证：观察 provider 用新凭证继续正常（日志无鉴权错误）
-kubectl -n cloudnative-cluster-api-provider-cce-system logs deploy/cloudnative-cluster-api-provider-cce-controller-manager --tail=20
+kubectl -n capi-cce-system logs deploy/capi-cce-controller-manager --tail=20
 ```
 
 ### IAM 委托（agency）凭证
@@ -858,8 +858,8 @@ kind: Kustomization
 resources:
   - ../../config/default
 images:
-  - name: swr.cn-north-4.myhuaweicloud.com/capi_cce/cloudnative-cluster-api-provider-cce
-    newName: swr.cn-north-4.myhuaweicloud.com/capi_cce/cloudnative-cluster-api-provider-cce
+  - name: swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller
+    newName: swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller
     newTag: latest
 EOF
 
@@ -874,15 +874,15 @@ webhook 证书已由 cert-manager 自动签发，**无需手动创建**；仅需
 
 ```bash
   # SWR 私有仓库 imagePullSecret（方式 A；public SWR 方式 B 跳过此步）
-  kubectl create secret docker-registry cce-provider-swr-secret \
-  --namespace cloudnative-cluster-api-provider-cce-system \
+  kubectl create secret docker-registry capi-cce-swr-secret \
+  --namespace capi-cce-system \
   --docker-server=swr.cn-north-4.myhuaweicloud.com \
   --docker-username='<SWR_USER>' --docker-password='<SWR_PASSWORD>' --docker-email='noreply@huawei.cloud'
 
   # 给 provider Deployment 加 imagePullSecrets 并重启（方式 B 仅重启）
-kubectl -n cloudnative-cluster-api-provider-cce-system patch deployment cloudnative-cluster-api-provider-cce-controller-manager \
-  --type=json -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"cce-provider-swr-secret"}]}]'
-kubectl -n cloudnative-cluster-api-provider-cce-system rollout restart deployment/cloudnative-cluster-api-provider-cce-controller-manager
+kubectl -n capi-cce-system patch deployment capi-cce-controller-manager \
+  --type=json -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"capi-cce-swr-secret"}]}]'
+kubectl -n capi-cce-system rollout restart deployment/capi-cce-controller-manager
 ```
 
 > **webhook 证书**：`webhook-service-cert` Secret 由 cert-manager 的 Certificate 自动创建并轮换（webhook 配置 caBundle 经 `inject-ca-from` 注入），不再手动 `openssl`/`create secret tls`。

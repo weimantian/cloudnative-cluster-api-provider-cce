@@ -92,7 +92,7 @@ CCE 的 kubeconfig rotation 是 EKS 模式**没有的对等物**，属 CCE 加�
 - `credentialsFromEnv`：`CLOUD_SDK_AK` / `CLOUD_SDK_SK`。
 - `ResolveIdentity(ctx, client, namespace, identityRef)`：三种身份 ——
   - `CCEClusterControllerIdentity` → env 凭证（controller default）。
-  - `CCEClusterStaticIdentity` → 从 **硬编码 namespace `cloudnative-cluster-api-provider-cce-system`** 读 Secret（`accessKey`/`secretKey`）。
+  - `CCEClusterStaticIdentity` → 从 **硬编码 namespace `capi-cce-system`** 读 Secret（`accessKey`/`secretKey`）。
   - `CCEClusterRoleIdentity` → env 凭证 + `AgencyName`（agency 经 identityRef 传入 CreateCluster）。
   - `identityRef == nil` → env 凭证。
 - `checkAllowedNamespace`：`allowed == nil` = 任意 namespace；`NamespaceList` 精确匹配；`Selector` 走 LabelSelectorAsSelector 匹配 namespace 标签。三类身份 + webhook 均强制校验。
@@ -113,7 +113,7 @@ CCE 的 kubeconfig rotation 是 EKS 模式**没有的对等物**，属 CCE 加�
 | ChainCredentialsProvider | ✅ | ❌（仅 env / Secret 二选一） |
 | 每服务限流（scope 层） | ✅ `throttle.ServiceLimiters` | 🟡 依赖 clientCache + SDK 退避（非 scope 层） |
 | allowedNamespaces 语义 | ✅ | ✅（nil=any 语义一致） |
-| Static identity Secret namespace | 经 identityRef 指定 | 🟡 **硬编码 `cloudnative-cluster-api-provider-cce-system`** |
+| Static identity Secret namespace | 经 identityRef 指定 | 🟡 **硬编码 `capi-cce-system`** |
 
 `SourceIdentityRef` 身份链是 CAPA 特有（IAM role assume-role），CCE 的 agency 模型无此概念，属「不适用」，但 **static identity Secret 硬编码 namespace** 是 CCE 可改进点（CAPA 不硬编码）。
 
@@ -256,7 +256,7 @@ CCE 的 CRD/webhook 生成是标准 kubebuilder 结构，14 个 webhook 与 9 �
 - CAPA 通过 `ExternalResourceGCAnnotation` 支持逐集群跳过 GC；CCE 只有全局 `ExternalResourceGC` gate + `--gc-region`，无 annotation 级开关。多租户下无法「只给部分集群关 GC」。
 
 **P2 — Static identity Secret namespace 硬编码**
-- `internal/scope/scope.go` 将 static identity Secret 固定读 `cloudnative-cluster-api-provider-cce-system` namespace，CAPA 不硬编码。跨 namespace 部署 static identity 会受限。
+- `internal/scope/scope.go` 将 static identity Secret 固定读 `capi-cce-system` namespace，CAPA 不硬编码。跨 namespace 部署 static identity 会受限。
 
 **P3 — `AutoControllerIdentityCreator` / `ExternalResourceGC` 默认值偏保守**
 - CAPA 两者默认 true（Beta），CCE 默认 false（Alpha）。功能对等但「开箱即用」程度低。

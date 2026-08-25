@@ -1,4 +1,4 @@
-# cce-provider-for-cluster-api 需求设计文档
+# capi-cce 需求设计文档
 
 - 版本:v0.2(需求+PoC 验证版)
 - 状态:需求定稿(全部 P0/P1 项已实现,经真实 CCE 冒烟与 clusterctl 部署验证;P2 项为远期)
