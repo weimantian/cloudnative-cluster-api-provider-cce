@@ -90,7 +90,7 @@ export CCE_SMOKE_AZ='cn-north-4a'
 一键创建 VPC + 节点/ENI 子网 + 密钥对（幂等，按名复用）：
 
 ```bash
-nocloud go run ./hack/smoke-setup
+nocloud go run ./hack/deploy-network
 ```
 
 | 参数/输出 | 含义 |
@@ -104,14 +104,14 @@ nocloud go run ./hack/smoke-setup
 > ⚠️ **踩坑 #1（DNS）**：脚本建子网时**必须指定 DNS**（`100.125.1.250` + `100.125.129.250`），否则节点拿到错误 DNS、cce-agent 下载失败、永久卡 Installing。已在脚本中修复。
 
 **DNS 说明（在哪设置 / 怎么获取 / 为什么）**：
-- **在哪设置**：DNS 是**子网属性**，在创建子网时配置。`smoke-setup` 调 VPC API `CreateSubnet` 时显式传 `primaryDns=100.125.1.250`、`secondaryDns=100.125.129.250`（`hack/smoke-setup/main.go`）；手动建子网则在 VPC 控制台 → 创建子网 → "DNS 服务器地址"填 `100.125.1.250,100.125.129.250`。
+- **在哪设置**：DNS 是**子网属性**，在创建子网时配置。`deploy-network` 调 VPC API `CreateSubnet` 时显式传 `primaryDns=100.125.1.250`、`secondaryDns=100.125.129.250`（`hack/deploy-network/main.go`）；手动建子网则在 VPC 控制台 → 创建子网 → "DNS 服务器地址"填 `100.125.1.250,100.125.129.250`。
 - **怎么获取**：`100.125.1.250` / `100.125.129.250` 是华为云**云内 DNS 服务器地址**（各 region 固定提供，解析 OBS/SWR/IAM 等内网域名）。可查华为云 VPC 官方文档；或从已有子网获取（VPC API `ShowSubnet` / 控制台子网详情 / `hack/survey-hw` 输出）。
 - **为什么**：节点用子网 DNS 解析域名，若 DNS 不对（公网 DNS 或 VPC 默认值），解析不到华为云内网 OBS 域名 → cce-agent 下载失败 → 节点永久卡 `Installing`。
 
 ### 步骤 2：创建跳板机 ECS
 
 ```bash
-nocloud go run ./hack/create-bastion
+nocloud go run ./hack/deploy-bastion
 ```
 
 | 参数/输出 | 含义 |
@@ -140,7 +140,7 @@ nocloud CCE_SMOKE_VPC="$CCE_SMOKE_VPC" \
   CCE_SMOKE_SUBNET="$CCE_SMOKE_SUBNET" \
   CCE_SMOKE_KEYPAIR='capi-bastion-key' \
   CCE_SMOKE_K8S_VERSION='v1.35' \
-  go run ./hack/create-mgmt-cluster
+  go run ./hack/deploy-mgmt-cluster
 ```
 
 | 参数 | 含义 |
@@ -451,10 +451,10 @@ kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes
 
 ### 步骤 12：确认 ENI 子网（阶段一已自动创建）
 
-阶段一 `hack/smoke-setup` 会额外创建 ENI 子网 `capi-smoke-subnet-eni`（10.0.2.0/24）并输出 `CCE_SMOKE_ENI_SUBNET`。
+阶段一 `hack/deploy-network` 会额外创建 ENI 子网 `capi-smoke-subnet-eni`（10.0.2.0/24）并输出 `CCE_SMOKE_ENI_SUBNET`。
 
 > ⚠️ **踩坑 #21（neutron_subnet_id）**：CCE `eniNetwork.subnets[].subnetID` 要求 **neutron_subnet_id**（不是 VPC 网络的 subnet ID）。
-> smoke-setup 刚建子网时 neutron ID 可能尚未同步（输出为空），稍后用 `hack/survey-hw` 或 VPC 控制台重新查询 `capi-smoke-subnet-eni` 的 `neutron_subnet_id` 即可。
+> deploy-network 刚建子网时 neutron ID 可能尚未同步（输出为空），稍后用 `hack/survey-hw` 或 VPC 控制台重新查询 `capi-smoke-subnet-eni` 的 `neutron_subnet_id` 即可。
 
 ### 步骤 13：生成 Turbo 集群 B 配置
 
@@ -620,7 +620,7 @@ kubectl get cluster,ccecluster,ccemanagedcontrolplane,machinepool,ccemanagedmach
 kubectl delete cluster my-cce-cluster
 
 # 本地：删管理集群 A
-nocloud go run ./hack/create-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
+nocloud go run ./hack/deploy-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
 
 # 本地：清理跳板机 ECS + EIP + 密钥对 + 安全组 + 子网 + VPC（见踩坑 #9 #11）
 ```
@@ -634,7 +634,7 @@ nocloud go run ./hack/create-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
 | # | 问题现象 | 根因 | 修正 | 状态 |
 |---|---|---|---|---|
 | 1 | 节点永久卡 `Installing`（kubelet inactive） | 子网未指定 DNS，节点拿到错误 DNS（`10.0.x.254`），无法解析 OBS 域名，cce-agent 下载失败 | 建子网显式指定 `primary_dns=100.125.1.250` + `secondary_dns=100.125.129.250` | ✅ 已修复 |
-| 2 | 节点异常无法 SSH 排查 | `smoke-setup` 创建密钥对时丢弃私钥 | 节点改用 `capi-bastion-key`（`create-bastion` 保留私钥） | ✅ 已修复 |
+| 2 | 节点异常无法 SSH 排查 | `deploy-network` 创建密钥对时丢弃私钥 | 节点改用 `capi-bastion-key`（`create-bastion` 保留私钥） | ✅ 已修复 |
 | 3 | 管理集群 `publicAccess=true` 无公网 endpoint | CCE 不自动分配公网 IP | 跳板机（同 VPC）访问内网 endpoint | ✅ 已记录 |
 | 4 | clusterctl 版本偏旧（v1.13.4） | brew 版本落后 | 手动下载 clusterctl v1.14.0 | ✅ 已修复 |
 | 5 | provider 镜像在 x86_64 节点无法运行 | Docker Desktop 默认构建 arm64 | `docker build --platform linux/amd64` | ✅ 已修复 |
@@ -652,8 +652,8 @@ nocloud go run ./hack/create-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
 | 17 | `rollout restart` 后 pod 仍拉旧镜像 | CCE 节点 containerd 缓存 `latest` tag（imagePullPolicy=IfNotPresent） | deployment 设 `imagePullPolicy: Always` 或推唯一 tag | ✅ 已修复 |
 | 18 | 删除失败集群卡 Deleting（finalizer 未移除） | 集群未创建成功（ClusterID 空）时删除，controller 未触发删除 reconcile，finalizer 阻塞 | 手动 `kubectl patch ... --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]'` | ✅ 已记录 |
 | 19 | 删除成功集群时 `MachinePool` 与 `CCEManagedControlPlane` 的 finalizer 卡住，删除链停滞 | ① CAPI MachinePool 控制器删除 CCEManagedMachinePool 后返回空 Result（不 requeue），依赖 watch 事件重触发但未触发；② provider `CCEManagedControlPlane`/`CCEManagedMachinePool` 的 `reconcileDelete` 分支在 scope 构建之前，`RemoveFinalizer` 后无 `Client.Update`/patch 持久化 → finalizer 移除永远写不回 API server | `reconcileDelete` 里 `RemoveFinalizer` 后显式 `Client.Update`；本次 E2E 临时手动移除 finalizer 兜底 | ✅ 已修复（950d550） |
-| 20 | Turbo 节点池创建报 `flavor status is abandon`（c6sne.large.2 in cn-north-4a） | 该 flavor 在可用区已废弃，但 sub-ENI 配额 > 0，smoke-setup 会误选 | 换活跃的 sub-ENI 配额 > 0 flavor（如 c7.large.2）；smoke-setup 已优先活跃 flavor（03c9b9e） | ✅ 已修复 |
-| 21 | Turbo 创建报 `NetworkValidationFailed: eni subnet <id> not found in the VPC (CCE.01400002)` | validator `fetchNetwork` 只用普通 subnet ID 索引，而 `eniSubnets` 用 neutron ID 查询 → 误报；另：smoke-setup 刚建 ENI 子网时 neutron ID 可能未同步 | validator 同时索引普通 ID 与 neutron ID（620fd4e）；neutron ID 未同步时稍后重查 | ✅ 已修复 |
+| 20 | Turbo 节点池创建报 `flavor status is abandon`（c6sne.large.2 in cn-north-4a） | 该 flavor 在可用区已废弃，但 sub-ENI 配额 > 0，deploy-network 会误选 | 换活跃的 sub-ENI 配额 > 0 flavor（如 c7.large.2）；deploy-network 已优先活跃 flavor（03c9b9e） | ✅ 已修复 |
+| 21 | Turbo 创建报 `NetworkValidationFailed: eni subnet <id> not found in the VPC (CCE.01400002)` | validator `fetchNetwork` 只用普通 subnet ID 索引，而 `eniSubnets` 用 neutron ID 查询 → 误报；另：deploy-network 刚建 ENI 子网时 neutron ID 可能未同步 | validator 同时索引普通 ID 与 neutron ID（620fd4e）；neutron ID 未同步时稍后重查 | ✅ 已修复 |
 | 22 | 删除集群时 `CCEManagedMachinePool` 停在 "Node pool deletion requested, waiting"，需 touch 才继续 | reconcileDelete 的 `RequeueAfter` 被 workqueue dedup 吞掉（对象 terminating 时），删节点池轮询停止 | reconcileDelete 删节点池时 bump annotation 触发 watch 兜底（683c99d） | ✅ 已修复 |
 
 ---
@@ -675,11 +675,15 @@ nocloud go run ./hack/create-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
 
 | 工具 | 位置 | 用途 |
 |---|---|---|
-| `hack/smoke-setup` | 建 VPC/子网/密钥对（**已含 DNS 修复**） | 阶段一步骤 1 |
-| `hack/create-bastion` | 建跳板机 ECS（保留私钥） | 阶段一步骤 2 |
-| `hack/create-mgmt-cluster` | 创建/列出/删除管理集群 | 阶段一步骤 3 |
+| `hack/deploy-network` | 建 VPC/子网/密钥对（**已含 DNS 修复**） | 阶段一步骤 1 |
+| `hack/deploy-bastion` | 建跳板机 ECS（保留私钥） | 阶段一步骤 2 |
+| `hack/deploy-mgmt-cluster` | 创建/列出/删除管理集群 | 阶段一步骤 3 |
 | `hack/swr-login` | 生成 SWR 临时登录 token | 阶段一步骤 4 |
 | `hack/survey-hw` | 盘点所有华为云资源 | 清理后验证 |
+
+**工具分类**：
+- **部署工具**（`hack/deploy-*`）：正式 E2E 部署流程（阶段一）使用——`deploy-network`（VPC/子网/密钥对）、`deploy-bastion`（跳板机）、`deploy-mgmt-cluster`（管理集群）；配套中性工具 `hack/swr-login`、`hack/survey-hw`、`hack/cleanup-hw`。
+- **冒烟测试工具**：`scripts/smoke-cce.sh` + `hack/cleanup-smoke-clusters` + `hack/check-smoke-env`，项目冒烟测试专用，与正式部署流程相互独立。
 
 ---
 

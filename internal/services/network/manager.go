@@ -33,7 +33,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/wait"
 )
 
-// Managed-network constants (defaults mirror hack/smoke-setup and
+// Managed-network constants (defaults mirror hack/deploy-network and
 // hack/nat-egress, which were verified against a real account).
 const (
 	defaultVPCCIDR        = "10.0.0.0/16"

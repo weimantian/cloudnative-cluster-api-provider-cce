@@ -4,7 +4,7 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-// Command create-mgmt-cluster creates a Huawei Cloud CCE management cluster
+// Command deploy-mgmt-cluster creates a Huawei Cloud CCE management cluster
 // (Standard, public API server) with a node pool, waits for it to become
 // ready, and downloads its kubeconfig. It also supports listing and deleting
 // clusters so the whole management-cluster lifecycle is one tool.
@@ -33,10 +33,10 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //
 // Usage:
 //
-//	go run ./hack/create-mgmt-cluster
-//	go run ./hack/create-mgmt-cluster -list
-//	go run ./hack/create-mgmt-cluster -delete -cluster <id>
-//	go run ./hack/create-mgmt-cluster -delete-all
+//	go run ./hack/deploy-mgmt-cluster
+//	go run ./hack/deploy-mgmt-cluster -list
+//	go run ./hack/deploy-mgmt-cluster -delete -cluster <id>
+//	go run ./hack/deploy-mgmt-cluster -delete-all
 package main
 
 import (

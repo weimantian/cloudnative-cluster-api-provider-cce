@@ -48,8 +48,8 @@ clusterctl version  # 应输出 v1.14.0
 |---|---|
 | IAM AK/SK | 有 CCE/VPC/EIP/NAT/ECS 操作权限 |
 | 账户余额 | 充足(CCE 集群 + 节点按需计费) |
-| VPC + 子网 | 已存在,或用 `hack/smoke-setup` 一键创建 |
-| SSH 密钥对 | 已存在,或用 `hack/smoke-setup` 创建 |
+| VPC + 子网 | 已存在,或用 `hack/deploy-network` 一键创建 |
+| SSH 密钥对 | 已存在,或用 `hack/deploy-network` 创建 |
 | SWR 仓库 | 需要一个组织/命名空间(如 `capi_cce`) |
 
 ### 代理剥离(重要)
@@ -93,7 +93,7 @@ alias nocloud='env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u 
 
 ```bash
 nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_SMOKE_REGION=cn-north-4 \
-  go run ./hack/smoke-setup
+  go run ./hack/deploy-network
 ```
 
 输出示例:
@@ -129,7 +129,7 @@ export CCE_SMOKE_AZ=cn-north-4a
 ## 步骤 2:创建管理集群
 
 ```bash
-nocloud go run ./hack/create-mgmt-cluster
+nocloud go run ./hack/deploy-mgmt-cluster
 ```
 
 **做什么**:
@@ -608,10 +608,10 @@ nocloud clusterctl --kubeconfig capi-mgmt.kubeconfig delete --infrastructure cce
 ### 删除管理集群
 
 ```bash
-nocloud go run ./hack/create-mgmt-cluster -delete -cluster <MGMT_CLUSTER_ID>
+nocloud go run ./hack/deploy-mgmt-cluster -delete -cluster <MGMT_CLUSTER_ID>
 
 # 或删除区域内所有集群(危险!):
-# nocloud go run ./hack/create-mgmt-cluster -delete-all
+# nocloud go run ./hack/deploy-mgmt-cluster -delete-all
 ```
 
 ### 删除 NAT 出网资源
@@ -730,8 +730,8 @@ CCE 要求显式指定 OS。模板中已设 `os: Huawei Cloud EulerOS 2.0`。其
 
 | 工具 | 位置 | 用途 |
 |---|---|---|
-| `hack/smoke-setup` | `hack/smoke-setup/main.go` | 一键创建 VPC/子网/密钥对 |
-| `hack/create-mgmt-cluster` | `hack/create-mgmt-cluster/main.go` | 创建/列出/删除管理集群 |
+| `hack/deploy-network` | `hack/deploy-network/main.go` | 一键创建 VPC/子网/密钥对 |
+| `hack/deploy-mgmt-cluster` | `hack/deploy-mgmt-cluster/main.go` | 创建/列出/删除管理集群 |
 | `hack/nat-egress` | `hack/nat-egress/main.go` | NAT 网关 create/list/delete/delete-all |
 | `hack/survey-hw` | `hack/survey-hw/main.go` | 盘点所有华为云资源 |
 | `hack/cleanup-hw` | `hack/cleanup-hw/main.go` | 按指定 ID 删除集群+EIP+子网+VPC |

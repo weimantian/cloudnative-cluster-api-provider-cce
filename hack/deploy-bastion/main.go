@@ -4,7 +4,7 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-// Command create-bastion creates a Huawei Cloud ECS bastion host in the
+// Command deploy-bastion creates a Huawei Cloud ECS bastion host in the
 // management VPC: an SSH keypair (private key saved locally), a public
 // EulerOS image lookup, a security group with SSH (22) ingress, and a small
 // ECS instance with a directly-bound EIP. It prints the public IP and the

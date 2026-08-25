@@ -4,8 +4,8 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-// Command smoke-setup bootstraps the Huawei Cloud resources needed by the CCE
-// smoke test in a fresh project:
+// Command deploy-network bootstraps the Huawei Cloud network resources used
+// by the CCE deployment guide (docs/e2e-deployment-guide.md, stage 1):
 //
 //   - one VPC (10.0.0.0/16)
 //   - two subnets: node subnet (10.0.1.0/24) and eni/container subnet
@@ -13,8 +13,9 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //   - one SSH keypair (capi-smoke-key)
 //   - cheapest 2vCPU/4GiB ECS flavor in the region (CCE node minimum)
 //
-// It prints an env snippet for scripts/smoke-cce.sh. Credentials are read
-// from CLOUD_SDK_AK / CLOUD_SDK_SK / CCE_SMOKE_REGION (never hardcoded).
+// It prints an env snippet consumed by scripts/smoke-cce.sh and the deploy
+// guide. Credentials are read from CLOUD_SDK_AK / CLOUD_SDK_SK /
+// CCE_SMOKE_REGION (never hardcoded).
 package main
 
 import (
