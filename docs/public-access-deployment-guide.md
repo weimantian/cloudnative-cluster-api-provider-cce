@@ -36,7 +36,7 @@
 - **跳板机公网**：SSH 公网入站 + 出站 curl 下载工具 / 拉镜像（对标 CAPA EC2）。
 - **管理集群 A 公网**：`deploy-mgmt-cluster` 自动绑定 EIP，公网+私有 endpoint（对标 CAPA EKS 公网+私有端点）。
 - **公网拉镜像**：集群 A 节点经 NAT 网关出网，直接从 `quay.io`/`registry.k8s.io` 拉取 cert-manager/CAPI 镜像，**不搬运 SWR**（对标 CAPA 公网 registry）。
-- Provider 自定义镜像仍需推送到 SWR（自建镜像，无公网仓库）。
+- Provider 镜像交付两种方式：**私有 SWR**（客户自推镜像 + imagePullSecret）或 **public SWR**（已发布公开镜像，免认证，对标 CAPA 官方镜像）。
 
 ---
 
@@ -62,7 +62,7 @@ clusterctl version  # 应输出 v1.14.0
 | 账户余额 | 充足（CCE 集群 + 节点 + NAT + EIP 按需计费） |
 | VPC + 子网 | 已存在，或用 `hack/deploy-network` 一键创建 |
 | SSH 密钥对 | 已存在，或用 `hack/deploy-bastion` 创建 |
-| SWR 仓库 | 一个组织/命名空间（仅存放 Provider 自定义镜像，如 `capi_cce`） |
+| SWR 仓库 | 一个组织/命名空间（如 `capi_cce`）：方式 A 放客户自推的私有 Provider 镜像；方式 B 放已发布的 public Provider 镜像 |
 
 ### 代理剥离（重要）
 
@@ -85,7 +85,7 @@ alias nocloud='env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u 
 | 5 | SSH 登录跳板机 + 装工具 | 5 min |
 | 6 | 连集群 A（公网 endpoint） | 1 min |
 | 7 | 安装 Provider（clusterctl init，公网直拉） | 5 min |
-| 8 | 修 Provider pod（SWR Secret + webhook cert） | 2 min |
+| 8 | Provider 镜像交付（私有 SWR / public SWR 二选一）+ webhook cert | 2 min |
 | 9 | 创建工作负载集群 B | 10-20 min |
 | 10 | 验证 | 2 min |
 | 清理 | 删除所有资源 | 10 min |
@@ -242,31 +242,51 @@ clusterctl init --infrastructure cce
 
 > **对标 CAPA**：本步骤 cert-manager（quay.io）、CAPI（registry.k8s.io）**公网直拉**（节点有 NAT 出网），无需搬运到 SWR + imagePullSecret（省去 e2e 指南的"搬运 CAPI 镜像"步骤）。
 
-## 步骤 8：修 Provider pod（SWR Secret + webhook cert）
+## 步骤 8：Provider 镜像交付（私有 SWR / public SWR 二选一）+ webhook cert
 
-Provider 镜像在 SWR 私有仓库（自建），仍需 imagePullSecret；webhook 仍需 TLS cert：
+Provider 镜像交付有两种方式：**方式 A 私有 SWR**（客户自推镜像 + imagePullSecret）或**方式 B public SWR**（已发布公开镜像，免认证直拉，对标 CAPA 官方镜像）。webhook TLS cert 两种方式都需要。
+
+### 方式 A：私有 SWR（客户自建镜像）
+
+镜像推到**私有** SWR 仓库，节点拉取需 imagePullSecret：
 
 ```bash
 # 跳板机
 export KUBECONFIG=/root/capi-mgmt.kubeconfig
 
-# 8.1 SWR imagePullSecret（Provider 镜像）
+# A.1 SWR imagePullSecret（Provider 镜像）
 nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> go run ./hack/swr-login   # 输出 SWR_USER/PASSWORD
 kubectl -n cce-provider-system create secret docker-registry cce-provider-swr-secret \
   --docker-server=swr.cn-north-4.myhuaweicloud.com \
   --docker-username='<SWR_USER>' --docker-password='<SWR_PASSWORD>' --docker-email='noreply@huawei.cloud'
 
-# 8.2 webhook TLS Secret（本地 server.crt/key 上传后）
-kubectl -n cce-provider-system create secret tls webhook-service-cert \
-  --cert=/root/server.crt --key=/root/server.key
-
-# 8.3 加 imagePullSecrets + 重启
+# A.2 加 imagePullSecrets + 重启（方式 B 跳过此步）
 kubectl -n cce-provider-system patch deployment cce-provider-controller-manager \
   --type=json -p='[{"op":"add","path":"/spec/template/spec/imagePullSecrets","value":[{"name":"cce-provider-swr-secret"}]}]'
 kubectl -n cce-provider-system rollout restart deployment/cce-provider-controller-manager
 ```
 
-> 注意：cert-manager/CAPI 的 pod 本方案用公网镜像（不换 SWR），只有 Provider pod 需要 imagePullSecret。
+### 方式 B：public SWR（已发布公开镜像）
+
+Provider 镜像已提前推到**公开** SWR 仓库（如 `swr.cn-north-4.myhuaweicloud.com/capi_cce/cce-provider-controller:latest` 设为 **public**），节点**免认证直拉**（对标 CAPA 官方镜像），**无需 imagePullSecret**：
+
+```bash
+# 跳板机
+export KUBECONFIG=/root/capi-mgmt.kubeconfig
+kubectl -n cce-provider-system rollout restart deployment/cce-provider-controller-manager
+```
+
+> 将 SWR 仓库设为 public：控制台 → 容器镜像服务 SWR → 仓库 → 管理 → 设置为"公开"（公开后任意账号/匿名均可 `docker pull`，适合 Provider 开源发布的场景）。
+
+### webhook TLS cert（两种方式都需要）
+
+```bash
+# 本地 server.crt/key 上传后
+kubectl -n cce-provider-system create secret tls webhook-service-cert \
+  --cert=/root/server.crt --key=/root/server.key
+```
+
+> 注意：cert-manager/CAPI 的 pod 本方案用公网镜像（不换 SWR）；Provider 镜像按方式 A（私有 + imagePullSecret）或方式 B（public 免认证）交付。
 
 ## 步骤 9：创建工作负载集群 B
 
@@ -329,8 +349,10 @@ nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_DEPLOY_REGION=cn-north-4 \
 
 ## 故障排查
 
-### Provider pod 卡在 ContainerCreating（webhook cert 未建）
-创建 webhook TLS Secret（步骤 8.2）后重启 provider。
+### Provider pod 卡在 ContainerCreating / ImagePullBackOff
+- **方式 A（私有 SWR）**：未建 `cce-provider-swr-secret` 或 SWR 凭据错误 → 执行步骤 8 方式 A（imagePullSecret + imagePullSecrets patch）。
+- **方式 B（public SWR）**：确认仓库已设为 public（免认证），否则拉取会 401/ImagePullBackOff。
+- **webhook cert 未建**：创建 `webhook-service-cert`（步骤 8 webhook 段）后重启 provider。
 
 ### cert-manager / CAPI pod ImagePullBackOff（公网拉镜像失败）
 - 确认 NAT 网关 + SNAT 规则 ACTIVE（`hack/nat-egress -mode list`）。
