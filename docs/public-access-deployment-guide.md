@@ -240,11 +240,11 @@ export KUBECONFIG=/root/capi-mgmt.kubeconfig
 clusterctl init --infrastructure cce
 ```
 
-> **对标 CAPA**：本步骤 cert-manager（quay.io）、CAPI（registry.k8s.io）**公网直拉**（节点有 NAT 出网），无需搬运到 SWR + imagePullSecret（省去 e2e 指南的"搬运 CAPI 镜像"步骤）。
+> **对标 CAPA**：本步骤 cert-manager（quay.io）、CAPI（registry.k8s.io）**公网直拉**（节点有公网出网——公网 IP 或 NAT），无需搬运到 SWR + imagePullSecret（省去 e2e 指南的"搬运 CAPI 镜像"步骤）。
 
 ## 步骤 8：Provider 镜像交付（私有 SWR / public SWR 二选一）+ webhook cert
 
-Provider 镜像交付有两种方式：**方式 A 私有 SWR**（客户自推镜像 + imagePullSecret）或**方式 B public SWR**（已发布公开镜像，免认证直拉，对标 CAPA 官方镜像）。webhook TLS cert 两种方式都需要。
+Provider 镜像交付有两种方式：**方式 A 私有 SWR**（客户自推镜像 + imagePullSecret）或**方式 B public SWR**（已发布公开镜像，免认证直拉，对标 CAPA 官方镜像）。webhook 证书由 **cert-manager 自动签发**（见下文），两种方式均无需手动。
 
 ### 方式 A：私有 SWR（客户自建镜像）
 
@@ -349,7 +349,7 @@ nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_DEPLOY_REGION=cn-north-4 \
 ### Provider pod 卡在 ContainerCreating / ImagePullBackOff
 - **方式 A（私有 SWR）**：未建 `cce-provider-swr-secret` 或 SWR 凭据错误 → 执行步骤 8 方式 A（imagePullSecret + imagePullSecrets patch）。
 - **方式 B（public SWR）**：确认仓库已设为 public（免认证），否则拉取会 401/ImagePullBackOff。
-- **webhook cert 未建**：创建 `webhook-service-cert`（步骤 8 webhook 段）后重启 provider。
+- **webhook 证书异常**：证书由 cert-manager 自动签发（Secret `webhook-service-cert`）。若未生成，检查 `cert-manager` pods Running + `Certificate serving-cert` Ready（`kubectl get certificate -n cce-provider-system`），再重启 provider。
 
 ### cert-manager / CAPI pod ImagePullBackOff（公网拉镜像失败）
 - 确认 NAT 网关 + SNAT 规则 ACTIVE（`hack/nat-egress -mode list`）。
