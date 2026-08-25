@@ -13,9 +13,9 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //   - one SSH keypair (capi-smoke-key)
 //   - cheapest 2vCPU/4GiB ECS flavor in the region (CCE node minimum)
 //
-// It prints an env snippet consumed by scripts/smoke-cce.sh and the deploy
-// guide. Credentials are read from CLOUD_SDK_AK / CLOUD_SDK_SK /
-// CCE_SMOKE_REGION (never hardcoded).
+// It prints a CCE_DEPLOY_* env snippet consumed by the deploy guide (stage 1)
+// and by deploy-bastion/deploy-mgmt-cluster when sourced. Credentials are read
+// from CLOUD_SDK_AK / CLOUD_SDK_SK / CCE_DEPLOY_REGION (never hardcoded).
 package main
 
 import (
@@ -48,7 +48,7 @@ func main() {
 	ctx := context.Background()
 	ak := os.Getenv("CLOUD_SDK_AK")
 	sk := os.Getenv("CLOUD_SDK_SK")
-	regionID := os.Getenv("CCE_SMOKE_REGION")
+	regionID := os.Getenv("CCE_DEPLOY_REGION")
 	if ak == "" || sk == "" {
 		fatal("CLOUD_SDK_AK and CLOUD_SDK_SK must be set")
 	}
@@ -124,22 +124,21 @@ keypairDone:
 		fmt.Printf("Cheapest 2C4G flavor: %s (%s)\n", flavor.Name, flavor.Id)
 	}
 
-	fmt.Println("\n--- export for scripts/smoke-cce.sh ---")
-	fmt.Printf("export CCE_SMOKE_REGION=%q\n", regionID)
-	fmt.Printf("export CCE_SMOKE_VPC=%q\n", vpcID)
-	fmt.Printf("export CCE_SMOKE_SUBNET=%q\n", nodeSubnetID)
+	fmt.Println("\n--- export for the deploy guide (stage 1) ---")
+	fmt.Printf("export CCE_DEPLOY_REGION=%q\n", regionID)
+	fmt.Printf("export CCE_DEPLOY_VPC=%q\n", vpcID)
+	fmt.Printf("export CCE_DEPLOY_SUBNET=%q\n", nodeSubnetID)
 	// eniNetwork.subnets[].subnetID requires the NEUTRON subnet id (official
 	// CreateCluster doc; verified by the real CCE smoke test).
 	if eniSubnetNeutron != "" {
 		eniSubnetID = eniSubnetNeutron
 	}
-	fmt.Printf("export CCE_SMOKE_ENI_SUBNET=%q  # neutron_subnet_id\n", eniSubnetID)
-	fmt.Printf("export CCE_SMOKE_KEYPAIR=%q\n", keypairName)
+	fmt.Printf("export CCE_DEPLOY_ENI_SUBNET=%q  # neutron_subnet_id\n", eniSubnetID)
+	fmt.Printf("export CCE_DEPLOY_KEYPAIR=%q\n", keypairName)
 	if flavor != nil {
-		fmt.Printf("export CCE_SMOKE_FLAVOR=%q\n", flavor.Id)
+		fmt.Printf("export CCE_DEPLOY_FLAVOR=%q\n", flavor.Id)
 	}
-	fmt.Println("export CCE_SMOKE_CLUSTER_FLAVOR='cce.s1.small'  # cheapest cluster (1 control node)")
-	fmt.Println("export CCE_SMOKE_CASES='cluster,pool,scale,delete'")
+	fmt.Println("export CCE_DEPLOY_CLUSTER_FLAVOR='cce.s1.small'  # cheapest cluster (1 control node)")
 }
 
 func createSubnet(ctx context.Context, c *vpcv2.VpcClient, vpcID, name, cidr string) string {

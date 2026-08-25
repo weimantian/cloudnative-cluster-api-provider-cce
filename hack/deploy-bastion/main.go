@@ -10,13 +10,13 @@ Licensed under the MIT No Attribution (MIT-0) License.
 // ECS instance with a directly-bound EIP. It prints the public IP and the
 // private-key path so the bastion can be reached from the laptop.
 //
-// Env (CCE_SMOKE_* / CLOUD_SDK_*):
+// Env (CCE_DEPLOY_* / CLOUD_SDK_*):
 //
-//	CLOUD_SDK_AK / CLOUD_SDK_SK   (or CCE_SMOKE_AK/SK)
-//	CCE_SMOKE_REGION              (default cn-north-4)
-//	CCE_SMOKE_VPC                 management VPC ID (required)
-//	CCE_SMOKE_SUBNET              management node subnet ID (required)
-//	CCE_SMOKE_AZ                  availability zone (default cn-north-4a)
+//	CLOUD_SDK_AK / CLOUD_SDK_SK   (or CCE_DEPLOY_AK/SK)
+//	CCE_DEPLOY_REGION              (default cn-north-4)
+//	CCE_DEPLOY_VPC                 management VPC ID (required)
+//	CCE_DEPLOY_SUBNET              management node subnet ID (required)
+//	CCE_DEPLOY_AZ                  availability zone (default cn-north-4a)
 //	CCE_BASTION_FLAVOR            ECS flavor (default s6.small.1)
 package main
 
@@ -50,18 +50,18 @@ const (
 )
 
 func main() {
-	ak := envOr("CCE_SMOKE_AK", "CLOUD_SDK_AK")
-	sk := envOr("CCE_SMOKE_SK", "CLOUD_SDK_SK")
-	region := envDefault("CCE_SMOKE_REGION", "cn-north-4")
-	az := envDefault("CCE_SMOKE_AZ", "cn-north-4a")
-	vpcID := envOr("CCE_SMOKE_VPC")
-	subnetID := envOr("CCE_SMOKE_SUBNET")
+	ak := envOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
+	sk := envOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
+	region := envDefault("CCE_DEPLOY_REGION", "cn-north-4")
+	az := envDefault("CCE_DEPLOY_AZ", "cn-north-4a")
+	vpcID := envOr("CCE_DEPLOY_VPC")
+	subnetID := envOr("CCE_DEPLOY_SUBNET")
 	flavor := envDefault("CCE_BASTION_FLAVOR", "s6.small.1")
 	if ak == "" || sk == "" {
-		fatal("CLOUD_SDK_AK/CCE_SMOKE_AK and CLOUD_SDK_SK/CCE_SMOKE_SK must be set")
+		fatal("CLOUD_SDK_AK/CCE_DEPLOY_AK and CLOUD_SDK_SK/CCE_DEPLOY_SK must be set")
 	}
 	if vpcID == "" || subnetID == "" {
-		fatal("CCE_SMOKE_VPC and CCE_SMOKE_SUBNET are required")
+		fatal("CCE_DEPLOY_VPC and CCE_DEPLOY_SUBNET are required")
 	}
 
 	ctx := context.Background()

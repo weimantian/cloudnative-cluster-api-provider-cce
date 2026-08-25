@@ -9,7 +9,7 @@ Licensed under the MIT No Attribution (MIT-0) License.
 // AK/SK via the SWR CreateSecret API. The credential is short-lived (~1 hour);
 // re-run to refresh.
 //
-// Env: CLOUD_SDK_AK / CLOUD_SDK_SK, CCE_SMOKE_REGION (default cn-north-4),
+// Env: CLOUD_SDK_AK / CLOUD_SDK_SK, CCE_DEPLOY_REGION (default cn-north-4),
 // SWR_ORG (default capi_cce).
 package main
 
@@ -27,9 +27,9 @@ import (
 )
 
 func main() {
-	ak := envOr("CCE_SMOKE_AK", "CLOUD_SDK_AK")
-	sk := envOr("CCE_SMOKE_SK", "CLOUD_SDK_SK")
-	region := envDefault("CCE_SMOKE_REGION", "cn-north-4")
+	ak := envOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
+	sk := envOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
+	region := envDefault("CCE_DEPLOY_REGION", "cn-north-4")
 	org := envDefault("SWR_ORG", "capi_cce")
 	if ak == "" || sk == "" {
 		fatal("CLOUD_SDK_AK and CLOUD_SDK_SK must be set")

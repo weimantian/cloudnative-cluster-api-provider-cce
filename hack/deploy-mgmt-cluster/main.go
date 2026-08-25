@@ -19,17 +19,17 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //	-delete     delete the cluster given by -cluster (node pools first)
 //	-delete-all delete every CCE cluster in the region (node pools first)
 //
-// Env (CCE_SMOKE_* mirrors .env; CLOUD_SDK_AK/SK fall back for CI):
+// Env (CCE_DEPLOY_* mirrors .env; CLOUD_SDK_AK/SK fall back for CI):
 //
-//	CCE_SMOKE_AK / CLOUD_SDK_AK
-//	CCE_SMOKE_SK / CLOUD_SDK_SK
-//	CCE_SMOKE_REGION            (default cn-north-4)
-//	CCE_SMOKE_VPC               management VPC ID (create)
-//	CCE_SMOKE_SUBNET            management node subnet ID (create)
-//	CCE_SMOKE_KEYPAIR           SSH keypair for the node pool (create)
-//	CCE_SMOKE_AZ                availability zone (default cn-north-4a)
-//	CCE_SMOKE_MGMT_FLAVOR       node flavor (default c6.large.2)
-//	CCE_SMOKE_MGMT_NODES        node count (default 2)
+//	CCE_DEPLOY_AK / CLOUD_SDK_AK
+//	CCE_DEPLOY_SK / CLOUD_SDK_SK
+//	CCE_DEPLOY_REGION            (default cn-north-4)
+//	CCE_DEPLOY_VPC               management VPC ID (create)
+//	CCE_DEPLOY_SUBNET            management node subnet ID (create)
+//	CCE_DEPLOY_KEYPAIR           SSH keypair for the node pool (create)
+//	CCE_DEPLOY_AZ                availability zone (default cn-north-4a)
+//	CCE_DEPLOY_MGMT_FLAVOR       node flavor (default c6.large.2)
+//	CCE_DEPLOY_MGMT_NODES        node count (default 2)
 //
 // Usage:
 //
@@ -66,11 +66,11 @@ func main() {
 	kubeconfigPath := flag.String("kubeconfig", "capi-mgmt.kubeconfig", "kubeconfig output path (create mode)")
 	flag.Parse()
 
-	ak := envOr("CCE_SMOKE_AK", "CLOUD_SDK_AK")
-	sk := envOr("CCE_SMOKE_SK", "CLOUD_SDK_SK")
-	region := envDefault("CCE_SMOKE_REGION", "cn-north-4")
+	ak := envOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
+	sk := envOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
+	region := envDefault("CCE_DEPLOY_REGION", "cn-north-4")
 	if ak == "" || sk == "" {
-		fatal("CCE_SMOKE_AK (or CLOUD_SDK_AK) and CCE_SMOKE_SK (or CLOUD_SDK_SK) must be set")
+		fatal("CCE_DEPLOY_AK (or CLOUD_SDK_AK) and CCE_DEPLOY_SK (or CLOUD_SDK_SK) must be set")
 	}
 
 	ctx := context.Background()
@@ -100,22 +100,22 @@ func main() {
 }
 
 func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath string) {
-	vpcID := envOr("CCE_SMOKE_VPC")
-	subnetID := envOr("CCE_SMOKE_SUBNET")
-	keypair := envOr("CCE_SMOKE_KEYPAIR")
+	vpcID := envOr("CCE_DEPLOY_VPC")
+	subnetID := envOr("CCE_DEPLOY_SUBNET")
+	keypair := envOr("CCE_DEPLOY_KEYPAIR")
 	if vpcID == "" || subnetID == "" || keypair == "" {
-		fatal("CCE_SMOKE_VPC, CCE_SMOKE_SUBNET and CCE_SMOKE_KEYPAIR are required to create")
+		fatal("CCE_DEPLOY_VPC, CCE_DEPLOY_SUBNET and CCE_DEPLOY_KEYPAIR are required to create")
 	}
 
 	name := "capi-mgmt-" + fmt.Sprintf("%d", time.Now().Unix()%100000)
 	fmt.Printf("creating management cluster %q (region %s, vpc %s, subnet %s)…\n",
-		name, envDefault("CCE_SMOKE_REGION", "cn-north-4"), vpcID, subnetID)
+		name, envDefault("CCE_DEPLOY_REGION", "cn-north-4"), vpcID, subnetID)
 
 	id, err := svc.CreateCluster(ctx, cce.CreateClusterInput{
 		Name:                 name,
 		Category:             "CCE", // Standard
 		Flavor:               "cce.s1.small",
-		Version:              envOr("CCE_SMOKE_K8S_VERSION", ""),
+		Version:              envOr("CCE_DEPLOY_K8S_VERSION", ""),
 		ContainerNetworkMode: "vpc-router",
 		ContainerNetworkCIDR: "10.244.0.0/16",
 		HostNetworkVpcID:     vpcID,
@@ -145,12 +145,12 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 // for its nodes to become active, and downloads the kubeconfig. Shared by the
 // default create mode and the standalone -pool mode.
 func createPool(ctx context.Context, svc cce.Service, clusterID, kubeconfigPath string) {
-	keypair := envOr("CCE_SMOKE_KEYPAIR")
-	az := envDefault("CCE_SMOKE_AZ", "cn-north-4a")
-	flavor := envDefault("CCE_SMOKE_MGMT_FLAVOR", "c6.large.2")
-	nodeCount := int32Env("CCE_SMOKE_MGMT_NODES", 2)
+	keypair := envOr("CCE_DEPLOY_KEYPAIR")
+	az := envDefault("CCE_DEPLOY_AZ", "cn-north-4a")
+	flavor := envDefault("CCE_DEPLOY_MGMT_FLAVOR", "c6.large.2")
+	nodeCount := int32Env("CCE_DEPLOY_MGMT_NODES", 2)
 	if keypair == "" {
-		fatal("CCE_SMOKE_KEYPAIR is required to create a node pool")
+		fatal("CCE_DEPLOY_KEYPAIR is required to create a node pool")
 	}
 
 	poolID, err := svc.CreateNodePool(ctx, cce.CreateNodePoolInput{

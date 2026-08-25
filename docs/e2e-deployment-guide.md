@@ -77,8 +77,8 @@ alias nocloud='env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u 
 ```bash
 export CLOUD_SDK_AK='<你的AK>'
 export CLOUD_SDK_SK='<你的SK>'
-export CCE_SMOKE_REGION='cn-north-4'
-export CCE_SMOKE_AZ='cn-north-4a'
+export CCE_DEPLOY_REGION='cn-north-4'
+export CCE_DEPLOY_AZ='cn-north-4a'
 ```
 
 ---
@@ -96,10 +96,10 @@ nocloud go run ./hack/deploy-network
 | 参数/输出 | 含义 |
 |---|---|
 | `CLOUD_SDK_AK` / `CLOUD_SDK_SK` | 华为云访问密钥，调用 VPC/ECS API |
-| `CCE_SMOKE_REGION` | 区域，默认 `cn-north-4` |
-| 输出 `CCE_SMOKE_VPC` | VPC ID（`capi-smoke-vpc`，CIDR 10.0.0.0/16） |
-| 输出 `CCE_SMOKE_SUBNET` | 节点子网 ID（`capi-smoke-subnet-node`，10.0.1.0/24） |
-| 输出 `CCE_SMOKE_KEYPAIR` | 密钥对名（`capi-smoke-key`，私钥被丢弃，仅节点登录用） |
+| `CCE_DEPLOY_REGION` | 区域，默认 `cn-north-4` |
+| 输出 `CCE_DEPLOY_VPC` | VPC ID（`capi-smoke-vpc`，CIDR 10.0.0.0/16） |
+| 输出 `CCE_DEPLOY_SUBNET` | 节点子网 ID（`capi-smoke-subnet-node`，10.0.1.0/24） |
+| 输出 `CCE_DEPLOY_KEYPAIR` | 密钥对名（`capi-smoke-key`，私钥被丢弃，仅节点登录用） |
 
 > ⚠️ **踩坑 #1（DNS）**：脚本建子网时**必须指定 DNS**（`100.125.1.250` + `100.125.129.250`），否则节点拿到错误 DNS、cce-agent 下载失败、永久卡 Installing。已在脚本中修复。
 
@@ -116,7 +116,7 @@ nocloud go run ./hack/deploy-bastion
 
 | 参数/输出 | 含义 |
 |---|---|
-| `CCE_SMOKE_VPC` / `CCE_SMOKE_SUBNET` | 跳板机所在 VPC/子网（与集群 A 同 VPC，便于访问内网 API） |
+| `CCE_DEPLOY_VPC` / `CCE_DEPLOY_SUBNET` | 跳板机所在 VPC/子网（与集群 A 同 VPC，便于访问内网 API） |
 | 默认 flavor | `s6.small.1`（1C2G，最小通用型） |
 | 输出 `BASTION_PUBLIC_IP` | 跳板机公网 IP（SSH 登录用） |
 | 输出 `capi-bastion-key.pem` | **跳板机私钥（必须保留，SSH 登录用）** |
@@ -136,18 +136,18 @@ ssh -i capi-bastion-key.pem -o StrictHostKeyChecking=no root@<BASTION_PUBLIC_IP>
 > 集群 A 的创建可**直接在本地**执行（调用华为云 CCE API）。
 
 ```bash
-nocloud CCE_SMOKE_VPC="$CCE_SMOKE_VPC" \
-  CCE_SMOKE_SUBNET="$CCE_SMOKE_SUBNET" \
-  CCE_SMOKE_KEYPAIR='capi-bastion-key' \
-  CCE_SMOKE_K8S_VERSION='v1.35' \
+nocloud CCE_DEPLOY_VPC="$CCE_DEPLOY_VPC" \
+  CCE_DEPLOY_SUBNET="$CCE_DEPLOY_SUBNET" \
+  CCE_DEPLOY_KEYPAIR='capi-bastion-key' \
+  CCE_DEPLOY_K8S_VERSION='v1.35' \
   go run ./hack/deploy-mgmt-cluster
 ```
 
 | 参数 | 含义 |
 |---|---|
-| `CCE_SMOKE_VPC` / `CCE_SMOKE_SUBNET` | 管理集群所在 VPC/子网 |
-| `CCE_SMOKE_KEYPAIR=capi-bastion-key` | 节点 SSH 密钥对（保留私钥的，可排查） |
-| `CCE_SMOKE_K8S_VERSION=v1.35` | 集群 K8s 版本 |
+| `CCE_DEPLOY_VPC` / `CCE_DEPLOY_SUBNET` | 管理集群所在 VPC/子网 |
+| `CCE_DEPLOY_KEYPAIR=capi-bastion-key` | 节点 SSH 密钥对（保留私钥的，可排查） |
+| `CCE_DEPLOY_K8S_VERSION=v1.35` | 集群 K8s 版本 |
 | 默认 flavor | 集群 `cce.s1.small`，节点 `c6.large.2` ×2 |
 | 输出 `capi-mgmt.kubeconfig` | **管理集群 kubeconfig（下载到本地）** |
 
@@ -451,7 +451,7 @@ kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes
 
 ### 步骤 12：确认 ENI 子网（阶段一已自动创建）
 
-阶段一 `hack/deploy-network` 会额外创建 ENI 子网 `capi-smoke-subnet-eni`（10.0.2.0/24）并输出 `CCE_SMOKE_ENI_SUBNET`。
+阶段一 `hack/deploy-network` 会额外创建 ENI 子网 `capi-smoke-subnet-eni`（10.0.2.0/24）并输出 `CCE_DEPLOY_ENI_SUBNET`。
 
 > ⚠️ **踩坑 #21（neutron_subnet_id）**：CCE `eniNetwork.subnets[].subnetID` 要求 **neutron_subnet_id**（不是 VPC 网络的 subnet ID）。
 > deploy-network 刚建子网时 neutron ID 可能尚未同步（输出为空），稍后用 `hack/survey-hw` 或 VPC 控制台重新查询 `capi-smoke-subnet-eni` 的 `neutron_subnet_id` 即可。
@@ -663,12 +663,12 @@ nocloud go run ./hack/deploy-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
 | 变量 | 用途 | 示例值 |
 |---|---|---|
 | `CLOUD_SDK_AK` / `CLOUD_SDK_SK` | 华为云 AK/SK | `<你的AK>` / `<你的SK>` |
-| `CCE_SMOKE_REGION` | 区域 | `cn-north-4` |
-| `CCE_SMOKE_AZ` | 可用区 | `cn-north-4a` |
-| `CCE_SMOKE_VPC` | VPC ID | `62737a53-...` |
-| `CCE_SMOKE_SUBNET` | 节点子网 ID | `c9b7bf51-...` |
-| `CCE_SMOKE_KEYPAIR` | 密钥对名（节点用） | `capi-bastion-key` |
-| `CCE_SMOKE_K8S_VERSION` | 集群 K8s 版本 | `v1.35` |
+| `CCE_DEPLOY_REGION` | 区域 | `cn-north-4` |
+| `CCE_DEPLOY_AZ` | 可用区 | `cn-north-4a` |
+| `CCE_DEPLOY_VPC` | VPC ID | `62737a53-...` |
+| `CCE_DEPLOY_SUBNET` | 节点子网 ID | `c9b7bf51-...` |
+| `CCE_DEPLOY_KEYPAIR` | 密钥对名（节点用） | `capi-bastion-key` |
+| `CCE_DEPLOY_K8S_VERSION` | 集群 K8s 版本 | `v1.35` |
 | `SWR_ORG` | SWR 命名空间 | `capi_cce` |
 
 ## 工具速查

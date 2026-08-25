@@ -92,7 +92,7 @@ alias nocloud='env -u http_proxy -u https_proxy -u HTTP_PROXY -u HTTPS_PROXY -u 
 ### 方式 B:一键创建(推荐首次测试)
 
 ```bash
-nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_SMOKE_REGION=cn-north-4 \
+nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_DEPLOY_REGION=cn-north-4 \
   go run ./hack/deploy-network
 ```
 
@@ -104,24 +104,24 @@ ENI  subnet: capi-smoke-subnet-eni  (..., id=..., neutron=...)
 Keypair: capi-smoke-key (created)
 
 --- export for scripts/smoke-cce.sh ---
-export CCE_SMOKE_REGION="cn-north-4"
-export CCE_SMOKE_VPC="9c4c6207-..."
-export CCE_SMOKE_SUBNET="..."
-export CCE_SMOKE_ENI_SUBNET="..."  # neutron_subnet_id
-export CCE_SMOKE_KEYPAIR="capi-smoke-key"
-export CCE_SMOKE_CASES='cluster,pool,scale,delete'
+export CCE_DEPLOY_REGION="cn-north-4"
+export CCE_DEPLOY_VPC="9c4c6207-..."
+export CCE_DEPLOY_SUBNET="..."
+export CCE_DEPLOY_ENI_SUBNET="..."  # neutron_subnet_id
+export CCE_DEPLOY_KEYPAIR="capi-smoke-key"
+export CCE_DEPLOY_CASES='cluster,pool,scale,delete'
 ```
 
 ### 统一环境变量
 
 ```bash
-export CCE_SMOKE_AK=<你的AK>
-export CCE_SMOKE_SK=<你的SK>
-export CCE_SMOKE_REGION=cn-north-4
-export CCE_SMOKE_VPC=<VPC-ID>
-export CCE_SMOKE_SUBNET=<子网-ID>
-export CCE_SMOKE_KEYPAIR=<密钥对名称>
-export CCE_SMOKE_AZ=cn-north-4a
+export CCE_DEPLOY_AK=<你的AK>
+export CCE_DEPLOY_SK=<你的SK>
+export CCE_DEPLOY_REGION=cn-north-4
+export CCE_DEPLOY_VPC=<VPC-ID>
+export CCE_DEPLOY_SUBNET=<子网-ID>
+export CCE_DEPLOY_KEYPAIR=<密钥对名称>
+export CCE_DEPLOY_AZ=cn-north-4a
 ```
 
 ---
@@ -366,8 +366,8 @@ nocloud kubectl -n cce-provider-system create secret tls webhook-service-cert \
 
 ```bash
 nocloud kubectl -n cce-provider-system create secret generic cce-provider-credentials \
-  --from-literal=accessKey="$CCE_SMOKE_AK" \
-  --from-literal=secretKey="$CCE_SMOKE_SK"
+  --from-literal=accessKey="$CCE_DEPLOY_AK" \
+  --from-literal=secretKey="$CCE_DEPLOY_SK"
 ```
 
 ### 8.4 给 Provider Deployment 添加 imagePullSecrets 并重启
@@ -478,15 +478,15 @@ cp config/samples/cluster-template.yaml /tmp/my-cluster.yaml
 ```
 
 编辑 `/tmp/my-cluster.yaml`,替换三个占位符:
-- `VERIFY-VPC-ID` → 你的 VPC ID(`$CCE_SMOKE_VPC`)
-- `VERIFY-SUBNET-ID` → 你的子网 ID(`$CCE_SMOKE_SUBNET`)
-- `VERIFY-KEYPAIR-NAME` → 你的密钥对名称(`$CCE_SMOKE_KEYPAIR`)
+- `VERIFY-VPC-ID` → 你的 VPC ID(`$CCE_DEPLOY_VPC`)
+- `VERIFY-SUBNET-ID` → 你的子网 ID(`$CCE_DEPLOY_SUBNET`)
+- `VERIFY-KEYPAIR-NAME` → 你的密钥对名称(`$CCE_DEPLOY_KEYPAIR`)
 
 ```bash
 sed -i.bak \
-  -e "s/VERIFY-VPC-ID/$CCE_SMOKE_VPC/" \
-  -e "s/VERIFY-SUBNET-ID/$CCE_SMOKE_SUBNET/" \
-  -e "s/VERIFY-KEYPAIR-NAME/$CCE_SMOKE_KEYPAIR/" \
+  -e "s/VERIFY-VPC-ID/$CCE_DEPLOY_VPC/" \
+  -e "s/VERIFY-SUBNET-ID/$CCE_DEPLOY_SUBNET/" \
+  -e "s/VERIFY-KEYPAIR-NAME/$CCE_DEPLOY_KEYPAIR/" \
   /tmp/my-cluster.yaml
 ```
 
@@ -495,8 +495,8 @@ sed -i.bak \
 ```bash
 nocloud kubectl create secret generic my-cce-cluster-credentials \
   --namespace default \
-  --from-literal=accessKey="$CCE_SMOKE_AK" \
-  --from-literal=secretKey="$CCE_SMOKE_SK"
+  --from-literal=accessKey="$CCE_DEPLOY_AK" \
+  --from-literal=secretKey="$CCE_DEPLOY_SK"
 
 # CAPI v1.14 MachinePool 合约要求 bootstrap 引用存在(管理节点池无需 bootstrap 数据)
 nocloud kubectl create secret generic my-cce-cluster-bootstrap \
@@ -547,11 +547,11 @@ nocloud kubectl delete cluster my-cce-cluster
 
 ```bash
 export E2E_MANAGEMENT_KUBECONFIG=$(pwd)/capi-mgmt.kubeconfig
-export CCE_ACCESS_KEY="$CCE_SMOKE_AK"
-export CCE_SECRET_KEY="$CCE_SMOKE_SK"
-export CCE_E2E_VPC_ID="$CCE_SMOKE_VPC"
-export CCE_E2E_SUBNET_ID="$CCE_SMOKE_SUBNET"
-export CCE_E2E_KEYPAIR="$CCE_SMOKE_KEYPAIR"
+export CCE_ACCESS_KEY="$CCE_DEPLOY_AK"
+export CCE_SECRET_KEY="$CCE_DEPLOY_SK"
+export CCE_E2E_VPC_ID="$CCE_DEPLOY_VPC"
+export CCE_E2E_SUBNET_ID="$CCE_DEPLOY_SUBNET"
+export CCE_E2E_KEYPAIR="$CCE_DEPLOY_KEYPAIR"
 export CCE_E2E_REGION=cn-north-4
 export CCE_E2E_AZ=cn-north-4a
 export CCE_E2E_NODE_FLAVOR=c6.large.2
@@ -574,9 +574,9 @@ nocloud make e2e
 
 ```bash
 # 需要 ENI 子网的 neutron_subnet_id
-export CCE_SMOKE_ENI_SUBNET=<neutron_subnet_id>
-export CCE_SMOKE_CASES=cluster,pool,scale,delete
-export CCE_SMOKE_MODE=eni
+export CCE_DEPLOY_ENI_SUBNET=<neutron_subnet_id>
+export CCE_DEPLOY_CASES=cluster,pool,scale,delete
+export CCE_DEPLOY_MODE=eni
 
 nocloud scripts/smoke-cce.sh
 # 等价于:nocloud go test -tags smoke -v -timeout 90m ./internal/services/cce/ -run TestSmoke
@@ -707,21 +707,21 @@ CCE 要求显式指定 OS。模板中已设 `os: Huawei Cloud EulerOS 2.0`。其
 
 | 变量 | 用途 | 示例值 |
 |---|---|---|
-| `CCE_SMOKE_AK` | 华为云 AK | `HPUANX...` |
-| `CCE_SMOKE_SK` | 华为云 SK | `doPPU6...` |
-| `CCE_SMOKE_REGION` | 区域 | `cn-north-4` |
-| `CCE_SMOKE_VPC` | VPC ID | `cb3f7bfb-...` |
-| `CCE_SMOKE_SUBNET` | 节点子网 ID | `2aa8f43c-...` |
-| `CCE_SMOKE_ENI_SUBNET` | ENI 子网 neutron ID (smoke 测试) | `16e607b7-...` |
-| `CCE_SMOKE_KEYPAIR` | SSH 密钥对名 | `capi-smoke` |
-| `CCE_SMOKE_AZ` | 可用区 | `cn-north-4a` |
-| `CCE_SMOKE_CASES` | smoke 测试用例 | `cluster,pool,scale,delete` |
+| `CCE_DEPLOY_AK` | 华为云 AK | `HPUANX...` |
+| `CCE_DEPLOY_SK` | 华为云 SK | `doPPU6...` |
+| `CCE_DEPLOY_REGION` | 区域 | `cn-north-4` |
+| `CCE_DEPLOY_VPC` | VPC ID | `cb3f7bfb-...` |
+| `CCE_DEPLOY_SUBNET` | 节点子网 ID | `2aa8f43c-...` |
+| `CCE_DEPLOY_ENI_SUBNET` | ENI 子网 neutron ID (smoke 测试) | `16e607b7-...` |
+| `CCE_DEPLOY_KEYPAIR` | SSH 密钥对名 | `capi-smoke` |
+| `CCE_DEPLOY_AZ` | 可用区 | `cn-north-4a` |
+| `CCE_DEPLOY_CASES` | smoke 测试用例 | `cluster,pool,scale,delete` |
 | `E2E_MANAGEMENT_KUBECONFIG` | 管理集群 kubeconfig 路径 | `./capi-mgmt.kubeconfig` |
-| `CCE_ACCESS_KEY` | E2E 测试用 AK | 同 `CCE_SMOKE_AK` |
-| `CCE_SECRET_KEY` | E2E 测试用 SK | 同 `CCE_SMOKE_SK` |
-| `CCE_E2E_VPC_ID` | E2E 测试用 VPC | 同 `CCE_SMOKE_VPC` |
-| `CCE_E2E_SUBNET_ID` | E2E 测试用子网 | 同 `CCE_SMOKE_SUBNET` |
-| `CCE_E2E_KEYPAIR` | E2E 测试用密钥对 | 同 `CCE_SMOKE_KEYPAIR` |
+| `CCE_ACCESS_KEY` | E2E 测试用 AK | 同 `CCE_DEPLOY_AK` |
+| `CCE_SECRET_KEY` | E2E 测试用 SK | 同 `CCE_DEPLOY_SK` |
+| `CCE_E2E_VPC_ID` | E2E 测试用 VPC | 同 `CCE_DEPLOY_VPC` |
+| `CCE_E2E_SUBNET_ID` | E2E 测试用子网 | 同 `CCE_DEPLOY_SUBNET` |
+| `CCE_E2E_KEYPAIR` | E2E 测试用密钥对 | 同 `CCE_DEPLOY_KEYPAIR` |
 | `KUBECONFIG` | 管理集群 kubeconfig | `./capi-mgmt.kubeconfig` |
 
 ---

@@ -21,8 +21,8 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //
 // Usage:
 //
-//	CCE_SMOKE_AK=... CCE_SMOKE_SK=... CCE_SMOKE_VPC=<vpc-id> \
-//	  CCE_SMOKE_SUBNET=<subnet-id> \
+//	CCE_DEPLOY_AK=... CCE_DEPLOY_SK=... CCE_DEPLOY_VPC=<vpc-id> \
+//	  CCE_DEPLOY_SUBNET=<subnet-id> \
 //	  go run ./hack/nat-egress -mode create
 package main
 
@@ -54,11 +54,11 @@ func main() {
 	gatewayID := flag.String("id", "", "NAT gateway ID (delete mode) or EIP ID (delete-eip mode)")
 	flag.Parse()
 
-	ak := envOr("CCE_SMOKE_AK", "CLOUD_SDK_AK")
-	sk := envOr("CCE_SMOKE_SK", "CLOUD_SDK_SK")
-	region := envOr("CCE_SMOKE_REGION", "cn-north-4")
+	ak := envOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
+	sk := envOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
+	region := envOr("CCE_DEPLOY_REGION", "cn-north-4")
 	if ak == "" || sk == "" {
-		fatal("CCE_SMOKE_AK (or CLOUD_SDK_AK) and CCE_SMOKE_SK (or CLOUD_SDK_SK) must be set")
+		fatal("CCE_DEPLOY_AK (or CLOUD_SDK_AK) and CCE_DEPLOY_SK (or CLOUD_SDK_SK) must be set")
 	}
 
 	ctx := context.Background()
@@ -66,10 +66,10 @@ func main() {
 
 	switch *mode {
 	case "create":
-		vpcID := envOr("CCE_SMOKE_VPC")
-		subnetID := envOr("CCE_SMOKE_SUBNET")
+		vpcID := envOr("CCE_DEPLOY_VPC")
+		subnetID := envOr("CCE_DEPLOY_SUBNET")
 		if vpcID == "" || subnetID == "" {
-			fatal("create mode requires CCE_SMOKE_VPC and CCE_SMOKE_SUBNET")
+			fatal("create mode requires CCE_DEPLOY_VPC and CCE_DEPLOY_SUBNET")
 		}
 		doCreate(ctx, region, ak, sk, natc, vpcID, subnetID)
 	case "list":

@@ -50,8 +50,8 @@ func main() {
 		fatal("usage: go run ./hack/cleanup-hw -cluster <id> [-nodepool <id>] [-eip <id>] [-subnet <id> -vpc <id>]")
 	}
 
-	ak := envOr("CLOUD_SDK_AK", "CCE_SMOKE_AK")
-	sk := envOr("CLOUD_SDK_SK", "CCE_SMOKE_SK")
+	ak := envOr("CLOUD_SDK_AK", "CCE_DEPLOY_AK")
+	sk := envOr("CLOUD_SDK_SK", "CCE_DEPLOY_SK")
 	if ak == "" || sk == "" {
 		fatal("CLOUD_SDK_AK and CLOUD_SDK_SK must be set")
 	}
