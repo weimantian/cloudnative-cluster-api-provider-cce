@@ -264,7 +264,7 @@ kubectl get ccemanagedcontrolplane --watch
    EOF
    clusterctl init --infrastructure cce --wait-providers
    # installs cert-manager + CAPI core + bootstrap-kubeadm + control-plane-kubeadm + infrastructure-cce
-   kubectl get pods -A | grep -E 'capi-|cert-manager|cce-provider'   # all Running
+   kubectl get pods -A | grep -E 'capi-|cert-manager|cloudnative-cluster-api-provider-cce'   # all Running
    ```
 
 5. **Create the workload cluster** (Cluster + CCECluster + CCEManagedControlPlane + MachinePool + CCEManagedMachinePool — sample in `config/samples/cluster-template.yaml`; fill in every `VERIFY-...` placeholder):

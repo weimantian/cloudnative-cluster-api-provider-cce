@@ -433,7 +433,7 @@ nocloud kubectl -n capi-kubeadm-control-plane-system patch deployment capi-kubea
 ## 步骤 10:验证 Provider 运行
 
 ```bash
-nocloud kubectl get pods -A | grep -E 'capi-|cert-manager|cce-provider'
+nocloud kubectl get pods -A | grep -E 'capi-|cert-manager|cloudnative-cluster-api-provider-cce'
 ```
 
 **期望输出**(全部 `1/1 Running`):

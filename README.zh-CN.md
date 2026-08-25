@@ -245,7 +245,7 @@ kubectl get ccemanagedcontrolplane --watch
    EOF
    clusterctl init --infrastructure cce --wait-providers
    # 会安装 cert-manager + CAPI 核心 + bootstrap-kubeadm + control-plane-kubeadm + infrastructure-cce
-   kubectl get pods -A | grep -E 'capi-|cert-manager|cce-provider'   # 全部 Running
+   kubectl get pods -A | grep -E 'capi-|cert-manager|cloudnative-cluster-api-provider-cce'   # 全部 Running
    ```
 
 5. **创建工作集群**(Cluster + CCECluster + CCEManagedControlPlane + MachinePool + CCEManagedMachinePool;样例见 `config/samples/cluster-template.yaml`,填好每个 `VERIFY-...` 占位符):
