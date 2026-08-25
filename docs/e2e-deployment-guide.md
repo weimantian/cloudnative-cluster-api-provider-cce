@@ -27,6 +27,12 @@
 【阶段三：验证】本地电脑
   10. kubectl get cluster 查看集群 A 管理的所有集群
   11. clusterctl get kubeconfig 获取集群 B 访问凭据
+
+【阶段四：CCE Turbo 变体】（可选，复用阶段一/二）跳板机
+  12. 确认 ENI 子网（neutron_subnet_id）
+  13. 生成 Turbo 集群 B 配置（mode=eni + ENI 子网 + sub-ENI flavor）
+  14. 创建并验证集群 B（Turbo）
+  15. 删除集群 B（Turbo）
 ```
 
 **核心原则**：
@@ -328,6 +334,186 @@ kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes
 
 ---
 
+## 阶段四：CCE Turbo 变体（eni 网络模式）
+
+> 完整端到端流程（预置基础设施 + 跳板机部署 + provider 安装）与阶段一/二**完全相同**。本阶段只需：
+> ① 确认 ENI 子网已建；② 用 Turbo 配置生成集群 B；③ 验证 + 删除。
+
+### 概述：Turbo 与 Standard 的差异
+
+| 维度 | Standard（vpc-router） | Turbo（eni） |
+|---|---|---|
+| 网络模式 | `containerNetwork.mode: vpc-router`（overlay_l2） | `containerNetwork.mode: eni` |
+| 容器网段 | 独立 CIDR（如 10.245.0.0/16） | 走 ENI 子网（无需容器 CIDR） |
+| 集群类别 | `category: CCE`（默认） | `category: Turbo`（eni 模式自动推断） |
+| 必备网络 | 节点子网 | 节点子网 + **ENI 子网**（`type: eni`） |
+| 节点 flavor | 任意通用型（c6.large.2） | **sub-ENI 配额 > 0**（如 c7.large.2；c6sne 已废弃） |
+| 必填 spec | — | `containerNetwork.eniSubnets`（webhook 强制） |
+
+### 步骤 12：确认 ENI 子网（阶段一已自动创建）
+
+阶段一 `hack/smoke-setup` 会额外创建 ENI 子网 `capi-smoke-subnet-eni`（10.0.2.0/24）并输出 `CCE_SMOKE_ENI_SUBNET`。
+
+> ⚠️ **踩坑 #21（neutron_subnet_id）**：CCE `eniNetwork.subnets[].subnetID` 要求 **neutron_subnet_id**（不是 VPC 网络的 subnet ID）。
+> smoke-setup 刚建子网时 neutron ID 可能尚未同步（输出为空），稍后用 `hack/survey-hw` 或 VPC 控制台重新查询 `capi-smoke-subnet-eni` 的 `neutron_subnet_id` 即可。
+
+### 步骤 13：生成 Turbo 集群 B 配置
+
+Turbo 与 Standard 的差异集中在 `CCEManagedControlPlane`（`mode: eni` + `eniSubnets`）、`CCECluster`（ENI 子网）和节点 flavor。完整模板（替换 VERIFY-* 占位符）：
+
+```yaml
+# my-cluster-turbo.yaml —— Turbo 完整配置
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: Cluster
+metadata:
+  name: my-cce-cluster
+  namespace: default
+spec:
+  clusterNetwork:
+    pods:
+      cidrBlocks: ["10.245.0.0/16"] # 需与同 VPC 其他集群不冲突
+    services:
+      cidrBlocks: ["10.248.0.0/16"]
+  infrastructureRef:
+    apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+    kind: CCECluster
+    name: my-cce-cluster
+  controlPlaneRef:
+    apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+    kind: CCEManagedControlPlane
+    name: my-cce-cluster-control-plane
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCECluster
+metadata:
+  name: my-cce-cluster
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster
+spec:
+  region: cn-north-4
+  network:
+    vpc:
+      id: VERIFY-VPC-ID
+    subnets:
+      - id: VERIFY-SUBNET-ID # 节点子网
+        availabilityZone: cn-north-4a
+      - id: VERIFY-ENI-SUBNET-ID # Turbo ENI 容器子网
+        type: eni
+        neutronSubnetId: VERIFY-ENI-NEUTRON-ID
+---
+apiVersion: controlplane.cluster.x-k8s.io/v1beta2
+kind: CCEManagedControlPlane
+metadata:
+  name: my-cce-cluster-control-plane
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster
+spec:
+  clusterName: my-cce-cluster
+  category: Turbo # eni 模式 provider 也会自动推断
+  version: "v1.35.0" # webhook 要求完整 semver；provider 内部去 patch
+  flavor: cce.s1.small
+  containerNetwork:
+    mode: eni # Turbo 关键
+    eniSubnets:
+      - VERIFY-ENI-NEUTRON-ID # webhook 强制；eniNetwork API 用 neutron ID
+  serviceNetwork:
+    cidr: 10.248.0.0/16
+  endpointAccess:
+    public: false
+  billing:
+    mode: 0
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachinePool
+metadata:
+  name: my-cce-cluster-pool-0
+  namespace: default
+spec:
+  clusterName: my-cce-cluster
+  replicas: 1
+  template:
+    spec:
+      clusterName: my-cce-cluster
+      version: v1.35.0
+      bootstrap:
+        dataSecretName: my-cce-cluster-bootstrap
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: CCEManagedMachinePool
+        name: my-cce-cluster-pool-0
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCEManagedMachinePool
+metadata:
+  name: my-cce-cluster-pool-0
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: my-cce-cluster
+spec:
+  clusterName: my-cce-cluster
+  nodePoolName: pool-0
+  flavor: c7.large.2 # Turbo 需 sub-ENI 配额>0（c6sne 系列已废弃）
+  os: Huawei Cloud EulerOS 2.0
+  rootVolume:
+    size: 40
+    type: GPSSD
+  dataVolumes:
+    - size: 100
+      type: GPSSD
+  sshKey: VERIFY-KEYPAIR-NAME
+  availabilityZone: cn-north-4a
+  replicas: 1
+  billingMode: 0
+```
+
+### 步骤 14：创建并验证集群 B（Turbo）
+
+```bash
+# 跳板机：创建 credentials + bootstrap Secret（同步骤 9，已存在则跳过）
+kubectl create secret generic my-cce-cluster-credentials \
+  --namespace default --from-literal=accessKey='<AK>' --from-literal=secretKey='<SK>'
+kubectl create secret generic my-cce-cluster-bootstrap \
+  --namespace default --from-literal=value=""
+
+# 提交 Turbo 声明
+kubectl apply -f my-cluster-turbo.yaml
+
+# 观察（预期：CCECluster NetworkReady=True → 控制面 Ready → 节点池 Ready → Cluster Provisioned）
+kubectl get ccecluster -w
+kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -w
+kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -w
+kubectl get cluster my-cce-cluster # PHASE=Provisioned
+
+# 验证节点
+clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
+kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes # 1 个 Ready 节点
+```
+
+> ⚠️ **踩坑 #22（validator ENI 子网）**：若 CCECluster 报 `NetworkValidationFailed: eni subnet <id> not found in the VPC (CCE.01400002)`，
+> 是 validator 未索引 neutron ID 的旧版 bug —— 升级到含 `620fd4e` 修复的 provider 镜像即可。
+
+### 步骤 15：删除集群 B（Turbo）
+
+```bash
+# 跳板机
+kubectl delete cluster my-cce-cluster
+kubectl get cluster,ccecluster,ccemanagedcontrolplane,machinepool,ccemanagedmachinepool -n default # 全部消失
+```
+
+> 删除链自动完成（节点池 → CCE 集群 → 控制面 → 集群）。provider 含 `683c99d`（annotation 轮询兜底）时无需任何手动干预；
+> 旧版本若停在 "Node pool deletion requested, waiting"，touch 一次 `kubectl annotate ccemanagedmachinepool my-cce-cluster-pool-0 x=1 --overwrite` 即可继续。
+
+### Turbo 特有参数速查
+
+| 参数 | 取值 | 说明 |
+|---|---|---|
+| `containerNetwork.mode` | `eni` | Turbo 关键（区别于 vpc-router） |
+| `containerNetwork.eniSubnets` | neutron_subnet_id 数组 | webhook 强制；eniNetwork API 用 neutron ID |
+| `category` | `Turbo`（或留空） | eni 模式自动推断为 Turbo |
+| 节点 flavor | sub-ENI 配额 > 0 | 如 c7.large.2；c6sne 系列已废弃 |
+
 ## 清理
 
 ```bash
@@ -367,6 +553,9 @@ nocloud go run ./hack/create-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
 | 17 | `rollout restart` 后 pod 仍拉旧镜像 | CCE 节点 containerd 缓存 `latest` tag（imagePullPolicy=IfNotPresent） | deployment 设 `imagePullPolicy: Always` 或推唯一 tag | ✅ 已修复 |
 | 18 | 删除失败集群卡 Deleting（finalizer 未移除） | 集群未创建成功（ClusterID 空）时删除，controller 未触发删除 reconcile，finalizer 阻塞 | 手动 `kubectl patch ... --type=json -p '[{"op":"remove","path":"/metadata/finalizers"}]'` | ✅ 已记录 |
 | 19 | 删除成功集群时 `MachinePool` 与 `CCEManagedControlPlane` 的 finalizer 卡住，删除链停滞 | ① CAPI MachinePool 控制器删除 CCEManagedMachinePool 后返回空 Result（不 requeue），依赖 watch 事件重触发但未触发；② provider `CCEManagedControlPlane`/`CCEManagedMachinePool` 的 `reconcileDelete` 分支在 scope 构建之前，`RemoveFinalizer` 后无 `Client.Update`/patch 持久化 → finalizer 移除永远写不回 API server | `reconcileDelete` 里 `RemoveFinalizer` 后显式 `Client.Update`；本次 E2E 临时手动移除 finalizer 兜底 | ✅ 已修复（950d550） |
+| 20 | Turbo 节点池创建报 `flavor status is abandon`（c6sne.large.2 in cn-north-4a） | 该 flavor 在可用区已废弃，但 sub-ENI 配额 > 0，smoke-setup 会误选 | 换活跃的 sub-ENI 配额 > 0 flavor（如 c7.large.2）；smoke-setup 已优先活跃 flavor（03c9b9e） | ✅ 已修复 |
+| 21 | Turbo 创建报 `NetworkValidationFailed: eni subnet <id> not found in the VPC (CCE.01400002)` | validator `fetchNetwork` 只用普通 subnet ID 索引，而 `eniSubnets` 用 neutron ID 查询 → 误报；另：smoke-setup 刚建 ENI 子网时 neutron ID 可能未同步 | validator 同时索引普通 ID 与 neutron ID（620fd4e）；neutron ID 未同步时稍后重查 | ✅ 已修复 |
+| 22 | 删除集群时 `CCEManagedMachinePool` 停在 "Node pool deletion requested, waiting"，需 touch 才继续 | reconcileDelete 的 `RequeueAfter` 被 workqueue dedup 吞掉（对象 terminating 时），删节点池轮询停止 | reconcileDelete 删节点池时 bump annotation 触发 watch 兜底（683c99d） | ✅ 已修复 |
 
 ---
 
