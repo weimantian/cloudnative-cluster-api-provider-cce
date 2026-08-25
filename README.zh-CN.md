@@ -16,6 +16,7 @@
 ## 目录
 
 - [概述](#概述)
+- [代码目录结构](#代码目录结构)
 - [架构](#架构)
 - [方案亮点](#方案亮点)
 - [涉及云服务与费用](#涉及云服务与费用)
@@ -40,6 +41,69 @@
 - 通过 `clusterctl get kubeconfig` 获取工作集群的 kubeconfig。
 
 它遵循 CAPI Provider 合约(namespace 级 CRD、版本标签、`status.conditions`、finalizer、`clusterctl` 打包),并按照华为云解决方案开发者套件治理规范发布(见 [CONTRIBUTING.md](CONTRIBUTING.md) 与 [docs/](docs/))。
+
+## 代码目录结构
+
+```
+cloudnative-cluster-api-provider-cce/
+├── cmd/                       # 程序入口
+│   └── main.go                #   manager 启动(feature gates、controller 注册)
+├── api/                       # CRD Go 类型(+kubebuilder 标记)
+│   ├── common/                #   通用类型(VPC/Subnet/Network:引用 vs 创建)
+│   ├── controlplane/          #   CCEManagedControlPlane / Template (v1beta2)
+│   └── infrastructure/        #   CCECluster / CCEManagedMachinePool / 身份(v1beta2)
+├── controllers/               # 控制器(reconcile 循环)
+│   ├── ccecluster_controller.go              # CCECluster:网络校验 / 托管网络
+│   ├── ccemanagedcontrolplane_controller.go  # 控制面:CCE 集群生命周期、kubeconfig、升级
+│   ├── ccemanagedmachinepool_controller.go   # 节点池:CCE 节点池生命周期
+│   ├── requeue.go                            # 限流/配额错误的指数退避
+│   ├── gc.go                                 # 孤儿资源清理(ExternalResourceGC)
+│   └── setup.go                              # 控制器注册
+├── internal/                  # 内部包(不可对外导入)
+│   ├── conditions/            #   CAPI condition 常量/helper
+│   ├── credentials/           #   AK/SK 与 STS 临时凭证解析
+│   ├── features/              #   feature gates(NodePoolAutoscaling、ExternalResourceGC 等)
+│   ├── metrics/               #   Prometheus 指标
+│   ├── scope/                 #   每次 reconcile 的 scope(patchHelper 模式)
+│   ├── services/              #   华为云服务层(SDK 封装)
+│   │   ├── cce/               #     CCE 集群 / 节点池 / kubeconfig API
+│   │   ├── network/           #     VPC/子网/NAT 管理与网络校验
+│   │   ├── iam/               #     委托(agency)管理
+│   │   └── errors/            #     错误分类(限流/配额/权限)
+│   └── wait/                  #   轮询/等待工具
+├── config/                    # kustomize 部署清单
+│   ├── crd/                   #   CRD 清单(controller-gen 生成)
+│   ├── default/               #   默认 overlay(manager + webhook)
+│   ├── manager/ rbac/ webhook/#   deployment / RBAC / webhook 片段
+│   └── samples/               #   示例:cluster-template.yaml(Standard/Turbo)
+├── hack/                      # Go 开发/部署工具(见 docs/e2e-deployment-guide.md)
+│   ├── deploy-network/        #   VPC / 子网 / 密钥对(部署指南阶段一步骤 1)
+│   ├── deploy-bastion/        #   跳板机 ECS(部署指南阶段一步骤 2)
+│   ├── deploy-mgmt-cluster/   #   创建/列出/删除管理集群(阶段一步骤 3)
+│   ├── swr-login/             #   SWR 临时登录 token
+│   ├── survey-hw/             #   盘点所有华为云资源
+│   ├── cleanup-hw/            #   按 ID 删除资源
+│   └── ...                    #   其他辅助(nat-egress、bind-eip、cleanup-smoke-clusters 等)
+├── scripts/                   # shell 脚本
+│   ├── deploy-kind.sh         #   本地 kind 一键部署
+│   ├── smoke-cce.sh           #   真实云冒烟测试
+│   └── check-prerequisites.sh
+├── test/                      # 测试辅助
+│   ├── fakes/                 #   假服务(单元测试)
+│   ├── e2e/                   #   envtest 控制器测试
+│   └── capi-crds/             #   CAPI CRD 清单(envtest)
+├── deploy/                    # 部署脚本(deploy-provider.sh / destroy.sh)
+├── docs/                      # 设计、需求、部署指南、验证记录
+├── Makefile                   # 构建 / 测试 / 清单生成
+├── Dockerfile
+└── go.mod
+```
+
+关键流程:
+
+- **API → 控制器**:`api/*` 类型由 `controllers/*` 协调;每次 reconcile 通过 `internal/services/*`(SDK 封装)读取华为云状态,并经 `internal/scope`(patchHelper)持久化结果。
+- **部署**:`hack/deploy-*` 预置真实云(VPC、跳板机、管理集群);`scripts/deploy-kind.sh` 在本地完成;完整端到端指南见 [docs/e2e-deployment-guide.md](docs/e2e-deployment-guide.md)。
+- **冒烟测试**:`scripts/smoke-cce.sh` + `hack/cleanup-smoke-clusters` 驱动真实云冒烟测试,与部署流程相互独立。
 
 ## 架构
 
