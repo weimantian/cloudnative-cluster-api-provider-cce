@@ -144,7 +144,7 @@ keypairDone:
 func createSubnet(ctx context.Context, c *vpcv2.VpcClient, vpcID, name, cidr string) string {
 	gw := cidr[:strings.LastIndex(cidr, ".")] + ".1"
 	resp, err := c.CreateSubnet(&vpcmodel.CreateSubnetRequest{Body: &vpcmodel.CreateSubnetRequestBody{
-		Subnet: &vpcmodel.CreateSubnetOption{Name: name, Cidr: cidr, VpcId: vpcID, GatewayIp: gw},
+		Subnet: &vpcmodel.CreateSubnetOption{Name: name, Cidr: cidr, VpcId: vpcID, GatewayIp: gw, PrimaryDns: stringPtr("100.125.1.250"), SecondaryDns: stringPtr("100.125.129.250")},
 	}})
 	must(err, "CreateSubnet "+name)
 	return mustID(resp.Subnet.Id, "subnet")

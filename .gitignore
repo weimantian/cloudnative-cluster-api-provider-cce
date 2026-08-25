@@ -39,3 +39,5 @@ _artifacts/
 /create-subnet
 /nat-egress
 /regtest
+/create-bastion
+/swr-login
