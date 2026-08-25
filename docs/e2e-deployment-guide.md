@@ -634,7 +634,7 @@ nocloud go run ./hack/deploy-mgmt-cluster -delete -cluster '<MGMT_CLUSTER_ID>'
 | # | 问题现象 | 根因 | 修正 | 状态 |
 |---|---|---|---|---|
 | 1 | 节点永久卡 `Installing`（kubelet inactive） | 子网未指定 DNS，节点拿到错误 DNS（`10.0.x.254`），无法解析 OBS 域名，cce-agent 下载失败 | 建子网显式指定 `primary_dns=100.125.1.250` + `secondary_dns=100.125.129.250` | ✅ 已修复 |
-| 2 | 节点异常无法 SSH 排查 | `deploy-network` 创建密钥对时丢弃私钥 | 节点改用 `capi-bastion-key`（`create-bastion` 保留私钥） | ✅ 已修复 |
+| 2 | 节点异常无法 SSH 排查 | `deploy-network` 创建密钥对时丢弃私钥 | 节点改用 `capi-bastion-key`（`deploy-bastion` 保留私钥） | ✅ 已修复 |
 | 3 | 管理集群 `publicAccess=true` 无公网 endpoint | CCE 不自动分配公网 IP | 跳板机（同 VPC）访问内网 endpoint | ✅ 已记录 |
 | 4 | clusterctl 版本偏旧（v1.13.4） | brew 版本落后 | 手动下载 clusterctl v1.14.0 | ✅ 已修复 |
 | 5 | provider 镜像在 x86_64 节点无法运行 | Docker Desktop 默认构建 arm64 | `docker build --platform linux/amd64` | ✅ 已修复 |
