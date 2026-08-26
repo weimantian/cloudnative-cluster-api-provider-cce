@@ -467,11 +467,11 @@ cp /root/cluster-template.yaml          ~/.cluster-api/overrides/infrastructure-
 cp /root/cluster-template-standard.yaml ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-standard.yaml
 cp /root/cluster-template-turbo.yaml    ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-turbo.yaml
 
-# 生成（默认 Turbo；--worker-machine-count=3 → 3 节点分布 3 AZ；Standard 用 --flavor standard）
-clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 --worker-machine-count=3 > my-cluster.yaml
+# 生成（默认 Turbo；--worker-machine-count=1 → 3 个 pool（pool-0/1/2）各 1 节点 = 3 节点分布 3 AZ；Standard 用 --flavor standard）
+clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 --worker-machine-count=1 > my-cluster.yaml
 
 # 替换 VERIFY-* 占位符（region/VPC/子网/ENI 子网/密钥对/AZ/AZ2/AZ3/flavor）
-#   VERIFY-AZ / AZ2 / AZ3 = cn-north-4a / 4b / 4c（多 AZ 节点分布，对标 EKS 跨 AZ 节点组）
+#   多 AZ = 多 MachinePool（对标 EKS 多节点组）：pool-0/1/2 分别在 VERIFY-AZ/AZ2/AZ3（cn-north-4a/4b/4c）
 #   VERIFY-FLAVOR：Turbo 用 c7.large.2（sub-ENI quota）；Standard 用 c6.large.2
 
 # 创建凭据 Secret + bootstrap Secret
@@ -492,19 +492,24 @@ kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -w   # Ready=Tru
 kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -w          # Ready=True
 
 clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
-kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个 Ready 节点，分布 3 个 AZ
+kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个 Ready 节点（pool-0/1/2 各 1，分布 3 个 AZ）
+kubectl get machinepool 2>&1 | tail -4   # 3 个 MachinePool（pool-0/1/2）
 ```
 
-**扩容 / 减容**（对标 EKS 节点组 desiredSize 修改）：
+**扩容 / 减容**（对标 EKS 节点组 desiredSize 修改，按 pool 操作）：
 
 ```bash
-# 扩容（3 → 5）
-kubectl scale machinepool my-cce-cluster-pool-0 --replicas=5
-kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 5 个节点
+# 扩容（每个 pool 1 → 3 = 集群 B 共 9 节点）
+kubectl scale machinepool my-cce-cluster-pool-0 --replicas=3
+kubectl scale machinepool my-cce-cluster-pool-1 --replicas=3
+kubectl scale machinepool my-cce-cluster-pool-2 --replicas=3
+kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 9 个节点，每 AZ 3 个
 
-# 减容（5 → 2）
-kubectl scale machinepool my-cce-cluster-pool-0 --replicas=2
-kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 2 个节点
+# 减容（每个 pool 3 → 1 = 回到 3 节点）
+kubectl scale machinepool my-cce-cluster-pool-0 --replicas=1
+kubectl scale machinepool my-cce-cluster-pool-1 --replicas=1
+kubectl scale machinepool my-cce-cluster-pool-2 --replicas=1
+kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个节点
 ```
 
 > 集群 B 可设 `endpointAccess.public: true` 走公网（对标 CAPA EKS 公网端点），否则默认私有（同 VPC 跳板机访问）。

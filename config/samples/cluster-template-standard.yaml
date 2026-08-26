@@ -1,14 +1,18 @@
-# clusterctl generate cluster template for cloudnative-cluster-api-provider-cce.
+# clusterctl generate cluster template — Standard (vpc-router) with multi-AZ
+# node pools (EKS multi-node-group parity: one MachinePool per AZ).
 #
-# This is the DEFAULT (Standard, vpc-router) flavor consumed by:
-#   clusterctl generate cluster <name> --kubernetes-version v1.35.0
+# Consumed by:
+#   clusterctl generate cluster <name> --flavor standard --kubernetes-version v1.35.0 [--worker-machine-count=N]
 #
-# Install under ~/.cluster-api/overrides/infrastructure-cce/<version>/ and run
-# clusterctl generate cluster; it substitutes ${CLUSTER_NAME}, ${KUBERNETES_VERSION}
-# and ${WORKER_MACHINE_COUNT}. VERIFY-* placeholders are NOT substituted by
-# clusterctl — fill them in the generated manifest before applying.
+# Multi-AZ layout (EKS parity):
+#   pool-0 -> VERIFY-AZ  (cn-north-4a)
+#   pool-1 -> VERIFY-AZ2 (cn-north-4b)
+#   pool-2 -> VERIFY-AZ3 (cn-north-4c)
+# Each pool gets ${WORKER_MACHINE_COUNT} nodes (e.g. 1 => 3 nodes across 3 AZs).
+# Scale a pool with: kubectl scale machinepool <name>-pool-N --replicas=M
 #
-# The plain kubectl-apply sample remains at config/samples/cluster-template.yaml.
+# clusterctl substitutes ${CLUSTER_NAME}, ${KUBERNETES_VERSION}, ${WORKER_MACHINE_COUNT};
+# fill VERIFY-* placeholders before applying.
 apiVersion: cluster.x-k8s.io/v1beta1
 kind: Cluster
 metadata:
@@ -54,12 +58,12 @@ metadata:
     cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
 spec:
   clusterName: ${CLUSTER_NAME}
+  category: CCE # Standard
   version: ${KUBERNETES_VERSION} # full semver; provider strips patch for the CCE API
-  category: CCE # Standard; Turbo uses --flavor turbo (eni mode)
   flavor: cce.s1.small
   containerNetwork:
-    mode: vpc-router # Standard (Turbo uses --flavor turbo)
-    cidr: 10.245.0.0/16
+    mode: vpc-router # Standard
+    cidr: 10.245.0.0/16 # Standard: explicit container CIDR
   serviceNetwork:
     cidr: 10.248.0.0/16
   endpointAccess:
@@ -96,7 +100,7 @@ metadata:
 spec:
   clusterName: ${CLUSTER_NAME}
   nodePoolName: pool-0
-  flavor: VERIFY-FLAVOR # Standard: c6.large.2
+  flavor: VERIFY-FLAVOR # Standard: c6.large.2 (any general-purpose); Turbo: c7.large.2
   os: Huawei Cloud EulerOS 2.0
   rootVolume:
     size: 40
@@ -106,12 +110,89 @@ spec:
       type: GPSSD
   sshKey: VERIFY-KEYPAIR-NAME
   availabilityZone: VERIFY-AZ
-  extensionScaleGroups:
-    - name: az-2
-      flavor: VERIFY-FLAVOR
-      availabilityZone: VERIFY-AZ2
-    - name: az-3
-      flavor: VERIFY-FLAVOR
-      availabilityZone: VERIFY-AZ3
+  replicas: ${WORKER_MACHINE_COUNT}
+  billingMode: 0
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachinePool
+metadata:
+  name: ${CLUSTER_NAME}-pool-1
+  namespace: default
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${WORKER_MACHINE_COUNT}
+  template:
+    spec:
+      clusterName: ${CLUSTER_NAME}
+      version: ${KUBERNETES_VERSION}
+      bootstrap:
+        dataSecretName: ${CLUSTER_NAME}-bootstrap
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: CCEManagedMachinePool
+        name: ${CLUSTER_NAME}-pool-1
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCEManagedMachinePool
+metadata:
+  name: ${CLUSTER_NAME}-pool-1
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  nodePoolName: pool-1
+  flavor: VERIFY-FLAVOR
+  os: Huawei Cloud EulerOS 2.0
+  rootVolume:
+    size: 40
+    type: GPSSD
+  dataVolumes:
+    - size: 100
+      type: GPSSD
+  sshKey: VERIFY-KEYPAIR-NAME
+  availabilityZone: VERIFY-AZ2
+  replicas: ${WORKER_MACHINE_COUNT}
+  billingMode: 0
+---
+apiVersion: cluster.x-k8s.io/v1beta1
+kind: MachinePool
+metadata:
+  name: ${CLUSTER_NAME}-pool-2
+  namespace: default
+spec:
+  clusterName: ${CLUSTER_NAME}
+  replicas: ${WORKER_MACHINE_COUNT}
+  template:
+    spec:
+      clusterName: ${CLUSTER_NAME}
+      version: ${KUBERNETES_VERSION}
+      bootstrap:
+        dataSecretName: ${CLUSTER_NAME}-bootstrap
+      infrastructureRef:
+        apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+        kind: CCEManagedMachinePool
+        name: ${CLUSTER_NAME}-pool-2
+---
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCEManagedMachinePool
+metadata:
+  name: ${CLUSTER_NAME}-pool-2
+  namespace: default
+  labels:
+    cluster.x-k8s.io/cluster-name: ${CLUSTER_NAME}
+spec:
+  clusterName: ${CLUSTER_NAME}
+  nodePoolName: pool-2
+  flavor: VERIFY-FLAVOR
+  os: Huawei Cloud EulerOS 2.0
+  rootVolume:
+    size: 40
+    type: GPSSD
+  dataVolumes:
+    - size: 100
+      type: GPSSD
+  sshKey: VERIFY-KEYPAIR-NAME
+  availabilityZone: VERIFY-AZ3
   replicas: ${WORKER_MACHINE_COUNT}
   billingMode: 0
