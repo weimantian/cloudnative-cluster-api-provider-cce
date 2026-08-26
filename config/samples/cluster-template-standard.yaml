@@ -96,7 +96,7 @@ metadata:
 spec:
   clusterName: ${CLUSTER_NAME}
   nodePoolName: pool-0
-  flavor: c6.large.2 # Standard: any general-purpose flavor
+  flavor: VERIFY-FLAVOR # Standard: c6.large.2
   os: Huawei Cloud EulerOS 2.0
   rootVolume:
     size: 40
@@ -106,5 +106,12 @@ spec:
       type: GPSSD
   sshKey: VERIFY-KEYPAIR-NAME
   availabilityZone: VERIFY-AZ
+  extensionScaleGroups:
+    - name: az-2
+      flavor: VERIFY-FLAVOR
+      availabilityZone: VERIFY-AZ2
+    - name: az-3
+      flavor: VERIFY-FLAVOR
+      availabilityZone: VERIFY-AZ3
   replicas: ${WORKER_MACHINE_COUNT}
   billingMode: 0

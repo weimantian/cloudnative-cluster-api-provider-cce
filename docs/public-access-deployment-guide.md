@@ -231,6 +231,18 @@ MGMT_CLUSTER_ID=...
 
 > **对标 CAPA**：管理集群 A 默认公网+私有 endpoint（`CCE_DEPLOY_PUBLIC=true` 自动绑 EIP）。设 `CCE_DEPLOY_PUBLIC_CIDRS` 可限制公网来源 IP；设 `CCE_DEPLOY_PUBLIC=false` 则仅私有。
 
+**参数化环境变量**（deploy-mgmt-cluster，均可省略）：
+
+| 变量 | 说明 |
+|---|---|
+| `CCE_DEPLOY_CATEGORY` | 集群类别：`turbo`（默认，eni 网络，需 `CCE_DEPLOY_ENI_SUBNET`）/ `standard`（vpc-router） |
+| `CCE_DEPLOY_ENI_SUBNET` | Turbo 必填：ENI 子网 neutron ID（Turbo 容器网段来自 ENI 子网） |
+| `CCE_DEPLOY_SERVICE_CIDR` | 服务网段（默认 `10.247.0.0/16`，创建后不可变） |
+| `CCE_DEPLOY_CONTAINER_CIDR` | 容器网段（默认 `10.244.0.0/16`；Turbo 模式忽略，走 ENI 子网） |
+| `CCE_DEPLOY_MGMT_FLAVOR` | 节点规格（默认按类别：Turbo `c7.large.2` sub-ENI / Standard `c6.large.2`） |
+| `CCE_DEPLOY_MGMT_NODES` | 节点数（默认 2） |
+| `CCE_DEPLOY_MGMT_AZS` | 多 AZ 列表（逗号分隔，如 `cn-north-4a,cn-north-4b`；首个为主 AZ，其余为扩展组） |
+
 > ⏱️ **耗时与中断处理**：本步骤总耗时约 10-20 分钟（集群创建 5-10 分钟 + 节点池 5-10 分钟），期间输出间隔长（15 秒轮询）属正常，**不要误判为卡住而中断**。若进程被中断（Ctrl-C/超时）：集群可能已创建但节点池未建——用 `-list` 查集群 ID，再 `-pool -cluster <ID>` 补建节点池 + 下载 kubeconfig：
 
 ```bash
@@ -448,18 +460,20 @@ webhook 证书已由 **cert-manager 自动签发**（`config/certmanager` 的 Is
 ### 步骤 9：创建工作负载集群 B
 
 ```bash
-# 跳板机：用 clusterctl generate cluster（Standard 默认 / Turbo flavor）
+# 跳板机：用 clusterctl generate cluster（默认 Turbo / --flavor standard 可选 Standard）
 mkdir -p ~/.cluster-api/overrides/infrastructure-cce/v0.1.0
-# 上传 cluster-template-clusterctl.yaml / cluster-template-turbo.yaml 后：
-cp /root/cluster-template-clusterctl.yaml ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template.yaml
+# 上传模板后（cluster-template.yaml=Turbo 默认、cluster-template-standard.yaml、cluster-template-turbo.yaml）：
+cp /root/cluster-template.yaml          ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template.yaml
+cp /root/cluster-template-standard.yaml ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-standard.yaml
 cp /root/cluster-template-turbo.yaml    ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-turbo.yaml
 
-# 生成（Standard）
-clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 > my-cluster.yaml
-# 或 Turbo
-clusterctl generate cluster my-cce-cluster --flavor turbo --kubernetes-version v1.35.0 > my-cluster.yaml
+# 生成（默认 Turbo；--worker-machine-count=3 → 3 节点分布 3 AZ；Standard 用 --flavor standard）
+clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 --worker-machine-count=3 > my-cluster.yaml
 
-# 替换 VERIFY-* 占位符（region/VPC/子网/ENI 子网/密钥对/AZ）
+# 替换 VERIFY-* 占位符（region/VPC/子网/ENI 子网/密钥对/AZ/AZ2/AZ3/flavor）
+#   VERIFY-AZ / AZ2 / AZ3 = cn-north-4a / 4b / 4c（多 AZ 节点分布，对标 EKS 跨 AZ 节点组）
+#   VERIFY-FLAVOR：Turbo 用 c7.large.2（sub-ENI quota）；Standard 用 c6.large.2
+
 # 创建凭据 Secret + bootstrap Secret
 kubectl create secret generic my-cce-cluster-credentials \
   --namespace default --from-literal=accessKey='<AK>' --from-literal=secretKey='<SK>'
@@ -478,7 +492,19 @@ kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -w   # Ready=Tru
 kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -w          # Ready=True
 
 clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
-kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes            # 1 个 Ready 节点
+kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个 Ready 节点，分布 3 个 AZ
+```
+
+**扩容 / 减容**（对标 EKS 节点组 desiredSize 修改）：
+
+```bash
+# 扩容（3 → 5）
+kubectl scale machinepool my-cce-cluster-pool-0 --replicas=5
+kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 5 个节点
+
+# 减容（5 → 2）
+kubectl scale machinepool my-cce-cluster-pool-0 --replicas=2
+kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 2 个节点
 ```
 
 > 集群 B 可设 `endpointAccess.public: true` 走公网（对标 CAPA EKS 公网端点），否则默认私有（同 VPC 跳板机访问）。
@@ -610,3 +636,16 @@ kubectl -n capi-cce-system logs deploy/capi-cce-controller-manager --tail=20
 | imagePullSecret | 仅 Provider pod | Provider + cert-manager + CAPI 全部 |
 | NAT 网关 | 需要（节点出网） | 不需要 |
 | 适用场景 | 可访问公网 registry（海外/允许出网） | 私有化/内网/等保 |
+
+## EKS（CAPA）能力对照
+
+| 能力 | EKS / CAPA | 本项目 |
+|---|---|---|
+| 集群类型 | EKS 托管控制面 | CCE 托管控制面（Turbo 默认 / Standard 可选） |
+| 节点数 | `MachinePool.spec.replicas`（`kubectl scale`） | 同：`kubectl scale machinepool <name> --replicas=N`（`ScaleNodePool`） |
+| 节点规格 | `AWSManagedMachinePool.spec.template.spec.instanceType` | `CCEManagedMachinePool.spec.flavor`（模板 `VERIFY-FLAVOR`） |
+| 多 AZ | 节点组跨 AZ subnet / 多节点组 | `extensionScaleGroups`（单 pool 多 AZ，CCE 自动分布节点） |
+| 初始节点数 | `--worker-machine-count` / desiredSize | `clusterctl generate ... --worker-machine-count=N` |
+| ServiceCIDR | 集群创建时指定、不可变 | `CCE_DEPLOY_SERVICE_CIDR`（deploy-mgmt-cluster，默认 10.247.0.0/16） |
+| 容器网段 | 创建时指定、不可变 | `CCE_DEPLOY_CONTAINER_CIDR`（Standard）；Turbo 走 ENI 子网 |
+| 扩缩容 | desiredSize 修改 / autoscaler | `kubectl scale machinepool`（`NodePoolAutoscaling` feature gate 可选） |

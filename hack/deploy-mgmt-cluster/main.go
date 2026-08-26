@@ -114,6 +114,13 @@ func main() {
 	}
 }
 
+func categoryName(category string) string {
+	if category == "turbo" {
+		return "Turbo"
+	}
+	return "CCE"
+}
+
 func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath string) {
 	vpcID := envOr("CCE_DEPLOY_VPC")
 	subnetID := envOr("CCE_DEPLOY_SUBNET")
@@ -128,26 +135,41 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 	fmt.Printf("creating management cluster %q (region %s, vpc %s, subnet %s)…\n",
 		name, envDefault("CCE_DEPLOY_REGION", "cn-north-4"), vpcID, subnetID)
 
+	// Default to Turbo (eni) — the project's primary target; Standard
+	// (vpc-router) is opt-in via CCE_DEPLOY_CATEGORY=standard.
+	category := envDefault("CCE_DEPLOY_CATEGORY", "turbo")
+	networkMode := "vpc-router"
+	containerCIDR := envDefault("CCE_DEPLOY_CONTAINER_CIDR", "10.244.0.0/16")
+	var eniSubnets []string
+	if category == "turbo" {
+		networkMode = "eni"
+		eniSubnets = splitCSV(envOr("CCE_DEPLOY_ENI_SUBNET"))
+		if len(eniSubnets) == 0 {
+			fatal("CCE_DEPLOY_ENI_SUBNET is required when CCE_DEPLOY_CATEGORY=turbo")
+		}
+		containerCIDR = "" // Turbo: container CIDR comes from the ENI subnet
+	}
 	var id string
 	if err := retryThrottled("CreateCluster", 5, func() error {
 		var e error
-		id, e = svc.CreateCluster(ctx, cce.CreateClusterInput{
-			Name:                 name,
-			Category:             "CCE", // Standard
-			Flavor:               "cce.s1.small",
-			Version:              envOr("CCE_DEPLOY_K8S_VERSION", ""),
-			ContainerNetworkMode: "vpc-router",
-			ContainerNetworkCIDR: "10.244.0.0/16",
-			HostNetworkVpcID:     vpcID,
-			HostNetworkSubnetID:  subnetID,
-			ServiceCIDR:          "10.247.0.0/16",
-			// Public access mirrors the CAPA EKS control-plane endpoint (public +
-			// private). CCE does not allocate a public IP automatically, so we bind
-			// an EIP afterwards when public is enabled (CCE_DEPLOY_PUBLIC, default true).
-			PublicAccess:      public,
-			PublicAccessCIDRs: publicCIDRs,
-			BillingMode:       0,
-		})
+			svc.CreateCluster(ctx, cce.CreateClusterInput{
+				Name:                 name,
+				Category:             categoryName(category), // turbo->Turbo, standard->CCE
+				Flavor:               "cce.s1.small",
+				Version:              envOr("CCE_DEPLOY_K8S_VERSION", ""),
+				ContainerNetworkMode: networkMode,
+				ContainerNetworkCIDR: containerCIDR,
+				ENISubnets:           eniSubnets,
+				HostNetworkVpcID:     vpcID,
+				HostNetworkSubnetID:  subnetID,
+				ServiceCIDR:          envDefault("CCE_DEPLOY_SERVICE_CIDR", "10.247.0.0/16"),
+				// Public access mirrors the CAPA EKS control-plane endpoint (public +
+				// private). CCE does not allocate a public IP automatically, so we bind
+				// an EIP afterwards when public is enabled (CCE_DEPLOY_PUBLIC, default true).
+				PublicAccess:      public,
+				PublicAccessCIDRs: publicCIDRs,
+				BillingMode:       0,
+			})
 		return e
 	}); err != nil {
 		fatalf("CreateCluster: %v", err)
@@ -184,7 +206,15 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 func createPool(ctx context.Context, svc cce.Service, clusterID, kubeconfigPath string) {
 	keypair := envOr("CCE_DEPLOY_KEYPAIR")
 	az := envDefault("CCE_DEPLOY_AZ", "cn-north-4a")
-	flavor := envDefault("CCE_DEPLOY_MGMT_FLAVOR", "c6.large.2")
+	flavor := envDefault("CCE_DEPLOY_MGMT_FLAVOR", "")
+	if flavor == "" {
+		// Turbo needs a flavor with sub-ENI quota (c7.large.2); Standard any general-purpose.
+		if envDefault("CCE_DEPLOY_CATEGORY", "turbo") == "turbo" {
+			flavor = "c7.large.2"
+		} else {
+			flavor = "c6.large.2"
+		}
+	}
 	nodeCount := int32Env("CCE_DEPLOY_MGMT_NODES", 2)
 	if keypair == "" {
 		fatal("CCE_DEPLOY_KEYPAIR is required to create a node pool")

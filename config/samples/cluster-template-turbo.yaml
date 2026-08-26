@@ -102,7 +102,7 @@ metadata:
 spec:
   clusterName: ${CLUSTER_NAME}
   nodePoolName: pool-0
-  flavor: c7.large.2 # Turbo requires sub-ENI quota > 0 (c6sne is abandoned)
+  flavor: VERIFY-FLAVOR # Turbo: c7.large.2 (sub-ENI quota > 0)
   os: Huawei Cloud EulerOS 2.0
   rootVolume:
     size: 40
@@ -112,5 +112,12 @@ spec:
       type: GPSSD
   sshKey: VERIFY-KEYPAIR-NAME
   availabilityZone: VERIFY-AZ
+  extensionScaleGroups:
+    - name: az-2
+      flavor: VERIFY-FLAVOR
+      availabilityZone: VERIFY-AZ2
+    - name: az-3
+      flavor: VERIFY-FLAVOR
+      availabilityZone: VERIFY-AZ3
   replicas: ${WORKER_MACHINE_COUNT}
   billingMode: 0

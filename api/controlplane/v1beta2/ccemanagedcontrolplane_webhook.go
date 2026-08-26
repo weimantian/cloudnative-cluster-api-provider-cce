@@ -44,8 +44,15 @@ var _ admission.Defaulter[*CCEManagedControlPlane] = &CCEManagedControlPlane{}
 
 // Default implements admission.Defaulter.
 func (c *CCEManagedControlPlane) Default(_ context.Context, obj *CCEManagedControlPlane) error {
+	// Category must follow the network mode: vpc-router = Standard (CCE),
+	// eni = Turbo. Defaulting to Turbo regardless of mode produced a
+	// CCE_CM.0004 type/network-mode mismatch (mode=vpc-router + Turbo).
 	if obj.Spec.Category == "" {
-		obj.Spec.Category = "Turbo"
+		if obj.Spec.ContainerNetwork.Mode == "eni" {
+			obj.Spec.Category = "Turbo"
+		} else {
+			obj.Spec.Category = "CCE"
+		}
 	}
 	if obj.Spec.ContainerNetwork.Mode == "" {
 		obj.Spec.ContainerNetwork.Mode = "eni"
@@ -154,6 +161,11 @@ func (c *CCEManagedControlPlane) validate() error {
 	if c.Spec.ContainerNetwork.Mode == "eni" && c.Spec.Category == "CCE" {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "containerNetwork", "mode"),
 			"eni", "eni mode requires category Turbo"))
+	}
+	// vpc-router mode requires category CCE (Turbo only supports eni).
+	if c.Spec.ContainerNetwork.Mode == "vpc-router" && c.Spec.Category == "Turbo" {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "containerNetwork", "mode"),
+			"vpc-router", "vpc-router mode requires category CCE"))
 	}
 	// eni mode requires ENI subnets (official: eniNetwork must set subnets or
 	// eniSubnetId — our CRD exposes subnets via eniSubnets).
