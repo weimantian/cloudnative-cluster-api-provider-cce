@@ -232,10 +232,14 @@ export KUBECONFIG=/root/capi-mgmt.kubeconfig
 kubectl get nodes    # 应看到 2 个 Ready 节点
 ```
 
-**步骤 7：clusterctl init（本地源 + 镜像走 SWR）**
+**步骤 7：clusterctl init（方式 A / 方式 B 二选一，各自完整可复制）**
+
+**方式 A：clusterctl 默认（cert-manager 由 clusterctl 自动装，quay.io 拉取）**
 
 ```bash
-# 组织 repository 目录
+# ===== 方式 A（完整版，一次复制执行）=====
+
+# 1. 组织 repository 目录 + 配置 clusterctl
 mkdir -p /root/repository/{cluster-api,bootstrap-kubeadm,control-plane-kubeadm}/v1.14.0
 mkdir -p /root/repository/infrastructure-cce/v0.1.0
 cp /root/core-components.yaml          /root/repository/cluster-api/v1.14.0/
@@ -247,6 +251,7 @@ cp /root/capi-metadata.yaml            /root/repository/control-plane-kubeadm/v1
 cp /root/infrastructure-components.yaml /root/repository/infrastructure-cce/v0.1.0/
 cp /root/metadata.yaml                  /root/repository/infrastructure-cce/v0.1.0/metadata.yaml
 
+mkdir -p /root/.cluster-api
 cat > /root/.cluster-api/clusterctl.yaml <<'EOF'
 providers:
   - name: "cluster-api"
@@ -263,9 +268,48 @@ providers:
     type: "InfrastructureProvider"
 EOF
 
-# ===== 方式 B：public SWR 免认证（完整版，一次执行）=====
+# 2. clusterctl init（自动装 cert-manager + CAPI + bootstrap + control-plane + cce）
+export KUBECONFIG=/root/capi-mgmt.kubeconfig
+clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
+```
 
-# 1. 先装 cert-manager（SWR 镜像，避免 quay.io 慢卡）
+> ⚠️ `~/.cluster-api/overrides/` 目录会干扰 init，先删除。若卡 cert-manager（quay.io 慢），改用方式 B。
+
+**方式 B：public SWR 免认证（cert-manager 直接走 SWR，不碰 quay.io）**
+
+```bash
+# ===== 方式 B（完整版，一次复制执行）=====
+
+# 1. 组织 repository 目录 + 配置 clusterctl
+mkdir -p /root/repository/{cluster-api,bootstrap-kubeadm,control-plane-kubeadm}/v1.14.0
+mkdir -p /root/repository/infrastructure-cce/v0.1.0
+cp /root/core-components.yaml          /root/repository/cluster-api/v1.14.0/
+cp /root/capi-metadata.yaml            /root/repository/cluster-api/v1.14.0/metadata.yaml
+cp /root/bootstrap-components.yaml     /root/repository/bootstrap-kubeadm/v1.14.0/
+cp /root/capi-metadata.yaml            /root/repository/bootstrap-kubeadm/v1.14.0/metadata.yaml
+cp /root/control-plane-components.yaml /root/repository/control-plane-kubeadm/v1.14.0/
+cp /root/capi-metadata.yaml            /root/repository/control-plane-kubeadm/v1.14.0/metadata.yaml
+cp /root/infrastructure-components.yaml /root/repository/infrastructure-cce/v0.1.0/
+cp /root/metadata.yaml                  /root/repository/infrastructure-cce/v0.1.0/metadata.yaml
+
+mkdir -p /root/.cluster-api
+cat > /root/.cluster-api/clusterctl.yaml <<'EOF'
+providers:
+  - name: "cluster-api"
+    url: "file:///root/repository/cluster-api/v1.14.0/core-components.yaml"
+    type: "CoreProvider"
+  - name: "kubeadm"
+    url: "file:///root/repository/bootstrap-kubeadm/v1.14.0/bootstrap-components.yaml"
+    type: "BootstrapProvider"
+  - name: "kubeadm"
+    url: "file:///root/repository/control-plane-kubeadm/v1.14.0/control-plane-components.yaml"
+    type: "ControlPlaneProvider"
+  - name: "cce"
+    url: "file:///root/repository/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
+    type: "InfrastructureProvider"
+EOF
+
+# 2. 先装 cert-manager（SWR 镜像，避免 quay.io 慢卡）
 curl -L -o /root/cert-manager.yaml https://github.com/cert-manager/cert-manager/releases/download/v1.21.1/cert-manager.yaml
 sed -i 's|quay.io/jetstack/cert-manager-controller:v1.21.1|swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-controller:v1.21.1|g' /root/cert-manager.yaml
 sed -i 's|quay.io/jetstack/cert-manager-cainjector:v1.21.1|swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-cainjector:v1.21.1|g' /root/cert-manager.yaml
@@ -273,10 +317,12 @@ sed -i 's|quay.io/jetstack/cert-manager-webhook:v1.21.1|swr.cn-north-4.myhuaweic
 kubectl apply -f /root/cert-manager.yaml
 kubectl -n cert-manager rollout status deploy/cert-manager deploy/cert-manager-cainjector deploy/cert-manager-webhook --timeout=180s
 
-# 2. clusterctl init（自动跳过已装的 cert-manager；装 CAPI + bootstrap + control-plane + cce）
+# 3. clusterctl init（自动跳过已装的 cert-manager；装 CAPI + bootstrap + control-plane + cce）
 export KUBECONFIG=/root/capi-mgmt.kubeconfig
 clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
 ```
+
+> ⚠️ `~/.cluster-api/overrides/` 目录会干扰 init，先删除。
 
 > ⚠️ `~/.cluster-api/overrides/` 目录会干扰 init，先删除。
 

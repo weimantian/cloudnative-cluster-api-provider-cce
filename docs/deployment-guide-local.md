@@ -210,10 +210,14 @@ sed -i '' 's|registry.k8s.io/cluster-api/kubeadm-control-plane-controller:v1.14.
 
 > GitHub 慢时，在 URL 前加加速前缀（如 `https://ghfast.top/`）。macOS 的 `sed` 用 `-i ''`。
 
-**步骤 5：clusterctl init（本地源 + 镜像走 SWR）**
+**步骤 5：clusterctl init（方式 A / 方式 B 二选一，各自完整可复制）**
+
+**方式 A：clusterctl 默认（cert-manager 由 clusterctl 自动装，quay.io 拉取）**
 
 ```bash
-# 组织 repository 目录
+# ===== 方式 A（完整版，一次复制执行）=====
+
+# 1. 组织 repository 目录 + 配置 clusterctl
 mkdir -p /tmp/repository/{cluster-api,bootstrap-kubeadm,control-plane-kubeadm}/v1.14.0
 mkdir -p /tmp/repository/infrastructure-cce/v0.1.0
 cp /tmp/core-components.yaml          /tmp/repository/cluster-api/v1.14.0/
@@ -242,9 +246,48 @@ providers:
     type: "InfrastructureProvider"
 EOF
 
-# ===== 方式 B：public SWR 免认证（完整版，一次执行）=====
+# 2. clusterctl init（自动装 cert-manager + CAPI + bootstrap + control-plane + cce）
+export KUBECONFIG=~/.kube/capi-mgmt.kubeconfig
+clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
+```
 
-# 1. 先装 cert-manager（SWR 镜像，避免 quay.io 慢卡）
+> ⚠️ `~/.cluster-api/overrides/` 目录会干扰 init，先删除。若卡 cert-manager（quay.io 慢），改用方式 B。
+
+**方式 B：public SWR 免认证（cert-manager 直接走 SWR，不碰 quay.io）**
+
+```bash
+# ===== 方式 B（完整版，一次复制执行）=====
+
+# 1. 组织 repository 目录 + 配置 clusterctl
+mkdir -p /tmp/repository/{cluster-api,bootstrap-kubeadm,control-plane-kubeadm}/v1.14.0
+mkdir -p /tmp/repository/infrastructure-cce/v0.1.0
+cp /tmp/core-components.yaml          /tmp/repository/cluster-api/v1.14.0/
+cp /tmp/capi-metadata.yaml            /tmp/repository/cluster-api/v1.14.0/metadata.yaml
+cp /tmp/bootstrap-components.yaml     /tmp/repository/bootstrap-kubeadm/v1.14.0/
+cp /tmp/capi-metadata.yaml            /tmp/repository/bootstrap-kubeadm/v1.14.0/metadata.yaml
+cp /tmp/control-plane-components.yaml /tmp/repository/control-plane-kubeadm/v1.14.0/
+cp /tmp/capi-metadata.yaml            /tmp/repository/control-plane-kubeadm/v1.14.0/metadata.yaml
+cp /tmp/infrastructure-components.yaml /tmp/repository/infrastructure-cce/v0.1.0/
+cp /tmp/metadata.yaml                  /tmp/repository/infrastructure-cce/v0.1.0/metadata.yaml
+
+mkdir -p ~/.cluster-api
+cat > ~/.cluster-api/clusterctl.yaml <<'EOF'
+providers:
+  - name: "cluster-api"
+    url: "file:///tmp/repository/cluster-api/v1.14.0/core-components.yaml"
+    type: "CoreProvider"
+  - name: "kubeadm"
+    url: "file:///tmp/repository/bootstrap-kubeadm/v1.14.0/bootstrap-components.yaml"
+    type: "BootstrapProvider"
+  - name: "kubeadm"
+    url: "file:///tmp/repository/control-plane-kubeadm/v1.14.0/control-plane-components.yaml"
+    type: "ControlPlaneProvider"
+  - name: "cce"
+    url: "file:///tmp/repository/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
+    type: "InfrastructureProvider"
+EOF
+
+# 2. 先装 cert-manager（SWR 镜像，避免 quay.io 慢卡）
 curl -L -o /tmp/cert-manager.yaml https://github.com/cert-manager/cert-manager/releases/download/v1.21.1/cert-manager.yaml
 sed -i '' 's|quay.io/jetstack/cert-manager-controller:v1.21.1|swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-controller:v1.21.1|g' /tmp/cert-manager.yaml
 sed -i '' 's|quay.io/jetstack/cert-manager-cainjector:v1.21.1|swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-cainjector:v1.21.1|g' /tmp/cert-manager.yaml
@@ -252,10 +295,12 @@ sed -i '' 's|quay.io/jetstack/cert-manager-webhook:v1.21.1|swr.cn-north-4.myhuaw
 kubectl apply -f /tmp/cert-manager.yaml
 kubectl -n cert-manager rollout status deploy/cert-manager deploy/cert-manager-cainjector deploy/cert-manager-webhook --timeout=180s
 
-# 2. clusterctl init（自动跳过已装的 cert-manager；装 CAPI + bootstrap + control-plane + cce）
+# 3. clusterctl init（自动跳过已装的 cert-manager；装 CAPI + bootstrap + control-plane + cce）
 export KUBECONFIG=~/.kube/capi-mgmt.kubeconfig
 clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
 ```
+
+> ⚠️ `~/.cluster-api/overrides/` 目录会干扰 init，先删除。
 
 > ⚠️ `~/.cluster-api/overrides/` 目录会干扰 init，先删除。
 
