@@ -248,6 +248,19 @@ clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm -
 
 > ⚠️ `~/.cluster-api/overrides/` 目录会干扰 init，先删除。
 
+> ⚠️ **cert-manager 拉取慢**：clusterctl 自动装 cert-manager（quay.io 拉镜像，国际出口慢，可能卡 `Waiting for cert-manager to be available`）。等几分钟仍不行时，把 3 个 cert-manager deployment 镜像换成 **SWR public**（秒拉）：
+>
+> ```bash
+> kubectl -n cert-manager get deploy   # 确认 deployment 已创建
+> kubectl -n cert-manager set image deployment/cert-manager \
+>   cert-manager=swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-controller:v1.21.1
+> kubectl -n cert-manager set image deployment/cert-manager-cainjector \
+>   cert-manager-cainjector=swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-cainjector:v1.21.1
+> kubectl -n cert-manager set image deployment/cert-manager-webhook \
+>   cert-manager-webhook=swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-webhook:v1.21.1
+> kubectl -n cert-manager get pods -w   # 等 Running
+> ```
+
 **步骤 6：Provider 镜像（方式 B：public SWR 免认证）**
 
 clusterctl init 装完，provider 镜像从 public SWR 免认证直拉，webhook 证书由 cert-manager 自动签发——**无任何手动步骤**：
