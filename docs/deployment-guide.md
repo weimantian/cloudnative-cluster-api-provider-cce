@@ -148,7 +148,7 @@
 
 1. 控制台 → 网络 → 虚拟私有云 VPC → 创建虚拟私有云：名称 `capi-vpc`，网段 `10.0.0.0/16`。
 2. 进入 VPC → 子网 → 创建子网：
-   - 节点子网 `capi-subnet-node`：网段 `10.0.1.0/24`，**DNS 服务器地址必须填 `100.125.1.250,100.125.129.250`**（否则节点永久卡 Installing）。
+   - 节点子网 `capi-subnet-node`：网段 `10.0.1.0/24`；**DNS 服务器地址保持默认**（华为云自动填云内 DNS `100.125.1.250,100.125.129.250`，可解析 OBS/SWR 内网域名——勿改成公网 DNS）。
    - ENI 子网 `capi-subnet-eni`：网段 `10.0.2.0/24`（Turbo 容器网络用）。
 3. 控制台 → 计算 → 弹性云服务器 ECS → 密钥对 → 创建密钥对：名称 `capi-bastion-key`。
 
@@ -330,7 +330,7 @@ kubectl scale machinepool my-cce-cluster-pool-0 --replicas=1   # 减容
 
 | # | 问题现象 | 根因 | 修正 | 状态 |
 |---|---|---|---|---|
-| 1 | 节点永久卡 `Installing` | 子网未指定 DNS | 子网 DNS 填 `100.125.1.250,100.125.129.250` | ✅ |
+| 1 | 节点永久卡 `Installing` | 子网 DNS 被改成非云内 DNS（API 创建子网不填 `primary_dns` 默认为空） | 控制台创建保持默认；API/脚本（`deploy-network`）显式填云内 DNS `100.125.1.250,100.125.129.250`（cn-north-4） | ✅ |
 | 2 | 集群无公网 endpoint | CCE 不自动分配公网 IP | 集群详情绑定 EIP | ✅ |
 | 3 | 连续 429 限流（`APIGW.0308`） | CCE 写限流 10 次/分钟，429 重试也计数 | provider 内置 3min 退避；操作间隔 ≥60s | ✅ |
 | 4 | 跳板机下载工具极慢 | 华为云国际出口慢 | SWR 工具镜像 `capi-cce-tools` 提取 / ghfast 加速 | ✅ |
