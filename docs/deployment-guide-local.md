@@ -242,24 +242,24 @@ providers:
     type: "InfrastructureProvider"
 EOF
 
+# ===== 方式 B：public SWR 免认证（完整版，一次执行）=====
+
+# 1. 先装 cert-manager（SWR 镜像，避免 quay.io 慢卡）
+curl -L -o /tmp/cert-manager.yaml https://github.com/cert-manager/cert-manager/releases/download/v1.21.1/cert-manager.yaml
+sed -i '' 's|quay.io/jetstack/cert-manager-controller:v1.21.1|swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-controller:v1.21.1|g' /tmp/cert-manager.yaml
+sed -i '' 's|quay.io/jetstack/cert-manager-cainjector:v1.21.1|swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-cainjector:v1.21.1|g' /tmp/cert-manager.yaml
+sed -i '' 's|quay.io/jetstack/cert-manager-webhook:v1.21.1|swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-webhook:v1.21.1|g' /tmp/cert-manager.yaml
+kubectl apply -f /tmp/cert-manager.yaml
+kubectl -n cert-manager rollout status deploy/cert-manager deploy/cert-manager-cainjector deploy/cert-manager-webhook --timeout=180s
+
+# 2. clusterctl init（自动跳过已装的 cert-manager；装 CAPI + bootstrap + control-plane + cce）
 export KUBECONFIG=~/.kube/capi-mgmt.kubeconfig
 clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
 ```
 
 > ⚠️ `~/.cluster-api/overrides/` 目录会干扰 init，先删除。
 
-> ⚠️ **cert-manager 拉取慢**：clusterctl 自动装 cert-manager（quay.io 拉镜像，国际出口慢，可能卡 `Waiting for cert-manager to be available`）。等几分钟仍不行时，把 3 个 cert-manager deployment 镜像换成 **SWR public**（秒拉）：
->
-> ```bash
-> kubectl -n cert-manager get deploy   # 确认 deployment 已创建
-> kubectl -n cert-manager set image deployment/cert-manager \
->   cert-manager=swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-controller:v1.21.1
-> kubectl -n cert-manager set image deployment/cert-manager-cainjector \
->   cert-manager-cainjector=swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-cainjector:v1.21.1
-> kubectl -n cert-manager set image deployment/cert-manager-webhook \
->   cert-manager-webhook=swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-webhook:v1.21.1
-> kubectl -n cert-manager get pods -w   # 等 Running
-> ```
+
 
 **步骤 6：Provider 镜像（方式 B：public SWR 免认证）**
 
