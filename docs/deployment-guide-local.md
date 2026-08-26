@@ -164,7 +164,7 @@ kubectl version --client && clusterctl version
    - 节点池：规格 `c7.large.2`（sub-ENI 配额）×2 节点，密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
 2. 提交，等待集群「可用」（约 5-10 分钟）。
 3. **公网 endpoint**：集群详情 → 连接信息 → 绑定公网 IP，记录 `https://<公网IP>:5443`（对标 EKS 公网端点）。
-4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件 → 保存为 `capi-mgmt.kubeconfig`。
+4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件 → 保存到本地 `~/.kube/capi-mgmt.kubeconfig`（步骤 3 用 `export KUBECONFIG` 指向）。
 
 > 若用 Standard（vpc-router）集群：集群类型选 CCE Standard，不填 ENI 子网，节点规格任意通用型（`c6.large.2`）。
 
