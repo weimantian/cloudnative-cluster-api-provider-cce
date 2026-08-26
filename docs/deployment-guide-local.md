@@ -175,7 +175,7 @@ kubectl version --client && clusterctl version
 控制台下载的 kubeconfig server 是内网地址，本地直连需改为公网 endpoint：
 
 ```bash
-export KUBECONFIG=/path/to/capi-mgmt.kubeconfig
+export KUBECONFIG=~/.kube/capi-mgmt.kubeconfig
 kubectl config set-cluster <cluster-name> --server=https://<集群A公网IP>:5443
 kubectl get nodes    # 应看到 2 个 Ready 节点（本地直连公网 endpoint）
 ```
@@ -240,7 +240,7 @@ providers:
     type: "InfrastructureProvider"
 EOF
 
-export KUBECONFIG=/path/to/capi-mgmt.kubeconfig
+export KUBECONFIG=~/.kube/capi-mgmt.kubeconfig
 clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
 ```
 
@@ -352,7 +352,7 @@ kubectl create secret generic my-cce-cluster-credentials \
 
 | 操作 | 命令 |
 |---|---|
-| 连集群 A | `export KUBECONFIG=/path/to/capi-mgmt.kubeconfig && kubectl get nodes` |
+| 连集群 A | `export KUBECONFIG=~/.kube/capi-mgmt.kubeconfig && kubectl get nodes` |
 | 初始化 Provider | `clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce` |
 | 生成集群 B | `clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 --worker-machine-count=1 > my-cluster.yaml` |
 | 提交集群 B | `kubectl apply -f my-cluster.yaml` |
