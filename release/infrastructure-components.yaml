@@ -1,0 +1,3342 @@
+# Warning: 'commonLabels' is deprecated. Please use 'labels' instead. Run 'kustomize edit fix' to update your Kustomization automatically.
+apiVersion: v1
+kind: Namespace
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: capi-cce-system
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta2: v1beta2
+  name: cceclustercontrolleridentities.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CCEClusterControllerIdentity
+    listKind: CCEClusterControllerIdentityList
+    plural: cceclustercontrolleridentities
+    shortNames:
+    - cceci
+    singular: cceclustercontrolleridentity
+  scope: Cluster
+  versions:
+  - name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CCEClusterControllerIdentity is the controller's default credential
+          identity (mirrors CAPA AWSClusterControllerIdentity).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEClusterControllerIdentitySpec defines the controller's own credentials
+              (CLOUD_SDK_AK/SK environment). A single instance named "default" is used
+              when no identityRef is set on a control plane.
+            properties:
+              allowedNamespaces:
+                description: AllowedNamespaces restricts which namespaces may use
+                  this identity.
+                properties:
+                  namespaceList:
+                    description: |-
+                      NamespaceList is the explicit list of allowed namespaces. An nil or
+                      empty list, combined with an empty selector, means no namespace is
+                      allowed.
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                  selector:
+                    description: Selector is a label selector over namespaces.
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                          map is equivalent to an element of matchExpressions, whose key field is "key", the
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                    x-kubernetes-map-type: atomic
+                type: object
+            type: object
+        type: object
+    served: true
+    storage: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta2: v1beta2
+  name: cceclusterroleidentities.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CCEClusterRoleIdentity
+    listKind: CCEClusterRoleIdentityList
+    plural: cceclusterroleidentities
+    shortNames:
+    - cceri
+    singular: cceclusterroleidentity
+  scope: Cluster
+  versions:
+  - name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CCEClusterRoleIdentity is a Huawei Cloud agency identity (mirrors CAPA
+          AWSClusterRoleIdentity, but with an agency instead of an AssumeRole ARN).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEClusterRoleIdentitySpec defines a Huawei Cloud agency (委托) based
+              identity — the CCE equivalent of CAPA's assumed-role identity. The agency
+              must already exist and grant trust to the calling account.
+            properties:
+              agencyName:
+                description: AgencyName is the Huawei Cloud agency (委托) to use.
+                type: string
+              allowedNamespaces:
+                description: AllowedNamespaces restricts which namespaces may use
+                  this identity.
+                properties:
+                  namespaceList:
+                    description: |-
+                      NamespaceList is the explicit list of allowed namespaces. An nil or
+                      empty list, combined with an empty selector, means no namespace is
+                      allowed.
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                  selector:
+                    description: Selector is a label selector over namespaces.
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                          map is equivalent to an element of matchExpressions, whose key field is "key", the
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                    x-kubernetes-map-type: atomic
+                type: object
+            required:
+            - agencyName
+            type: object
+        type: object
+    served: true
+    storage: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta2: v1beta2
+  name: cceclusters.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CCECluster
+    listKind: CCEClusterList
+    plural: cceclusters
+    singular: ccecluster
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Cluster to which this CCECluster belongs
+      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - description: CCECluster is ready
+      jsonPath: .status.ready
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: CCECluster is the Schema for the CCE clusters (InfrastructureCluster).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEClusterSpec defines the desired state of CCECluster.
+              CCECluster is the thin "shell" (InfrastructureCluster contract object) that
+              carries cluster-level network/region configuration. The control plane
+              implementation lives in CCEManagedControlPlane (controlplane group).
+            properties:
+              network:
+                description: |-
+                  Network references the VPC/subnets the CCE cluster consumes.
+                  CCE requires a VPC to exist before cluster creation.
+                properties:
+                  natGateway:
+                    description: |-
+                      NatGateway enables managed node egress (managed mode only): a NAT
+                      gateway + EIP + SNAT rule per managed subnet. Ignored in BYO mode.
+                    properties:
+                      eipResourceID:
+                        description: EIPResourceID records the created NAT EIP ID
+                          (provider-managed).
+                        type: string
+                      resourceID:
+                        description: ResourceID records the created NAT gateway ID
+                          (provider-managed).
+                        type: string
+                      spec:
+                        default: "1"
+                        description: 'Spec of the NAT gateway: "1" (small, default),
+                          "2", "3", "4".'
+                        type: string
+                    type: object
+                  securityGroup:
+                    description: |-
+                      SecurityGroup declares a managed node security group the provider
+                      creates (with the declared ingress/egress rules) in the managed VPC and
+                      binds to node pools that do not specify their own securityGroups.
+                      Its mere presence enables managed security group creation (mirrors
+                      NatGatewaySpec). Managed mode only; ignored in BYO mode.
+                    properties:
+                      egress:
+                        description: Egress rules applied to the security group (direction=egress).
+                        items:
+                          description: |-
+                            SecurityGroupRuleSpec declares one security group rule. The direction is
+                            implied by whether the rule appears in SecurityGroupSpec.Ingress or Egress.
+                          properties:
+                            description:
+                              description: Description of the rule.
+                              type: string
+                            portRangeMax:
+                              description: PortRangeMax is the end port (inclusive,
+                                1-65535). 0 = all ports.
+                              format: int32
+                              type: integer
+                            portRangeMin:
+                              description: PortRangeMin is the start port (inclusive,
+                                1-65535). 0 = all ports.
+                              format: int32
+                              type: integer
+                            protocol:
+                              description: |-
+                                Protocol of the rule: tcp, udp, icmp, or an IP protocol number. Empty
+                                matches all protocols.
+                              type: string
+                            remoteGroupID:
+                              description: |-
+                                RemoteGroupID is a peer security group ID. Mutually exclusive with
+                                RemoteIPPrefix.
+                              type: string
+                            remoteIPPrefix:
+                              description: |-
+                                RemoteIPPrefix is the source (ingress) / destination (egress) CIDR.
+                                Mutually exclusive with RemoteGroupID.
+                              type: string
+                          type: object
+                        type: array
+                      ingress:
+                        description: Ingress rules applied to the security group (direction=ingress).
+                        items:
+                          description: |-
+                            SecurityGroupRuleSpec declares one security group rule. The direction is
+                            implied by whether the rule appears in SecurityGroupSpec.Ingress or Egress.
+                          properties:
+                            description:
+                              description: Description of the rule.
+                              type: string
+                            portRangeMax:
+                              description: PortRangeMax is the end port (inclusive,
+                                1-65535). 0 = all ports.
+                              format: int32
+                              type: integer
+                            portRangeMin:
+                              description: PortRangeMin is the start port (inclusive,
+                                1-65535). 0 = all ports.
+                              format: int32
+                              type: integer
+                            protocol:
+                              description: |-
+                                Protocol of the rule: tcp, udp, icmp, or an IP protocol number. Empty
+                                matches all protocols.
+                              type: string
+                            remoteGroupID:
+                              description: |-
+                                RemoteGroupID is a peer security group ID. Mutually exclusive with
+                                RemoteIPPrefix.
+                              type: string
+                            remoteIPPrefix:
+                              description: |-
+                                RemoteIPPrefix is the source (ingress) / destination (egress) CIDR.
+                                Mutually exclusive with RemoteGroupID.
+                              type: string
+                          type: object
+                        type: array
+                      name:
+                        description: Name of the security group to create. Empty =
+                          "<clusterName>-node".
+                        type: string
+                      resourceID:
+                        description: ResourceID records the created security group
+                          ID (provider-managed).
+                        type: string
+                    type: object
+                  subnets:
+                    description: |-
+                      Subnets referenced (BYO) or created (managed) by the cluster. When
+                      empty in managed mode, a default node subnet is derived from the VPC
+                      CIDR.
+                    items:
+                      description: Subnet references an existing or to-be-created
+                        subnet.
+                      properties:
+                        availabilityZone:
+                          description: AvailabilityZone of the subnet (only used when
+                            creating).
+                          type: string
+                        cidr:
+                          description: CIDR of the subnet to create (only used when
+                            ID is empty).
+                          type: string
+                        id:
+                          description: ID of an existing subnet. If set, the subnet
+                            is referenced and not managed.
+                          type: string
+                        name:
+                          description: Name of the subnet to create (only used when
+                            ID is empty).
+                          type: string
+                        neutronSubnetId:
+                          description: |-
+                            NeutronSubnetID records the neutron subnet ID (provider-managed; the
+                            CCE eniNetwork API requires the neutron ID, not the network ID).
+                          type: string
+                        resourceID:
+                          description: ResourceID records the created subnet resource
+                            ID (provider-managed).
+                          type: string
+                        type:
+                          description: |-
+                            Type of the subnet: node (default) or eni (Turbo container subnet).
+                            Managed Turbo clusters derive the ENI neutron_subnet_id from
+                            subnets of Type eni.
+                          type: string
+                        vpcId:
+                          description: VPCID of the VPC the subnet belongs to (only
+                            used when creating).
+                          type: string
+                      type: object
+                    type: array
+                  vpc:
+                    description: VPC referenced (BYO) or created (managed) for the
+                      cluster.
+                    properties:
+                      cidr:
+                        description: CIDR of the VPC to create (only used when ID
+                          is empty).
+                        type: string
+                      description:
+                        description: Description of the VPC to create.
+                        type: string
+                      id:
+                        description: ID of an existing VPC. If set, the VPC is referenced
+                          and not managed.
+                        type: string
+                      name:
+                        description: Name of the VPC to create (only used when ID
+                          is empty).
+                        type: string
+                      resourceID:
+                        description: ResourceID records the created VPC resource ID
+                          (provider-managed).
+                        type: string
+                      tags:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          Tags attached to the VPC. The provider owned tag
+                          (cluster-api-provider-cce.cluster.<name>=owned) marks an existing VPC
+                          as ADOPTED (managed, including deletion) - the CAPA three-state model:
+                          vpc.id empty = create, vpc.id + owned tag = adopt, vpc.id + no tag = BYO.
+                        type: object
+                    type: object
+                type: object
+              region:
+                description: Region is the Huawei Cloud region (e.g. cn-north-4).
+                  Required.
+                type: string
+            required:
+            - region
+            type: object
+          status:
+            description: |-
+              CCEClusterStatus defines the observed state of CCECluster. Two distinct
+              readiness flags (P2-11 audit): Ready is cloud-side readiness, consumed
+              by CAPI core to flip Cluster.Status.InfrastructureReady;
+              Initialization.Provisioned is the CAPI v1beta2 contract path that the
+              CAPI Cluster controller gates Cluster.Status.Initialization.
+              InfrastructureProvisioned on. The two must not be conflated.
+            properties:
+              clusterID:
+                description: |-
+                  ClusterID is the CCE cluster UUID (backfilled by the control plane
+                  controller).
+                type: string
+              conditions:
+                description: Conditions defines current service state of the CCECluster.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              initialization:
+                description: |-
+                  Initialization reports infrastructure provisioning state. Provisioned
+                  mirrors the CAPI InfrastructureCluster contract path
+                  status.initialization.provisioned, which the CAPI Cluster controller
+                  gates Cluster.Status.Initialization.InfrastructureProvisioned on.
+                properties:
+                  provisioned:
+                    description: Provisioned indicates the infrastructure is provisioned
+                      (CAPI contract).
+                    type: boolean
+                type: object
+              ready:
+                description: |-
+                  Ready indicates the cluster infrastructure (network validation) is
+                  complete; consumed by CAPI core to flip Cluster.Status.InfrastructureReady.
+                type: boolean
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta2: v1beta2
+  name: cceclusterstaticidentities.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CCEClusterStaticIdentity
+    listKind: CCEClusterStaticIdentityList
+    plural: cceclusterstaticidentities
+    shortNames:
+    - ccesi
+    singular: cceclusterstaticidentity
+  scope: Cluster
+  versions:
+  - name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CCEClusterStaticIdentity is a reference to a static AK/SK Secret (mirrors
+          CAPA AWSClusterStaticIdentity).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEClusterStaticIdentitySpec defines static AK/SK credentials referenced
+              from a Secret.
+            properties:
+              allowedNamespaces:
+                description: AllowedNamespaces restricts which namespaces may use
+                  this identity.
+                properties:
+                  namespaceList:
+                    description: |-
+                      NamespaceList is the explicit list of allowed namespaces. An nil or
+                      empty list, combined with an empty selector, means no namespace is
+                      allowed.
+                    items:
+                      type: string
+                    nullable: true
+                    type: array
+                  selector:
+                    description: Selector is a label selector over namespaces.
+                    properties:
+                      matchExpressions:
+                        description: matchExpressions is a list of label selector
+                          requirements. The requirements are ANDed.
+                        items:
+                          description: |-
+                            A label selector requirement is a selector that contains values, a key, and an operator that
+                            relates the key and values.
+                          properties:
+                            key:
+                              description: key is the label key that the selector
+                                applies to.
+                              type: string
+                            operator:
+                              description: |-
+                                operator represents a key's relationship to a set of values.
+                                Valid operators are In, NotIn, Exists and DoesNotExist.
+                              type: string
+                            values:
+                              description: |-
+                                values is an array of string values. If the operator is In or NotIn,
+                                the values array must be non-empty. If the operator is Exists or DoesNotExist,
+                                the values array must be empty. This array is replaced during a strategic
+                                merge patch.
+                              items:
+                                type: string
+                              type: array
+                              x-kubernetes-list-type: atomic
+                          required:
+                          - key
+                          - operator
+                          type: object
+                        type: array
+                        x-kubernetes-list-type: atomic
+                      matchLabels:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          matchLabels is a map of {key,value} pairs. A single {key,value} in the matchLabels
+                          map is equivalent to an element of matchExpressions, whose key field is "key", the
+                          operator is "In", and the values array contains only "value". The requirements are ANDed.
+                        type: object
+                    type: object
+                    x-kubernetes-map-type: atomic
+                type: object
+              secretRef:
+                description: |-
+                  SecretRef is the name of a Secret (in the controller namespace)
+                  containing keys accessKey and secretKey.
+                type: string
+            required:
+            - secretRef
+            type: object
+        type: object
+    served: true
+    storage: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta2: v1beta2
+  name: cceclustertemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CCEClusterTemplate
+    listKind: CCEClusterTemplateList
+    plural: cceclustertemplates
+    shortNames:
+    - ccect
+    singular: cceclustertemplate
+  scope: Namespaced
+  versions:
+  - name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CCEClusterTemplate is the Schema for the CCEClusterTemplates API
+          (InfrastructureClusterTemplate).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEClusterTemplateSpec defines the desired state of CCEClusterTemplate.
+              It wraps the CCEClusterSpec so the Cluster API topology controller can
+              stamp a CCECluster from a ClusterClass (InfrastructureClusterTemplate
+              contract: spec.template.spec).
+            properties:
+              template:
+                description: |-
+                  CCEClusterTemplateResource describes the data needed to create a CCECluster
+                  from a template.
+                properties:
+                  spec:
+                    description: |-
+                      CCEClusterSpec defines the desired state of CCECluster.
+                      CCECluster is the thin "shell" (InfrastructureCluster contract object) that
+                      carries cluster-level network/region configuration. The control plane
+                      implementation lives in CCEManagedControlPlane (controlplane group).
+                    properties:
+                      network:
+                        description: |-
+                          Network references the VPC/subnets the CCE cluster consumes.
+                          CCE requires a VPC to exist before cluster creation.
+                        properties:
+                          natGateway:
+                            description: |-
+                              NatGateway enables managed node egress (managed mode only): a NAT
+                              gateway + EIP + SNAT rule per managed subnet. Ignored in BYO mode.
+                            properties:
+                              eipResourceID:
+                                description: EIPResourceID records the created NAT
+                                  EIP ID (provider-managed).
+                                type: string
+                              resourceID:
+                                description: ResourceID records the created NAT gateway
+                                  ID (provider-managed).
+                                type: string
+                              spec:
+                                default: "1"
+                                description: 'Spec of the NAT gateway: "1" (small,
+                                  default), "2", "3", "4".'
+                                type: string
+                            type: object
+                          securityGroup:
+                            description: |-
+                              SecurityGroup declares a managed node security group the provider
+                              creates (with the declared ingress/egress rules) in the managed VPC and
+                              binds to node pools that do not specify their own securityGroups.
+                              Its mere presence enables managed security group creation (mirrors
+                              NatGatewaySpec). Managed mode only; ignored in BYO mode.
+                            properties:
+                              egress:
+                                description: Egress rules applied to the security
+                                  group (direction=egress).
+                                items:
+                                  description: |-
+                                    SecurityGroupRuleSpec declares one security group rule. The direction is
+                                    implied by whether the rule appears in SecurityGroupSpec.Ingress or Egress.
+                                  properties:
+                                    description:
+                                      description: Description of the rule.
+                                      type: string
+                                    portRangeMax:
+                                      description: PortRangeMax is the end port (inclusive,
+                                        1-65535). 0 = all ports.
+                                      format: int32
+                                      type: integer
+                                    portRangeMin:
+                                      description: PortRangeMin is the start port
+                                        (inclusive, 1-65535). 0 = all ports.
+                                      format: int32
+                                      type: integer
+                                    protocol:
+                                      description: |-
+                                        Protocol of the rule: tcp, udp, icmp, or an IP protocol number. Empty
+                                        matches all protocols.
+                                      type: string
+                                    remoteGroupID:
+                                      description: |-
+                                        RemoteGroupID is a peer security group ID. Mutually exclusive with
+                                        RemoteIPPrefix.
+                                      type: string
+                                    remoteIPPrefix:
+                                      description: |-
+                                        RemoteIPPrefix is the source (ingress) / destination (egress) CIDR.
+                                        Mutually exclusive with RemoteGroupID.
+                                      type: string
+                                  type: object
+                                type: array
+                              ingress:
+                                description: Ingress rules applied to the security
+                                  group (direction=ingress).
+                                items:
+                                  description: |-
+                                    SecurityGroupRuleSpec declares one security group rule. The direction is
+                                    implied by whether the rule appears in SecurityGroupSpec.Ingress or Egress.
+                                  properties:
+                                    description:
+                                      description: Description of the rule.
+                                      type: string
+                                    portRangeMax:
+                                      description: PortRangeMax is the end port (inclusive,
+                                        1-65535). 0 = all ports.
+                                      format: int32
+                                      type: integer
+                                    portRangeMin:
+                                      description: PortRangeMin is the start port
+                                        (inclusive, 1-65535). 0 = all ports.
+                                      format: int32
+                                      type: integer
+                                    protocol:
+                                      description: |-
+                                        Protocol of the rule: tcp, udp, icmp, or an IP protocol number. Empty
+                                        matches all protocols.
+                                      type: string
+                                    remoteGroupID:
+                                      description: |-
+                                        RemoteGroupID is a peer security group ID. Mutually exclusive with
+                                        RemoteIPPrefix.
+                                      type: string
+                                    remoteIPPrefix:
+                                      description: |-
+                                        RemoteIPPrefix is the source (ingress) / destination (egress) CIDR.
+                                        Mutually exclusive with RemoteGroupID.
+                                      type: string
+                                  type: object
+                                type: array
+                              name:
+                                description: Name of the security group to create.
+                                  Empty = "<clusterName>-node".
+                                type: string
+                              resourceID:
+                                description: ResourceID records the created security
+                                  group ID (provider-managed).
+                                type: string
+                            type: object
+                          subnets:
+                            description: |-
+                              Subnets referenced (BYO) or created (managed) by the cluster. When
+                              empty in managed mode, a default node subnet is derived from the VPC
+                              CIDR.
+                            items:
+                              description: Subnet references an existing or to-be-created
+                                subnet.
+                              properties:
+                                availabilityZone:
+                                  description: AvailabilityZone of the subnet (only
+                                    used when creating).
+                                  type: string
+                                cidr:
+                                  description: CIDR of the subnet to create (only
+                                    used when ID is empty).
+                                  type: string
+                                id:
+                                  description: ID of an existing subnet. If set, the
+                                    subnet is referenced and not managed.
+                                  type: string
+                                name:
+                                  description: Name of the subnet to create (only
+                                    used when ID is empty).
+                                  type: string
+                                neutronSubnetId:
+                                  description: |-
+                                    NeutronSubnetID records the neutron subnet ID (provider-managed; the
+                                    CCE eniNetwork API requires the neutron ID, not the network ID).
+                                  type: string
+                                resourceID:
+                                  description: ResourceID records the created subnet
+                                    resource ID (provider-managed).
+                                  type: string
+                                type:
+                                  description: |-
+                                    Type of the subnet: node (default) or eni (Turbo container subnet).
+                                    Managed Turbo clusters derive the ENI neutron_subnet_id from
+                                    subnets of Type eni.
+                                  type: string
+                                vpcId:
+                                  description: VPCID of the VPC the subnet belongs
+                                    to (only used when creating).
+                                  type: string
+                              type: object
+                            type: array
+                          vpc:
+                            description: VPC referenced (BYO) or created (managed)
+                              for the cluster.
+                            properties:
+                              cidr:
+                                description: CIDR of the VPC to create (only used
+                                  when ID is empty).
+                                type: string
+                              description:
+                                description: Description of the VPC to create.
+                                type: string
+                              id:
+                                description: ID of an existing VPC. If set, the VPC
+                                  is referenced and not managed.
+                                type: string
+                              name:
+                                description: Name of the VPC to create (only used
+                                  when ID is empty).
+                                type: string
+                              resourceID:
+                                description: ResourceID records the created VPC resource
+                                  ID (provider-managed).
+                                type: string
+                              tags:
+                                additionalProperties:
+                                  type: string
+                                description: |-
+                                  Tags attached to the VPC. The provider owned tag
+                                  (cluster-api-provider-cce.cluster.<name>=owned) marks an existing VPC
+                                  as ADOPTED (managed, including deletion) - the CAPA three-state model:
+                                  vpc.id empty = create, vpc.id + owned tag = adopt, vpc.id + no tag = BYO.
+                                type: object
+                            type: object
+                        type: object
+                      region:
+                        description: Region is the Huawei Cloud region (e.g. cn-north-4).
+                          Required.
+                        type: string
+                    required:
+                    - region
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta2: v1beta2
+  name: ccemanagedcontrolplanes.controlplane.cluster.x-k8s.io
+spec:
+  group: controlplane.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CCEManagedControlPlane
+    listKind: CCEManagedControlPlaneList
+    plural: ccemanagedcontrolplanes
+    singular: ccemanagedcontrolplane
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Cluster to which this CCEManagedControlPlane belongs
+      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - description: Control plane ready
+      jsonPath: .status.ready
+      name: Ready
+      type: string
+    - description: kubeconfig generated
+      jsonPath: .status.initialized
+      name: Initialized
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CCEManagedControlPlane is the Schema for the CCE managed control plane
+          (ControlPlane).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEManagedControlPlaneSpec defines the desired state of
+              CCEManagedControlPlane. It maps to the CCE CreateCluster API (ClusterSpec):
+              category / flavor / version / containerNetwork / serviceNetwork /
+              customSan / publicAccess / agencyName / billingMode.
+            properties:
+              accessPolicies:
+                description: |-
+                  AccessPolicies declare CCE access policies (the CCE equivalent of EKS
+                  access entries). Declarative set: create missing, update drift, remove
+                  those no longer listed.
+                items:
+                  description: |-
+                    AccessPolicySpec declares one CCE access policy (maps to the CCE
+                    AccessPolicy API).
+                  properties:
+                    name:
+                      description: Name of the access policy (unique within the account).
+                      maxLength: 56
+                      pattern: ^[a-z][a-z0-9.-]*$
+                      type: string
+                    namespaces:
+                      description: Namespaces the policy applies to (["*"] = all).
+                      items:
+                        type: string
+                      type: array
+                    policyType:
+                      description: PolicyType is the permission level.
+                      enum:
+                      - CCEClusterAdminPolicy
+                      - CCEAdminPolicy
+                      - CCEEditPolicy
+                      - CCEViewPolicy
+                      type: string
+                    principalIds:
+                      description: PrincipalIds are the IAM user/group/agency IDs
+                        the policy applies to.
+                      items:
+                        type: string
+                      minItems: 1
+                      type: array
+                    principalType:
+                      description: 'PrincipalType is the IAM principal kind: user,
+                        group or agency.'
+                      enum:
+                      - user
+                      - group
+                      - agency
+                      type: string
+                  required:
+                  - name
+                  - policyType
+                  - principalIds
+                  - principalType
+                  type: object
+                type: array
+              addons:
+                description: |-
+                  Addons are the CCE addon instances to manage (declarative set; the
+                  controller installs missing ones, upgrades version drift, and removes
+                  those no longer listed — mirrors CAPA EKS addons).
+                items:
+                  description: AddonSpec declares a CCE addon to install.
+                  properties:
+                    name:
+                      description: Name is the addon template name (e.g. "coredns",
+                        "metrics-server").
+                      type: string
+                    version:
+                      description: |-
+                        Version is the addon template version (e.g. "1.0.0"); empty means the
+                        latest supported by the cluster.
+                      type: string
+                  required:
+                  - name
+                  type: object
+                type: array
+              agencyName:
+                description: AgencyName used by the cluster (1.27+; empty uses the
+                  system agency).
+                type: string
+              agencyTrustPolicy:
+                description: |-
+                  AgencyTrustPolicy is the IAM v5 trust-policy JSON document used to
+                  auto-create the trust agency (信任委托) referenced by the role identity
+                  (identityRef -> CCEClusterRoleIdentity.spec.agencyName) when that agency
+                  does not already exist. Mirrors CAPA auto-creating the cluster IAM role:
+                  a non-empty policy + a role identity triggers EnsureAgency (List -> Create
+                  when absent); an existing agency is adopted (never overwritten). When the
+                  identity has no agency (controller/static identity), creation is skipped.
+                  The document must declare "Version": "5.0".
+                type: string
+              authentication:
+                description: |-
+                  Authentication controls the API server authentication mode (mirrors
+                  CAPA EKS AccessConfig.AuthenticationMode). Default rbac;
+                  authenticating_proxy delegates auth to an external proxy (requires a
+                  CA + client cert + key). Immutable after creation.
+                properties:
+                  authenticatingProxy:
+                    description: AuthenticatingProxy config (required when Mode=authenticating_proxy).
+                    properties:
+                      ca:
+                        description: CA certificate (PEM) of the proxy.
+                        type: string
+                      cert:
+                        description: Client certificate (PEM) signed by the CA.
+                        type: string
+                      privateKey:
+                        description: Private key (PEM, unencrypted) matching the client
+                          certificate.
+                        type: string
+                    type: object
+                  mode:
+                    default: rbac
+                    description: 'Mode: "rbac" (default) or "authenticating_proxy".'
+                    enum:
+                    - rbac
+                    - authenticating_proxy
+                    type: string
+                type: object
+              billing:
+                description: 'Billing controls billing mode: 0=on-demand, 1=subscription.'
+                properties:
+                  mode:
+                    default: 0
+                    description: 'Mode: 0=on-demand, 1=subscription.'
+                    enum:
+                    - 0
+                    - 1
+                    format: int32
+                    type: integer
+                type: object
+              category:
+                default: Turbo
+                description: 'Category of the CCE cluster: CCE (Standard) or Turbo.'
+                enum:
+                - CCE
+                - Turbo
+                type: string
+              clusterName:
+                description: ClusterName of the owning CCE cluster.
+                type: string
+              containerNetwork:
+                description: ContainerNetwork of the cluster.
+                properties:
+                  cidr:
+                    description: CIDR of the container network (immutable after creation
+                      for tunnel mode).
+                    type: string
+                  cidrs:
+                    description: |-
+                      CIDRs lists additional container network segments (secondary CIDR).
+                      Maps to model.ContainerNetwork.Cidrs; each entry becomes a
+                      model.ContainerCidr. Empty = single-CIDR cluster.
+                    items:
+                      type: string
+                    type: array
+                  eniSubnets:
+                    description: ENISubnets for eni mode (Turbo).
+                    items:
+                      type: string
+                    type: array
+                  mode:
+                    default: eni
+                    description: 'Mode: overlay_l2 | vpc-router | eni (eni implies
+                      Turbo).'
+                    enum:
+                    - overlay_l2
+                    - vpc-router
+                    - eni
+                    type: string
+                type: object
+              controlPlaneEndpoint:
+                description: |-
+                  ControlPlaneEndpoint is the API server endpoint (host:port) of the
+                  managed control plane. It is backfilled by the controller once the CCE
+                  cluster is available and is read by CAPI to populate
+                  Cluster.spec.controlPlaneEndpoint — the CAPI control-plane contract
+                  reads spec.controlPlaneEndpoint, not status.
+                minProperties: 1
+                properties:
+                  host:
+                    description: host is the hostname on which the API server is serving.
+                    maxLength: 512
+                    minLength: 1
+                    type: string
+                  port:
+                    description: port is the port on which the API server is serving.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                type: object
+              customSan:
+                description: CustomSan entries for the API server certificate.
+                items:
+                  type: string
+                type: array
+              enableAutopilot:
+                description: |-
+                  EnableAutopilot creates an Autopilot (Serverless) cluster instead of a
+                  standard CCE/Turbo cluster (maps to CCE spec.enableAutopilot). Autopilot
+                  requires category Turbo and a compatible flavor (cce.autopilot.cluster).
+                type: boolean
+              encryptionConfig:
+                description: |-
+                  EncryptionConfig controls etcd secret encryption (mirrors CAPA EKS
+                  EncryptionConfig). Mode Default leaves etcd unencrypted; KMS enables
+                  envelope encryption with a KMS key configured at the account level.
+                  Immutable after creation.
+                properties:
+                  mode:
+                    default: Default
+                    description: |-
+                      Mode: "Default" (no encryption) or "KMS" (envelope encryption with a
+                      KMS key configured at the account level).
+                    enum:
+                    - Default
+                    - KMS
+                    type: string
+                type: object
+              endpointAccess:
+                description: EndpointAccess controls public API server access.
+                properties:
+                  cidrs:
+                    description: |-
+                      CIDRs is the public API server access whitelist (mapped to the CCE
+                      PublicAccess.cidrs). Only sent when public access is enabled; empty
+                      means the platform default ["0.0.0.0/0"]. CCE always exposes a
+                      VPC-internal (private) endpoint regardless of this field.
+                    items:
+                      type: string
+                    type: array
+                  private:
+                    default: true
+                    description: |-
+                      Private controls private (VPC-internal) API server access. CCE always
+                      exposes a VPC-internal endpoint and cannot disable it (platform-managed
+                      control plane), so this field defaults to true and false is rejected by
+                      the webhook. It exists for CAPA parity (CAPA EndpointAccess exposes
+                      public/private).
+                    type: boolean
+                  public:
+                    description: Public enables public API server access.
+                    type: boolean
+                type: object
+              flavor:
+                description: Flavor of the cluster (official enum e.g. cce.s1.small
+                  ... cce.s2.xlarge).
+                type: string
+              identityRef:
+                description: |-
+                  IdentityRef references a CCECluster*Identity (Controller/Static/Role).
+                  Empty means the controller default identity (CLOUD_SDK_AK/SK env).
+                properties:
+                  apiVersion:
+                    description: API version of the referent.
+                    type: string
+                  fieldPath:
+                    description: |-
+                      If referring to a piece of an object instead of an entire object, this string
+                      should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                      For example, if the object reference is to a container within a pod, this would take on a value like:
+                      "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                      the event) or if no container name is specified "spec.containers[2]" (container with
+                      index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                      referencing a part of an object.
+                    type: string
+                  kind:
+                    description: |-
+                      Kind of the referent.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                    type: string
+                  name:
+                    description: |-
+                      Name of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                    type: string
+                  namespace:
+                    description: |-
+                      Namespace of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                    type: string
+                  resourceVersion:
+                    description: |-
+                      Specific resourceVersion to which this reference is made, if any.
+                      More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                    type: string
+                  uid:
+                    description: |-
+                      UID of the referent.
+                      More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                    type: string
+                type: object
+                x-kubernetes-map-type: atomic
+              ipv6enable:
+                description: |-
+                  Ipv6Enable enables IPv6 dual-stack for the cluster (maps to CCE
+                  spec.ipv6enable). Requires a VPC with IPv6 enabled; the service
+                  network IPv6CIDR must be set as well.
+                type: boolean
+              logging:
+                description: |-
+                  Logging configures control-plane log collection (mirrors CAPA EKS
+                  Logging). Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
+                properties:
+                  logs:
+                    description: Logs lists the components to collect.
+                    items:
+                      description: ControlPlaneLogSpec declares one log collection
+                        item.
+                      properties:
+                        enable:
+                          description: Enable turns collection on/off for this item.
+                          type: boolean
+                        name:
+                          description: |-
+                            Name is the log type: kube-apiserver, kube-controller-manager,
+                            kube-scheduler, audit, or a system addon name.
+                          type: string
+                        type:
+                          description: 'Type is the component type: control, audit,
+                            or system-addon.'
+                          enum:
+                          - control
+                          - audit
+                          - system-addon
+                          type: string
+                      required:
+                      - name
+                      type: object
+                    type: array
+                  ttlInDays:
+                    description: TTLInDays is the log retention in days (official
+                      range 0-30).
+                    format: int32
+                    maximum: 30
+                    minimum: 0
+                    type: integer
+                type: object
+              podIdentityAssociations:
+                description: |-
+                  PodIdentityAssociations bind Kubernetes ServiceAccounts to Huawei Cloud
+                  agencies (the CCE equivalent of EKS Pod Identity). Declarative set:
+                  create missing, delete removed.
+                items:
+                  description: PodIdentityAssociationSpec declares a ServiceAccount
+                    -> agency binding.
+                  properties:
+                    agencyName:
+                      description: AgencyName is the Huawei Cloud agency (委托) to bind.
+                      type: string
+                    namespace:
+                      description: Namespace of the ServiceAccount (immutable per
+                        association).
+                      type: string
+                    serviceAccount:
+                      description: ServiceAccount name (one association per ServiceAccount).
+                      type: string
+                  required:
+                  - agencyName
+                  - namespace
+                  - serviceAccount
+                  type: object
+                type: array
+              serviceNetwork:
+                description: ServiceNetwork of the cluster.
+                properties:
+                  cidr:
+                    description: CIDR of the service network.
+                    type: string
+                  ipv6CIDR:
+                    description: |-
+                      IPv6CIDR of the service network (required when Ipv6Enable is true).
+                      Maps to model.ServiceNetwork.IPv6CIDR.
+                    type: string
+                type: object
+              version:
+                description: Version of Kubernetes, e.g. "v1.30.0". Empty means CCE
+                  latest.
+                type: string
+            required:
+            - clusterName
+            type: object
+          status:
+            description: |-
+              CCEManagedControlPlaneStatus defines the observed state of
+              CCEManagedControlPlane.
+            properties:
+              clusterID:
+                description: ClusterID is the CCE cluster UUID.
+                type: string
+              conditions:
+                description: Conditions defines current service state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              controlPlaneEndpoint:
+                description: ControlPlaneEndpoint is the API server endpoint.
+                minProperties: 1
+                properties:
+                  host:
+                    description: host is the hostname on which the API server is serving.
+                    maxLength: 512
+                    minLength: 1
+                    type: string
+                  port:
+                    description: port is the port on which the API server is serving.
+                    format: int32
+                    maximum: 65535
+                    minimum: 1
+                    type: integer
+                type: object
+              initialization:
+                description: |-
+                  Initialization reports control-plane initialization state.
+                  ControlPlaneInitialized mirrors the CAPI ControlPlane contract path
+                  status.initialization.controlPlaneInitialized, which the CAPI Cluster
+                  controller gates Cluster.Status.Initialization.ControlPlaneInitialized on.
+                properties:
+                  controlPlaneInitialized:
+                    description: |-
+                      ControlPlaneInitialized indicates the control plane has been initialized
+                      (CAPI contract).
+                    type: boolean
+                type: object
+              initialized:
+                description: Initialized indicates the kubeconfig Secret has been
+                  generated.
+                type: boolean
+              kubeconfigSecretName:
+                description: KubeconfigSecretName of the generated kubeconfig Secret.
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the latest generation observed by the controller.
+                  Used to prevent missed spec changes when controller-runtime event coalescing
+                  causes a status patch and an external spec patch to land in the same work
+                  queue window. Matches CAPA v2.13.0 commits 9e9bb6b31 / b5d6d3081.
+                format: int64
+                type: integer
+              ready:
+                description: Ready indicates the CCE control plane is available.
+                type: boolean
+              upgradeTaskID:
+                description: |-
+                  UpgradeTaskID of the in-flight cluster upgrade (empty = no upgrade
+                  running). Set when spec.version differs from the running version and an
+                  upgrade workflow was started (FR-1.7, questionnaire Q11).
+                type: string
+              version:
+                description: Version of the cluster as reported by CCE.
+                type: string
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta2: v1beta2
+  name: ccemanagedcontrolplanetemplates.controlplane.cluster.x-k8s.io
+spec:
+  group: controlplane.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CCEManagedControlPlaneTemplate
+    listKind: CCEManagedControlPlaneTemplateList
+    plural: ccemanagedcontrolplanetemplates
+    shortNames:
+    - ccemcpt
+    singular: ccemanagedcontrolplanetemplate
+  scope: Namespaced
+  versions:
+  - name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CCEManagedControlPlaneTemplate is the Schema for the
+          CCEManagedControlPlaneTemplates API (ControlPlaneTemplate).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEManagedControlPlaneTemplateSpec defines the desired state of
+              CCEManagedControlPlaneTemplate. It wraps the CCEManagedControlPlaneSpec so
+              the Cluster API topology controller can stamp a CCEManagedControlPlane from
+              a ClusterClass (ControlPlaneTemplate contract: spec.template.spec).
+            properties:
+              template:
+                description: |-
+                  CCEManagedControlPlaneTemplateResource describes the data needed to create a
+                  CCEManagedControlPlane from a template.
+                properties:
+                  spec:
+                    description: |-
+                      CCEManagedControlPlaneSpec defines the desired state of
+                      CCEManagedControlPlane. It maps to the CCE CreateCluster API (ClusterSpec):
+                      category / flavor / version / containerNetwork / serviceNetwork /
+                      customSan / publicAccess / agencyName / billingMode.
+                    properties:
+                      accessPolicies:
+                        description: |-
+                          AccessPolicies declare CCE access policies (the CCE equivalent of EKS
+                          access entries). Declarative set: create missing, update drift, remove
+                          those no longer listed.
+                        items:
+                          description: |-
+                            AccessPolicySpec declares one CCE access policy (maps to the CCE
+                            AccessPolicy API).
+                          properties:
+                            name:
+                              description: Name of the access policy (unique within
+                                the account).
+                              maxLength: 56
+                              pattern: ^[a-z][a-z0-9.-]*$
+                              type: string
+                            namespaces:
+                              description: Namespaces the policy applies to (["*"]
+                                = all).
+                              items:
+                                type: string
+                              type: array
+                            policyType:
+                              description: PolicyType is the permission level.
+                              enum:
+                              - CCEClusterAdminPolicy
+                              - CCEAdminPolicy
+                              - CCEEditPolicy
+                              - CCEViewPolicy
+                              type: string
+                            principalIds:
+                              description: PrincipalIds are the IAM user/group/agency
+                                IDs the policy applies to.
+                              items:
+                                type: string
+                              minItems: 1
+                              type: array
+                            principalType:
+                              description: 'PrincipalType is the IAM principal kind:
+                                user, group or agency.'
+                              enum:
+                              - user
+                              - group
+                              - agency
+                              type: string
+                          required:
+                          - name
+                          - policyType
+                          - principalIds
+                          - principalType
+                          type: object
+                        type: array
+                      addons:
+                        description: |-
+                          Addons are the CCE addon instances to manage (declarative set; the
+                          controller installs missing ones, upgrades version drift, and removes
+                          those no longer listed — mirrors CAPA EKS addons).
+                        items:
+                          description: AddonSpec declares a CCE addon to install.
+                          properties:
+                            name:
+                              description: Name is the addon template name (e.g. "coredns",
+                                "metrics-server").
+                              type: string
+                            version:
+                              description: |-
+                                Version is the addon template version (e.g. "1.0.0"); empty means the
+                                latest supported by the cluster.
+                              type: string
+                          required:
+                          - name
+                          type: object
+                        type: array
+                      agencyName:
+                        description: AgencyName used by the cluster (1.27+; empty
+                          uses the system agency).
+                        type: string
+                      agencyTrustPolicy:
+                        description: |-
+                          AgencyTrustPolicy is the IAM v5 trust-policy JSON document used to
+                          auto-create the trust agency (信任委托) referenced by the role identity
+                          (identityRef -> CCEClusterRoleIdentity.spec.agencyName) when that agency
+                          does not already exist. Mirrors CAPA auto-creating the cluster IAM role:
+                          a non-empty policy + a role identity triggers EnsureAgency (List -> Create
+                          when absent); an existing agency is adopted (never overwritten). When the
+                          identity has no agency (controller/static identity), creation is skipped.
+                          The document must declare "Version": "5.0".
+                        type: string
+                      authentication:
+                        description: |-
+                          Authentication controls the API server authentication mode (mirrors
+                          CAPA EKS AccessConfig.AuthenticationMode). Default rbac;
+                          authenticating_proxy delegates auth to an external proxy (requires a
+                          CA + client cert + key). Immutable after creation.
+                        properties:
+                          authenticatingProxy:
+                            description: AuthenticatingProxy config (required when
+                              Mode=authenticating_proxy).
+                            properties:
+                              ca:
+                                description: CA certificate (PEM) of the proxy.
+                                type: string
+                              cert:
+                                description: Client certificate (PEM) signed by the
+                                  CA.
+                                type: string
+                              privateKey:
+                                description: Private key (PEM, unencrypted) matching
+                                  the client certificate.
+                                type: string
+                            type: object
+                          mode:
+                            default: rbac
+                            description: 'Mode: "rbac" (default) or "authenticating_proxy".'
+                            enum:
+                            - rbac
+                            - authenticating_proxy
+                            type: string
+                        type: object
+                      billing:
+                        description: 'Billing controls billing mode: 0=on-demand,
+                          1=subscription.'
+                        properties:
+                          mode:
+                            default: 0
+                            description: 'Mode: 0=on-demand, 1=subscription.'
+                            enum:
+                            - 0
+                            - 1
+                            format: int32
+                            type: integer
+                        type: object
+                      category:
+                        default: Turbo
+                        description: 'Category of the CCE cluster: CCE (Standard)
+                          or Turbo.'
+                        enum:
+                        - CCE
+                        - Turbo
+                        type: string
+                      clusterName:
+                        description: ClusterName of the owning CCE cluster.
+                        type: string
+                      containerNetwork:
+                        description: ContainerNetwork of the cluster.
+                        properties:
+                          cidr:
+                            description: CIDR of the container network (immutable
+                              after creation for tunnel mode).
+                            type: string
+                          cidrs:
+                            description: |-
+                              CIDRs lists additional container network segments (secondary CIDR).
+                              Maps to model.ContainerNetwork.Cidrs; each entry becomes a
+                              model.ContainerCidr. Empty = single-CIDR cluster.
+                            items:
+                              type: string
+                            type: array
+                          eniSubnets:
+                            description: ENISubnets for eni mode (Turbo).
+                            items:
+                              type: string
+                            type: array
+                          mode:
+                            default: eni
+                            description: 'Mode: overlay_l2 | vpc-router | eni (eni
+                              implies Turbo).'
+                            enum:
+                            - overlay_l2
+                            - vpc-router
+                            - eni
+                            type: string
+                        type: object
+                      controlPlaneEndpoint:
+                        description: |-
+                          ControlPlaneEndpoint is the API server endpoint (host:port) of the
+                          managed control plane. It is backfilled by the controller once the CCE
+                          cluster is available and is read by CAPI to populate
+                          Cluster.spec.controlPlaneEndpoint — the CAPI control-plane contract
+                          reads spec.controlPlaneEndpoint, not status.
+                        minProperties: 1
+                        properties:
+                          host:
+                            description: host is the hostname on which the API server
+                              is serving.
+                            maxLength: 512
+                            minLength: 1
+                            type: string
+                          port:
+                            description: port is the port on which the API server
+                              is serving.
+                            format: int32
+                            maximum: 65535
+                            minimum: 1
+                            type: integer
+                        type: object
+                      customSan:
+                        description: CustomSan entries for the API server certificate.
+                        items:
+                          type: string
+                        type: array
+                      enableAutopilot:
+                        description: |-
+                          EnableAutopilot creates an Autopilot (Serverless) cluster instead of a
+                          standard CCE/Turbo cluster (maps to CCE spec.enableAutopilot). Autopilot
+                          requires category Turbo and a compatible flavor (cce.autopilot.cluster).
+                        type: boolean
+                      encryptionConfig:
+                        description: |-
+                          EncryptionConfig controls etcd secret encryption (mirrors CAPA EKS
+                          EncryptionConfig). Mode Default leaves etcd unencrypted; KMS enables
+                          envelope encryption with a KMS key configured at the account level.
+                          Immutable after creation.
+                        properties:
+                          mode:
+                            default: Default
+                            description: |-
+                              Mode: "Default" (no encryption) or "KMS" (envelope encryption with a
+                              KMS key configured at the account level).
+                            enum:
+                            - Default
+                            - KMS
+                            type: string
+                        type: object
+                      endpointAccess:
+                        description: EndpointAccess controls public API server access.
+                        properties:
+                          cidrs:
+                            description: |-
+                              CIDRs is the public API server access whitelist (mapped to the CCE
+                              PublicAccess.cidrs). Only sent when public access is enabled; empty
+                              means the platform default ["0.0.0.0/0"]. CCE always exposes a
+                              VPC-internal (private) endpoint regardless of this field.
+                            items:
+                              type: string
+                            type: array
+                          private:
+                            default: true
+                            description: |-
+                              Private controls private (VPC-internal) API server access. CCE always
+                              exposes a VPC-internal endpoint and cannot disable it (platform-managed
+                              control plane), so this field defaults to true and false is rejected by
+                              the webhook. It exists for CAPA parity (CAPA EndpointAccess exposes
+                              public/private).
+                            type: boolean
+                          public:
+                            description: Public enables public API server access.
+                            type: boolean
+                        type: object
+                      flavor:
+                        description: Flavor of the cluster (official enum e.g. cce.s1.small
+                          ... cce.s2.xlarge).
+                        type: string
+                      identityRef:
+                        description: |-
+                          IdentityRef references a CCECluster*Identity (Controller/Static/Role).
+                          Empty means the controller default identity (CLOUD_SDK_AK/SK env).
+                        properties:
+                          apiVersion:
+                            description: API version of the referent.
+                            type: string
+                          fieldPath:
+                            description: |-
+                              If referring to a piece of an object instead of an entire object, this string
+                              should contain a valid JSON/Go field access statement, such as desiredState.manifest.containers[2].
+                              For example, if the object reference is to a container within a pod, this would take on a value like:
+                              "spec.containers{name}" (where "name" refers to the name of the container that triggered
+                              the event) or if no container name is specified "spec.containers[2]" (container with
+                              index 2 in this pod). This syntax is chosen only to have some well-defined way of
+                              referencing a part of an object.
+                            type: string
+                          kind:
+                            description: |-
+                              Kind of the referent.
+                              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+                            type: string
+                          name:
+                            description: |-
+                              Name of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#names
+                            type: string
+                          namespace:
+                            description: |-
+                              Namespace of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/namespaces/
+                            type: string
+                          resourceVersion:
+                            description: |-
+                              Specific resourceVersion to which this reference is made, if any.
+                              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#concurrency-control-and-consistency
+                            type: string
+                          uid:
+                            description: |-
+                              UID of the referent.
+                              More info: https://kubernetes.io/docs/concepts/overview/working-with-objects/names/#uids
+                            type: string
+                        type: object
+                        x-kubernetes-map-type: atomic
+                      ipv6enable:
+                        description: |-
+                          Ipv6Enable enables IPv6 dual-stack for the cluster (maps to CCE
+                          spec.ipv6enable). Requires a VPC with IPv6 enabled; the service
+                          network IPv6CIDR must be set as well.
+                        type: boolean
+                      logging:
+                        description: |-
+                          Logging configures control-plane log collection (mirrors CAPA EKS
+                          Logging). Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
+                        properties:
+                          logs:
+                            description: Logs lists the components to collect.
+                            items:
+                              description: ControlPlaneLogSpec declares one log collection
+                                item.
+                              properties:
+                                enable:
+                                  description: Enable turns collection on/off for
+                                    this item.
+                                  type: boolean
+                                name:
+                                  description: |-
+                                    Name is the log type: kube-apiserver, kube-controller-manager,
+                                    kube-scheduler, audit, or a system addon name.
+                                  type: string
+                                type:
+                                  description: 'Type is the component type: control,
+                                    audit, or system-addon.'
+                                  enum:
+                                  - control
+                                  - audit
+                                  - system-addon
+                                  type: string
+                              required:
+                              - name
+                              type: object
+                            type: array
+                          ttlInDays:
+                            description: TTLInDays is the log retention in days (official
+                              range 0-30).
+                            format: int32
+                            maximum: 30
+                            minimum: 0
+                            type: integer
+                        type: object
+                      podIdentityAssociations:
+                        description: |-
+                          PodIdentityAssociations bind Kubernetes ServiceAccounts to Huawei Cloud
+                          agencies (the CCE equivalent of EKS Pod Identity). Declarative set:
+                          create missing, delete removed.
+                        items:
+                          description: PodIdentityAssociationSpec declares a ServiceAccount
+                            -> agency binding.
+                          properties:
+                            agencyName:
+                              description: AgencyName is the Huawei Cloud agency (委托)
+                                to bind.
+                              type: string
+                            namespace:
+                              description: Namespace of the ServiceAccount (immutable
+                                per association).
+                              type: string
+                            serviceAccount:
+                              description: ServiceAccount name (one association per
+                                ServiceAccount).
+                              type: string
+                          required:
+                          - agencyName
+                          - namespace
+                          - serviceAccount
+                          type: object
+                        type: array
+                      serviceNetwork:
+                        description: ServiceNetwork of the cluster.
+                        properties:
+                          cidr:
+                            description: CIDR of the service network.
+                            type: string
+                          ipv6CIDR:
+                            description: |-
+                              IPv6CIDR of the service network (required when Ipv6Enable is true).
+                              Maps to model.ServiceNetwork.IPv6CIDR.
+                            type: string
+                        type: object
+                      version:
+                        description: Version of Kubernetes, e.g. "v1.30.0". Empty
+                          means CCE latest.
+                        type: string
+                    required:
+                    - clusterName
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta2: v1beta2
+  name: ccemanagedmachinepools.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CCEManagedMachinePool
+    listKind: CCEManagedMachinePoolList
+    plural: ccemanagedmachinepools
+    singular: ccemanagedmachinepool
+  scope: Namespaced
+  versions:
+  - additionalPrinterColumns:
+    - description: Cluster to which this CCEManagedMachinePool belongs
+      jsonPath: .metadata.labels.cluster\.x-k8s\.io/cluster-name
+      name: Cluster
+      type: string
+    - description: Actual node count
+      jsonPath: .status.replicas
+      name: Replicas
+      type: integer
+    - description: Node pool ready
+      jsonPath: .status.ready
+      name: Ready
+      type: string
+    - jsonPath: .metadata.creationTimestamp
+      name: Age
+      type: date
+    name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CCEManagedMachinePool is the Schema for the CCE node pools
+          (InfrastructureMachinePool).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEManagedMachinePoolSpec defines the desired state of CCEManagedMachinePool.
+              It maps 1:1 to a CCE node pool (NodePool). Field semantics follow the
+              official CreateNodePool API (nodeTemplate / initialNodeCount / autoscaling).
+            properties:
+              autoscaling:
+                description: |-
+                  Autoscaling maps to the CCE node pool autoscaling
+                  (NodePoolNodeAutoscaling). Only honored when the NodePoolAutoscaling
+                  feature gate is enabled (Alpha, off by default); otherwise scaling is
+                  driven solely by CAPI MachinePool replicas (questionnaire Q3, FR-2.6).
+                properties:
+                  enable:
+                    description: Enable turns autoscaling on for the node pool.
+                    type: boolean
+                  maxNodeCount:
+                    description: MaxNodeCount is the maximum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                  minNodeCount:
+                    description: MinNodeCount is the minimum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                type: object
+              availabilityZone:
+                description: |-
+                  AvailabilityZone of the nodes. Required by the webhook (CCE does not
+                  support random AZ via API).
+                type: string
+              billingMode:
+                description: 'BillingMode: 0=on-demand, 1=subscription.'
+                enum:
+                - 0
+                - 1
+                format: int32
+                type: integer
+              clusterName:
+                description: ClusterName of the owning CCE cluster (matches Cluster
+                  name).
+                type: string
+              dataVolumes:
+                description: DataVolumes of the nodes (nodeTemplate.dataVolumes).
+                items:
+                  description: NodeVolume describes a root or data volume of a node.
+                  properties:
+                    size:
+                      description: Size in GiB.
+                      format: int32
+                      minimum: 1
+                      type: integer
+                    type:
+                      description: Type of the volume, e.g. GPSSD / SSD / SAS.
+                      type: string
+                  required:
+                  - size
+                  type: object
+                type: array
+              dedicatedHostId:
+                description: |-
+                  DedicatedHostId is the dedicated host (专属主机) ID for the nodes
+                  (nodeTemplate.dedicatedHostId). Only effective for dedicated-host
+                  flavors.
+                type: string
+              ecsGroupId:
+                description: |-
+                  EcsGroupId is the ECS server group ID (云服务器组) for the nodes
+                  (nodeTemplate.ecsGroupId). Used to place nodes according to the group's
+                  affinity/anti-affinity policy.
+                type: string
+              extensionScaleGroups:
+                description: |-
+                  ExtensionScaleGroups extends the node pool into additional availability
+                  zones (CCE 扩展伸缩组). Each entry carries its own flavor and AZ; the
+                  base nodeTemplate.az remains the primary AZ.
+                items:
+                  description: |-
+                    ExtensionScaleGroupSpec describes one CCE extension scale group — an
+                    additional flavor/AZ set in a multi-AZ node pool.
+                  properties:
+                    availabilityZone:
+                      description: AvailabilityZone for this group.
+                      type: string
+                    flavor:
+                      description: Flavor is the ECS flavor for this group.
+                      type: string
+                    name:
+                      description: Name of the extension scale group.
+                      type: string
+                  required:
+                  - availabilityZone
+                  - flavor
+                  - name
+                  type: object
+                type: array
+              faultDomain:
+                description: |-
+                  FaultDomain is the fault domain (故障域) for the nodes
+                  (nodeTemplate.faultDomain). Enables single-AZ multi-fault-domain
+                  placement.
+                type: string
+              flavor:
+                description: Flavor is the ECS instance flavor of the nodes (nodeTemplate.flavor).
+                type: string
+              labels:
+                additionalProperties:
+                  type: string
+                description: Labels applied to the nodes.
+                type: object
+              nodePoolName:
+                description: NodePoolName is the CCE node pool name.
+                type: string
+              nodeRepair:
+                description: |-
+                  NodeRepair enables node auto-repair (mirrors CAPA NodeRepairConfig.
+                  Enabled). CCE has no EKS-style auto-repair switch, so the provider
+                  detects Abnormal/Error nodes and resets them via CCE ResetNode.
+                properties:
+                  enabled:
+                    default: false
+                    description: |-
+                      Enabled enables auto-repair: the provider detects Abnormal/Error nodes
+                      and resets them via CCE ResetNode.
+                    type: boolean
+                type: object
+              os:
+                description: |-
+                  OS image family of the nodes (nodeTemplate.os), e.g.
+                  "Huawei Cloud EulerOS 2.0". Required by the webhook (official
+                  CreateNodePool requires os unless a private image is used).
+                type: string
+              postInstall:
+                description: |-
+                  PostInstall is the base64-encoded script run after node installation
+                  (nodeTemplate.extendParam["alpha.cce/postInstall"]). Mirrors the CCE
+                  node lifecycle postInstall hook; the value must already be base64-
+                  encoded.
+                type: string
+              preInstall:
+                description: |-
+                  PreInstall is the base64-encoded script run before node installation
+                  (nodeTemplate.extendParam["alpha.cce/preInstall"]). Mirrors the CCE node
+                  lifecycle preInstall hook; the value must already be base64-encoded.
+                type: string
+              providerIDList:
+                description: |-
+                  ProviderIDList is the list of provider IDs of the nodes in the pool,
+                  populated by the controller so Cluster API can fill
+                  MachinePool.status.nodeRefs (and the deprecated readyReplicas). Each
+                  entry has the form huaweicloud:///<serverId>, matching the
+                  spec.providerID of the corresponding workload node. The controller owns
+                  this field.
+                items:
+                  type: string
+                type: array
+              replicas:
+                description: |-
+                  Replicas is the desired node count (maps to the node pool expected count).
+                  It is normally driven by the owning MachinePool.spec.replicas.
+                format: int32
+                type: integer
+              rootVolume:
+                description: |-
+                  RootVolume of the nodes (nodeTemplate.rootVolume). Pointer so an empty
+                  value is omitted; required by the webhook (size 40-1024 GiB).
+                properties:
+                  size:
+                    description: Size in GiB.
+                    format: int32
+                    minimum: 1
+                    type: integer
+                  type:
+                    description: Type of the volume, e.g. GPSSD / SSD / SAS.
+                    type: string
+                required:
+                - size
+                type: object
+              securityGroups:
+                description: |-
+                  SecurityGroups to bind to the node pool (Turbo >= 1.21, max 5 per
+                  official constraint).
+                items:
+                  type: string
+                maxItems: 5
+                type: array
+              spot:
+                description: |-
+                  Spot requests spot (竞价) instances for the node pool. Only effective
+                  when billingMode=0 (on-demand); maps to nodeTemplate.extendParam.
+                  marketType=spot.
+                type: boolean
+              spotPrice:
+                description: |-
+                  SpotPrice is the maximum hourly price the user is willing to pay for
+                  spot instances. Empty = the on-demand price is used as the spot price.
+                  Only effective when spot is set and billingMode=0.
+                type: string
+              sshKey:
+                description: SSHKey used to access the nodes (nodeTemplate.sshKey).
+                type: string
+              taints:
+                description: Taints applied to the nodes (max 20 per official constraint).
+                items:
+                  type: string
+                maxItems: 20
+                type: array
+              updateConfig:
+                description: |-
+                  UpdateConfig controls how spec changes are rolled onto existing nodes
+                  (CCE 同步节点池 UpgradeNodePool, the analogue of CAPA's UpdateConfig /
+                  rolling update). Node attributes such as securityGroups, taints, labels
+                  and OS only apply to newly created nodes, so the controller calls
+                  UpgradeNodePool to synchronise them onto running nodes.
+                properties:
+                  maxUnavailable:
+                    description: |-
+                      MaxUnavailable is the maximum number of nodes made unavailable per
+                      rolling batch (official range [1,20]; default 1).
+                    format: int32
+                    maximum: 20
+                    minimum: 1
+                    type: integer
+                type: object
+              waitPostInstallFinish:
+                description: |-
+                  WaitPostInstallFinish blocks pod scheduling until the post-install
+                  script finishes (nodeTemplate.waitPostInstallFinish). Mirrors CCE's
+                  NodeLifecycleConfig waitPostInstallFinish.
+                type: boolean
+            required:
+            - clusterName
+            - flavor
+            - nodePoolName
+            type: object
+          status:
+            description: CCEManagedMachinePoolStatus defines the observed state of
+              CCEManagedMachinePool.
+            properties:
+              availableReplicas:
+                description: AvailableReplicas is the number of nodes in Active state.
+                format: int32
+                type: integer
+              conditions:
+                description: Conditions defines current service state.
+                items:
+                  description: Condition contains details for one aspect of the current
+                    state of this API Resource.
+                  properties:
+                    lastTransitionTime:
+                      description: |-
+                        lastTransitionTime is the last time the condition transitioned from one status to another.
+                        This should be when the underlying condition changed.  If that is not known, then using the time when the API field changed is acceptable.
+                      format: date-time
+                      type: string
+                    message:
+                      description: |-
+                        message is a human readable message indicating details about the transition.
+                        This may be an empty string.
+                      maxLength: 32768
+                      type: string
+                    observedGeneration:
+                      description: |-
+                        observedGeneration represents the .metadata.generation that the condition was set based upon.
+                        For instance, if .metadata.generation is currently 12, but the .status.conditions[x].observedGeneration is 9, the condition is out of date
+                        with respect to the current state of the instance.
+                      format: int64
+                      minimum: 0
+                      type: integer
+                    reason:
+                      description: |-
+                        reason contains a programmatic identifier indicating the reason for the condition's last transition.
+                        Producers of specific condition types may define expected values and meanings for this field,
+                        and whether the values are considered a guaranteed API.
+                        The value should be a CamelCase string.
+                        This field may not be empty.
+                      maxLength: 1024
+                      minLength: 1
+                      pattern: ^[A-Za-z]([A-Za-z0-9_,:]*[A-Za-z0-9_])?$
+                      type: string
+                    status:
+                      description: status of the condition, one of True, False, Unknown.
+                      enum:
+                      - "True"
+                      - "False"
+                      - Unknown
+                      type: string
+                    type:
+                      description: type of condition in CamelCase or in foo.example.com/CamelCase.
+                      maxLength: 316
+                      pattern: ^([a-z0-9]([-a-z0-9]*[a-z0-9])?(\.[a-z0-9]([-a-z0-9]*[a-z0-9])?)*/)?(([A-Za-z0-9][-A-Za-z0-9_.]*)?[A-Za-z0-9])$
+                      type: string
+                  required:
+                  - lastTransitionTime
+                  - message
+                  - reason
+                  - status
+                  - type
+                  type: object
+                type: array
+              lastAppliedAutoscaling:
+                description: |-
+                  LastAppliedAutoscaling records the autoscaling config last synced to the
+                  cloud node pool (only meaningful when the NodePoolAutoscaling gate is
+                  on). Mirrors spec.autoscaling for drift detection.
+                properties:
+                  enable:
+                    description: Enable turns autoscaling on for the node pool.
+                    type: boolean
+                  maxNodeCount:
+                    description: MaxNodeCount is the maximum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                  minNodeCount:
+                    description: MinNodeCount is the minimum node count when autoscaling
+                      is enabled.
+                    format: int32
+                    type: integer
+                type: object
+              lastAppliedSecurityGroups:
+                description: |-
+                  LastAppliedSecurityGroups records the security groups last synced to the
+                  cloud node pool. Used to detect attribute drift so the controller only
+                  issues an UpdateNodePool when needed (and never rescales the pool just
+                  because an attribute changed — questionnaire Q3/Q5).
+                items:
+                  type: string
+                type: array
+              nodePoolID:
+                description: NodePoolID is the CCE node pool UUID.
+                type: string
+              observedGeneration:
+                description: |-
+                  ObservedGeneration is the latest generation observed by the controller.
+                  Used to prevent missed spec changes when controller-runtime event coalescing
+                  causes a status patch and an external spec patch to land in the same work
+                  queue window. Matches CAPA v2.13.0 commits 9e9bb6b31 / b5d6d3081 (applied
+                  to CCEManagedControlPlane; same pattern extended to CCEManagedMachinePool
+                  because machine pools can also miss spec changes during long reconciles).
+                format: int64
+                type: integer
+              ready:
+                description: Ready indicates the node pool is ready.
+                type: boolean
+              replicas:
+                description: Replicas is the actual number of nodes (consumed by CAPI
+                  MachinePool).
+                format: int32
+                type: integer
+            type: object
+        type: object
+    served: true
+    storage: true
+    subresources:
+      status: {}
+---
+apiVersion: apiextensions.k8s.io/v1
+kind: CustomResourceDefinition
+metadata:
+  annotations:
+    controller-gen.kubebuilder.io/version: v0.21.0
+  labels:
+    cluster.x-k8s.io/v1beta2: v1beta2
+  name: ccemanagedmachinepooltemplates.infrastructure.cluster.x-k8s.io
+spec:
+  group: infrastructure.cluster.x-k8s.io
+  names:
+    categories:
+    - cluster-api
+    kind: CCEManagedMachinePoolTemplate
+    listKind: CCEManagedMachinePoolTemplateList
+    plural: ccemanagedmachinepooltemplates
+    shortNames:
+    - ccemmpt
+    singular: ccemanagedmachinepooltemplate
+  scope: Namespaced
+  versions:
+  - name: v1beta2
+    schema:
+      openAPIV3Schema:
+        description: |-
+          CCEManagedMachinePoolTemplate is the Schema for the
+          CCEManagedMachinePoolTemplates API (InfrastructureMachinePoolTemplate).
+        properties:
+          apiVersion:
+            description: |-
+              APIVersion defines the versioned schema of this representation of an object.
+              Servers should convert recognized schemas to the latest internal value, and
+              may reject unrecognized values.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#resources
+            type: string
+          kind:
+            description: |-
+              Kind is a string value representing the REST resource this object represents.
+              Servers may infer this from the endpoint the client submits requests to.
+              Cannot be updated.
+              In CamelCase.
+              More info: https://git.k8s.io/community/contributors/devel/sig-architecture/api-conventions.md#types-kinds
+            type: string
+          metadata:
+            type: object
+          spec:
+            description: |-
+              CCEManagedMachinePoolTemplateSpec defines the desired state of
+              CCEManagedMachinePoolTemplate. It wraps the CCEManagedMachinePoolSpec so the
+              Cluster API topology controller can stamp a CCEManagedMachinePool from a
+              ClusterClass MachinePoolClass (InfrastructureMachinePoolTemplate contract:
+              spec.template.spec).
+            properties:
+              template:
+                description: |-
+                  CCEManagedMachinePoolTemplateResource describes the data needed to create a
+                  CCEManagedMachinePool from a template.
+                properties:
+                  spec:
+                    description: |-
+                      CCEManagedMachinePoolSpec defines the desired state of CCEManagedMachinePool.
+                      It maps 1:1 to a CCE node pool (NodePool). Field semantics follow the
+                      official CreateNodePool API (nodeTemplate / initialNodeCount / autoscaling).
+                    properties:
+                      autoscaling:
+                        description: |-
+                          Autoscaling maps to the CCE node pool autoscaling
+                          (NodePoolNodeAutoscaling). Only honored when the NodePoolAutoscaling
+                          feature gate is enabled (Alpha, off by default); otherwise scaling is
+                          driven solely by CAPI MachinePool replicas (questionnaire Q3, FR-2.6).
+                        properties:
+                          enable:
+                            description: Enable turns autoscaling on for the node
+                              pool.
+                            type: boolean
+                          maxNodeCount:
+                            description: MaxNodeCount is the maximum node count when
+                              autoscaling is enabled.
+                            format: int32
+                            type: integer
+                          minNodeCount:
+                            description: MinNodeCount is the minimum node count when
+                              autoscaling is enabled.
+                            format: int32
+                            type: integer
+                        type: object
+                      availabilityZone:
+                        description: |-
+                          AvailabilityZone of the nodes. Required by the webhook (CCE does not
+                          support random AZ via API).
+                        type: string
+                      billingMode:
+                        description: 'BillingMode: 0=on-demand, 1=subscription.'
+                        enum:
+                        - 0
+                        - 1
+                        format: int32
+                        type: integer
+                      clusterName:
+                        description: ClusterName of the owning CCE cluster (matches
+                          Cluster name).
+                        type: string
+                      dataVolumes:
+                        description: DataVolumes of the nodes (nodeTemplate.dataVolumes).
+                        items:
+                          description: NodeVolume describes a root or data volume
+                            of a node.
+                          properties:
+                            size:
+                              description: Size in GiB.
+                              format: int32
+                              minimum: 1
+                              type: integer
+                            type:
+                              description: Type of the volume, e.g. GPSSD / SSD /
+                                SAS.
+                              type: string
+                          required:
+                          - size
+                          type: object
+                        type: array
+                      dedicatedHostId:
+                        description: |-
+                          DedicatedHostId is the dedicated host (专属主机) ID for the nodes
+                          (nodeTemplate.dedicatedHostId). Only effective for dedicated-host
+                          flavors.
+                        type: string
+                      ecsGroupId:
+                        description: |-
+                          EcsGroupId is the ECS server group ID (云服务器组) for the nodes
+                          (nodeTemplate.ecsGroupId). Used to place nodes according to the group's
+                          affinity/anti-affinity policy.
+                        type: string
+                      extensionScaleGroups:
+                        description: |-
+                          ExtensionScaleGroups extends the node pool into additional availability
+                          zones (CCE 扩展伸缩组). Each entry carries its own flavor and AZ; the
+                          base nodeTemplate.az remains the primary AZ.
+                        items:
+                          description: |-
+                            ExtensionScaleGroupSpec describes one CCE extension scale group — an
+                            additional flavor/AZ set in a multi-AZ node pool.
+                          properties:
+                            availabilityZone:
+                              description: AvailabilityZone for this group.
+                              type: string
+                            flavor:
+                              description: Flavor is the ECS flavor for this group.
+                              type: string
+                            name:
+                              description: Name of the extension scale group.
+                              type: string
+                          required:
+                          - availabilityZone
+                          - flavor
+                          - name
+                          type: object
+                        type: array
+                      faultDomain:
+                        description: |-
+                          FaultDomain is the fault domain (故障域) for the nodes
+                          (nodeTemplate.faultDomain). Enables single-AZ multi-fault-domain
+                          placement.
+                        type: string
+                      flavor:
+                        description: Flavor is the ECS instance flavor of the nodes
+                          (nodeTemplate.flavor).
+                        type: string
+                      labels:
+                        additionalProperties:
+                          type: string
+                        description: Labels applied to the nodes.
+                        type: object
+                      nodePoolName:
+                        description: NodePoolName is the CCE node pool name.
+                        type: string
+                      nodeRepair:
+                        description: |-
+                          NodeRepair enables node auto-repair (mirrors CAPA NodeRepairConfig.
+                          Enabled). CCE has no EKS-style auto-repair switch, so the provider
+                          detects Abnormal/Error nodes and resets them via CCE ResetNode.
+                        properties:
+                          enabled:
+                            default: false
+                            description: |-
+                              Enabled enables auto-repair: the provider detects Abnormal/Error nodes
+                              and resets them via CCE ResetNode.
+                            type: boolean
+                        type: object
+                      os:
+                        description: |-
+                          OS image family of the nodes (nodeTemplate.os), e.g.
+                          "Huawei Cloud EulerOS 2.0". Required by the webhook (official
+                          CreateNodePool requires os unless a private image is used).
+                        type: string
+                      postInstall:
+                        description: |-
+                          PostInstall is the base64-encoded script run after node installation
+                          (nodeTemplate.extendParam["alpha.cce/postInstall"]). Mirrors the CCE
+                          node lifecycle postInstall hook; the value must already be base64-
+                          encoded.
+                        type: string
+                      preInstall:
+                        description: |-
+                          PreInstall is the base64-encoded script run before node installation
+                          (nodeTemplate.extendParam["alpha.cce/preInstall"]). Mirrors the CCE node
+                          lifecycle preInstall hook; the value must already be base64-encoded.
+                        type: string
+                      providerIDList:
+                        description: |-
+                          ProviderIDList is the list of provider IDs of the nodes in the pool,
+                          populated by the controller so Cluster API can fill
+                          MachinePool.status.nodeRefs (and the deprecated readyReplicas). Each
+                          entry has the form huaweicloud:///<serverId>, matching the
+                          spec.providerID of the corresponding workload node. The controller owns
+                          this field.
+                        items:
+                          type: string
+                        type: array
+                      replicas:
+                        description: |-
+                          Replicas is the desired node count (maps to the node pool expected count).
+                          It is normally driven by the owning MachinePool.spec.replicas.
+                        format: int32
+                        type: integer
+                      rootVolume:
+                        description: |-
+                          RootVolume of the nodes (nodeTemplate.rootVolume). Pointer so an empty
+                          value is omitted; required by the webhook (size 40-1024 GiB).
+                        properties:
+                          size:
+                            description: Size in GiB.
+                            format: int32
+                            minimum: 1
+                            type: integer
+                          type:
+                            description: Type of the volume, e.g. GPSSD / SSD / SAS.
+                            type: string
+                        required:
+                        - size
+                        type: object
+                      securityGroups:
+                        description: |-
+                          SecurityGroups to bind to the node pool (Turbo >= 1.21, max 5 per
+                          official constraint).
+                        items:
+                          type: string
+                        maxItems: 5
+                        type: array
+                      spot:
+                        description: |-
+                          Spot requests spot (竞价) instances for the node pool. Only effective
+                          when billingMode=0 (on-demand); maps to nodeTemplate.extendParam.
+                          marketType=spot.
+                        type: boolean
+                      spotPrice:
+                        description: |-
+                          SpotPrice is the maximum hourly price the user is willing to pay for
+                          spot instances. Empty = the on-demand price is used as the spot price.
+                          Only effective when spot is set and billingMode=0.
+                        type: string
+                      sshKey:
+                        description: SSHKey used to access the nodes (nodeTemplate.sshKey).
+                        type: string
+                      taints:
+                        description: Taints applied to the nodes (max 20 per official
+                          constraint).
+                        items:
+                          type: string
+                        maxItems: 20
+                        type: array
+                      updateConfig:
+                        description: |-
+                          UpdateConfig controls how spec changes are rolled onto existing nodes
+                          (CCE 同步节点池 UpgradeNodePool, the analogue of CAPA's UpdateConfig /
+                          rolling update). Node attributes such as securityGroups, taints, labels
+                          and OS only apply to newly created nodes, so the controller calls
+                          UpgradeNodePool to synchronise them onto running nodes.
+                        properties:
+                          maxUnavailable:
+                            description: |-
+                              MaxUnavailable is the maximum number of nodes made unavailable per
+                              rolling batch (official range [1,20]; default 1).
+                            format: int32
+                            maximum: 20
+                            minimum: 1
+                            type: integer
+                        type: object
+                      waitPostInstallFinish:
+                        description: |-
+                          WaitPostInstallFinish blocks pod scheduling until the post-install
+                          script finishes (nodeTemplate.waitPostInstallFinish). Mirrors CCE's
+                          NodeLifecycleConfig waitPostInstallFinish.
+                        type: boolean
+                    required:
+                    - clusterName
+                    - flavor
+                    - nodePoolName
+                    type: object
+                required:
+                - spec
+                type: object
+            required:
+            - template
+            type: object
+        type: object
+    served: true
+    storage: true
+---
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: capi-cce-controller-manager
+  namespace: capi-cce-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: leader-election-role
+  namespace: capi-cce-system
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - configmaps
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - coordination.k8s.io
+  resources:
+  - leases
+  verbs:
+  - get
+  - list
+  - watch
+  - create
+  - update
+  - patch
+  - delete
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRole
+metadata:
+  name: manager-role
+rules:
+- apiGroups:
+  - ""
+  resources:
+  - events
+  verbs:
+  - create
+  - patch
+- apiGroups:
+  - ""
+  resources:
+  - secrets
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - clusters
+  - machinepools
+  verbs:
+  - get
+  - list
+  - watch
+- apiGroups:
+  - cluster.x-k8s.io
+  resources:
+  - clusters/status
+  verbs:
+  - get
+- apiGroups:
+  - controlplane.cluster.x-k8s.io
+  resources:
+  - ccemanagedcontrolplanes
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - controlplane.cluster.x-k8s.io
+  resources:
+  - ccemanagedcontrolplanes/status
+  verbs:
+  - get
+  - patch
+  - update
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - cceclustercontrolleridentities
+  verbs:
+  - create
+  - get
+  - list
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - cceclusters
+  - ccemanagedmachinepools
+  verbs:
+  - create
+  - delete
+  - get
+  - list
+  - patch
+  - update
+  - watch
+- apiGroups:
+  - infrastructure.cluster.x-k8s.io
+  resources:
+  - cceclusters/status
+  - ccemanagedmachinepools/status
+  verbs:
+  - get
+  - patch
+  - update
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: leader-election-rolebinding
+  namespace: capi-cce-system
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: Role
+  name: leader-election-role
+subjects:
+- kind: ServiceAccount
+  name: capi-cce-controller-manager
+  namespace: capi-cce-system
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: ClusterRoleBinding
+metadata:
+  name: capi-cce-manager-rolebinding
+roleRef:
+  apiGroup: rbac.authorization.k8s.io
+  kind: ClusterRole
+  name: manager-role
+subjects:
+- kind: ServiceAccount
+  name: capi-cce-controller-manager
+  namespace: capi-cce-system
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: webhook-service
+  namespace: capi-cce-system
+spec:
+  ports:
+  - port: 443
+    targetPort: 9443
+  selector:
+    control-plane: controller-manager
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  labels:
+    control-plane: controller-manager
+  name: capi-cce-controller-manager
+  namespace: capi-cce-system
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      control-plane: controller-manager
+  template:
+    metadata:
+      annotations:
+        cert-manager.io/inject-ca-from: capi-cce-system/serving-cert
+      labels:
+        control-plane: controller-manager
+    spec:
+      containers:
+      - args:
+        - --leader-elect
+        - --health-probe-bind-address=:8081
+        env:
+        - name: CLOUD_SDK_AK
+          valueFrom:
+            secretKeyRef:
+              key: accessKey
+              name: capi-cce-credentials
+              optional: true
+        - name: CLOUD_SDK_SK
+          valueFrom:
+            secretKeyRef:
+              key: secretKey
+              name: capi-cce-credentials
+              optional: true
+        image: swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller:latest
+        imagePullPolicy: IfNotPresent
+        livenessProbe:
+          httpGet:
+            path: /healthz
+            port: 8081
+          initialDelaySeconds: 15
+          periodSeconds: 20
+        name: manager
+        ports:
+        - containerPort: 8080
+          name: metrics
+          protocol: TCP
+        - containerPort: 9443
+          name: webhook-server
+          protocol: TCP
+        readinessProbe:
+          httpGet:
+            path: /readyz
+            port: 8081
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        resources:
+          limits:
+            cpu: 500m
+            memory: 256Mi
+          requests:
+            cpu: 100m
+            memory: 64Mi
+        securityContext:
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+          readOnlyRootFilesystem: true
+        volumeMounts:
+        - mountPath: /tmp/k8s-webhook-server/serving-certs
+          name: webhook-certs
+          readOnly: true
+      securityContext:
+        runAsNonRoot: true
+      serviceAccountName: capi-cce-controller-manager
+      terminationGracePeriodSeconds: 10
+      volumes:
+      - name: webhook-certs
+        secret:
+          secretName: webhook-service-cert
+---
+apiVersion: cert-manager.io/v1
+kind: Certificate
+metadata:
+  name: serving-cert
+  namespace: capi-cce-system
+spec:
+  dnsNames:
+  - webhook-service.capi-cce-system.svc
+  - webhook-service.capi-cce-system.svc.cluster.local
+  issuerRef:
+    kind: Issuer
+    name: selfsigned-issuer
+  secretName: webhook-service-cert
+---
+apiVersion: cert-manager.io/v1
+kind: Issuer
+metadata:
+  name: selfsigned-issuer
+  namespace: capi-cce-system
+spec:
+  selfSigned: {}
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: MutatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: capi-cce-system/serving-cert
+  name: mutating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta2-ccecluster
+  failurePolicy: Fail
+  name: mutation.ccecluster.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - cceclusters
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /mutate-controlplane-cluster-x-k8s-io-v1beta2-ccemanagedcontrolplane
+  failurePolicy: Fail
+  name: mutation.ccemanagedcontrolplane.controlplane.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - controlplane.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - ccemanagedcontrolplanes
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /mutate-controlplane-cluster-x-k8s-io-v1beta2-ccemanagedcontrolplanetemplate
+  failurePolicy: Fail
+  name: mutation.ccemanagedcontrolplanetemplate.controlplane.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - controlplane.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - ccemanagedcontrolplanetemplates
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta2-ccemanagedmachinepool
+  failurePolicy: Fail
+  name: mutation.ccemanagedmachinepool.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - ccemanagedmachinepools
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /mutate-infrastructure-cluster-x-k8s-io-v1beta2-ccemanagedmachinepooltemplate
+  failurePolicy: Fail
+  name: mutation.ccemanagedmachinepooltemplate.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - ccemanagedmachinepooltemplates
+  sideEffects: None
+---
+apiVersion: admissionregistration.k8s.io/v1
+kind: ValidatingWebhookConfiguration
+metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: capi-cce-system/serving-cert
+  name: validating-webhook-configuration
+webhooks:
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-ccecluster
+  failurePolicy: Fail
+  name: validation.ccecluster.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - cceclusters
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-cceclustercontrolleridentity
+  failurePolicy: Fail
+  name: validation.cceclustercontrolleridentity.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - cceclustercontrolleridentities
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-cceclusterroleidentity
+  failurePolicy: Fail
+  name: validation.cceclusterroleidentity.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - cceclusterroleidentities
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-cceclusterstaticidentity
+  failurePolicy: Fail
+  name: validation.cceclusterstaticidentity.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - cceclusterstaticidentities
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-cceclustertemplate
+  failurePolicy: Fail
+  name: validation.cceclustertemplate.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - cceclustertemplates
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /validate-controlplane-cluster-x-k8s-io-v1beta2-ccemanagedcontrolplane
+  failurePolicy: Fail
+  name: validation.ccemanagedcontrolplane.controlplane.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - controlplane.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - ccemanagedcontrolplanes
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /validate-controlplane-cluster-x-k8s-io-v1beta2-ccemanagedcontrolplanetemplate
+  failurePolicy: Fail
+  name: validation.ccemanagedcontrolplanetemplate.controlplane.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - controlplane.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - ccemanagedcontrolplanetemplates
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-ccemanagedmachinepool
+  failurePolicy: Fail
+  name: validation.ccemanagedmachinepool.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - ccemanagedmachinepools
+  sideEffects: None
+- admissionReviewVersions:
+  - v1
+  clientConfig:
+    service:
+      name: webhook-service
+      namespace: capi-cce-system
+      path: /validate-infrastructure-cluster-x-k8s-io-v1beta2-ccemanagedmachinepooltemplate
+  failurePolicy: Fail
+  name: validation.ccemanagedmachinepooltemplate.infrastructure.cluster.x-k8s.io
+  rules:
+  - apiGroups:
+    - infrastructure.cluster.x-k8s.io
+    apiVersions:
+    - v1beta2
+    operations:
+    - CREATE
+    - UPDATE
+    resources:
+    - ccemanagedmachinepooltemplates
+  sideEffects: None
