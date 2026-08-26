@@ -275,10 +275,12 @@ clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm -
 
 > ⚠️ `~/.cluster-api/overrides/` 目录会干扰 init，先删除。若卡 cert-manager（quay.io 慢），改用方式 B。
 
-**方式 B：public SWR 免认证（cert-manager 直接走 SWR，不碰 quay.io）**
+**方式 B：public SWR 免认证（全部镜像走 SWR，完整安装）**
+
+> 所有镜像（CAPI core/bootstrap/control-plane + cert-manager + provider）均从 public SWR 拉取，不依赖 quay.io / registry.k8s.io 公网连通性。
 
 ```bash
-# ===== 方式 B（完整版，一次复制执行）=====
+# ===== 方式 B：全部镜像走 public SWR（完整安装，一次复制执行）=====
 
 # 1. 组织 repository 目录 + 配置 clusterctl
 mkdir -p /root/repository/{cluster-api,bootstrap-kubeadm,control-plane-kubeadm}/v1.14.0
@@ -309,7 +311,7 @@ providers:
     type: "InfrastructureProvider"
 EOF
 
-# 2. 先装 cert-manager（SWR 镜像，避免 quay.io 慢卡）
+# 2. 安装 cert-manager（SWR 镜像）
 curl -L -o /root/cert-manager.yaml https://github.com/cert-manager/cert-manager/releases/download/v1.21.1/cert-manager.yaml
 sed -i 's|quay.io/jetstack/cert-manager-controller:v1.21.1|swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-controller:v1.21.1|g' /root/cert-manager.yaml
 sed -i 's|quay.io/jetstack/cert-manager-cainjector:v1.21.1|swr.cn-north-4.myhuaweicloud.com/capi_cce/cert-manager-cainjector:v1.21.1|g' /root/cert-manager.yaml
@@ -317,7 +319,7 @@ sed -i 's|quay.io/jetstack/cert-manager-webhook:v1.21.1|swr.cn-north-4.myhuaweic
 kubectl apply -f /root/cert-manager.yaml
 kubectl -n cert-manager rollout status deploy/cert-manager deploy/cert-manager-cainjector deploy/cert-manager-webhook --timeout=180s
 
-# 3. clusterctl init（自动跳过已装的 cert-manager；装 CAPI + bootstrap + control-plane + cce）
+# 3. clusterctl init（安装 CAPI + bootstrap + control-plane + cce，全部走 SWR）
 export KUBECONFIG=/root/capi-mgmt.kubeconfig
 clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
 ```
