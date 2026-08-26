@@ -20,7 +20,11 @@ import (
 // first failure) and the shared ceiling. Each consecutive throttled/quota
 // failure doubles the delay up to backoffMax; a clean reconcile resets it.
 const (
-	throttledBackoffBase = time.Minute
+	// 429 (APIGW.0308) retries count towards Huawei Cloud's 1-minute write
+	// window, so a 1-minute backoff always re-hits the window and the repeated
+	// retries accumulate a longer platform penalty (429 stall lasted 20+ min).
+	// 3 minutes > the window, letting it drain between retries.
+	throttledBackoffBase = 3 * time.Minute
 	quotaBackoffBase     = 5 * time.Minute
 	permissionBackoff    = 30 * time.Minute // long, user-action; not exponential
 	backoffMax           = 30 * time.Minute
