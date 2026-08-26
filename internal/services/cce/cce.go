@@ -792,7 +792,7 @@ func toAccessPolicyModel(in AccessPolicyInput) *model.AccessPolicy {
 // GetClusterKubeconfig implements Service. It downloads the cluster certificate
 // via CreateKubernetesClusterCert and assembles a standard kubeconfig
 // (mirrors the ACK provider's controller_kubeconfig.go approach).
-func (s *Client) GetClusterKubeconfig(_ context.Context, clusterID string, durationDays int32) (string, error) {
+func (s *Client) GetClusterKubeconfig(ctx context.Context, clusterID string, durationDays int32) (string, error) {
 	// Official duration semantics (CreateKubernetesClusterCert.txt): range
 	// [1, 1827] days; -1 means the 5-year maximum (1827). Clamp anything
 	// outside so the API is never called with an invalid value.
@@ -811,7 +811,26 @@ func (s *Client) GetClusterKubeconfig(_ context.Context, clusterID string, durat
 	if err != nil {
 		return "", errors.Wrap(err, "CreateKubernetesClusterCert failed")
 	}
-	return assembleKubeconfig(resp)
+	kube, err := assembleKubeconfig(resp)
+	if err != nil {
+		return "", err
+	}
+	// CCE's CreateKubernetesClusterCert can return a stale server (e.g. the
+	// address assigned at creation, 10.0.1.17) that differs from the live
+	// Internal endpoint after the control plane settles (10.0.1.200). Overlay
+	// the current Internal endpoint so the kubeconfig is actually reachable.
+	if info, serr := s.ShowCluster(ctx, clusterID); serr == nil {
+		for _, ep := range info.Endpoints {
+			if ep.Type == "Internal" && ep.URL != "" {
+				kube, err = replaceKubeconfigServer(kube, ep.URL)
+				if err != nil {
+					return "", errors.Wrap(err, "replace kubeconfig server")
+				}
+				break
+			}
+		}
+	}
+	return kube, nil
 }
 
 // CreateNodePool implements Service.
@@ -1512,6 +1531,27 @@ func assembleKubeconfig(resp *model.CreateKubernetesClusterCertResponse) (string
 		return "", errors.Wrap(err, "failed to serialize kubeconfig")
 	}
 	return string(data), nil
+}
+
+// replaceKubeconfigServer rewrites every cluster's server to the given URL.
+// CCE's CreateKubernetesClusterCert can embed a stale server (the address
+// assigned at creation); GetClusterKubeconfig overlays the live Internal
+// endpoint so the kubeconfig is reachable from the same VPC.
+func replaceKubeconfigServer(kubeconfig, server string) (string, error) {
+	cfg, err := clientcmd.Load([]byte(kubeconfig))
+	if err != nil {
+		return "", errors.Wrap(err, "parse kubeconfig")
+	}
+	for name := range cfg.Clusters {
+		if cfg.Clusters[name] != nil {
+			cfg.Clusters[name].Server = server
+		}
+	}
+	out, err := clientcmd.Write(*cfg)
+	if err != nil {
+		return "", errors.Wrap(err, "serialize kubeconfig")
+	}
+	return string(out), nil
 }
 
 // decodeCertData decodes a base64-encoded certificate/key field from the CCE
