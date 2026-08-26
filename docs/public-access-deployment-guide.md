@@ -188,6 +188,8 @@ BASTION_KEY=capi-bastion-key.pem
 ssh -i capi-bastion-key.pem root@<公网IP>
 ```
 
+> ⚠️ **`BASTION_PUBLIC_IP` 可能为空**：EIP 绑定有延迟（约 30-60 秒）。为空时等 1 分钟后用 `nocloud go run ./hack/survey-hw` 查 EIP 的 `public_ip_address`，或控制台 ECS → 弹性公网 IP 确认公网 IP。
+
 > 跳板机用 `capi-bastion-key` 密钥对（私钥保存在本地 `capi-bastion-key.pem`），对标 CAPA EC2 密钥对登录。
 
 **控制台方式**（不跑 `deploy-bastion` 时，本方式同样满足后续流程）：
@@ -228,6 +230,15 @@ MGMT_CLUSTER_ID=...
 ```
 
 > **对标 CAPA**：管理集群 A 默认公网+私有 endpoint（`CCE_DEPLOY_PUBLIC=true` 自动绑 EIP）。设 `CCE_DEPLOY_PUBLIC_CIDRS` 可限制公网来源 IP；设 `CCE_DEPLOY_PUBLIC=false` 则仅私有。
+
+> ⏱️ **耗时与中断处理**：本步骤总耗时约 10-20 分钟（集群创建 5-10 分钟 + 节点池 5-10 分钟），期间输出间隔长（15 秒轮询）属正常，**不要误判为卡住而中断**。若进程被中断（Ctrl-C/超时）：集群可能已创建但节点池未建——用 `-list` 查集群 ID，再 `-pool -cluster <ID>` 补建节点池 + 下载 kubeconfig：
+
+```bash
+nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> \
+  CCE_DEPLOY_KEYPAIR=capi-bastion-key go run ./hack/deploy-mgmt-cluster -list   # 记下 MGMT 集群 ID
+nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> \
+  CCE_DEPLOY_KEYPAIR=capi-bastion-key go run ./hack/deploy-mgmt-cluster -pool -cluster <MGMT_CLUSTER_ID>
+```
 
 **控制台方式**（不跑 `deploy-mgmt-cluster` 时，本方式同样满足后续流程）：
 
@@ -286,6 +297,28 @@ kubectl version --client
 clusterctl version
 ```
 
+> ⚠️ **慢网警告**：跳板机从 `dl.k8s.io`/GitHub 直下 kubectl(47MB)+clusterctl(33MB) 可能**非常慢**（华为云国际出口，实测 20+ 分钟）。**推荐改用 SWR 工具镜像**（`capi-cce-tools`，华为云内网秒下）：
+>
+> ```bash
+> # 跳板机：从 SWR 工具镜像提取 kubectl + clusterctl（public，免认证）
+> docker pull swr.cn-north-4.myhuaweicloud.com/capi_cce/capi-cce-tools:latest
+> CID=$(docker create swr.cn-north-4.myhuaweicloud.com/capi_cce/capi-cce-tools:latest)
+> docker cp $CID:/usr/local/bin/kubectl /usr/local/bin/kubectl
+> docker cp $CID:/usr/local/bin/clusterctl /usr/local/bin/clusterctl
+> docker rm $CID
+> chmod +x /usr/local/bin/kubectl /usr/local/bin/clusterctl
+> kubectl version --client && clusterctl version
+> ```
+>
+> 或本地（macOS）下载 linux/amd64 二进制后 scp 到跳板机：
+> ```bash
+> # 本地：curl -LO https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl
+> #       curl -L https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.0/clusterctl-linux-amd64
+> scp -i capi-bastion-key.pem kubectl clusterctl-linux-amd64 root@<BASTION_PUBLIC_IP>:/usr/local/bin/
+> ```
+>
+> ⚠️ 不要用跳板机 `yum install kubectl`：华为云源只有 **v1.23**（太旧，连不了 v1.35 集群）。
+
 ### 步骤 6：连集群 A（公网 endpoint）
 
 ```bash
@@ -305,21 +338,52 @@ ssh -i capi-bastion-key.pem root@<BASTION_PUBLIC_IP> \
 scp -i capi-bastion-key.pem _artifacts/cceswr/infrastructure-components.yaml metadata.yaml \
   root@<BASTION_PUBLIC_IP>:/root/
 
-# 跳板机：注册 clusterctl（本地 provider 源）
+# 本地：下载 CAPI 官方组件（v1.14.0）并把镜像改为 SWR（避免 GitHub 慢 / registry.k8s.io 从华为云超时）
+curl -L -o /tmp/core-components.yaml  https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.0/core-components.yaml
+curl -L -o /tmp/bootstrap-components.yaml https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.0/bootstrap-components.yaml
+curl -L -o /tmp/control-plane-components.yaml https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.0/control-plane-components.yaml
+curl -L -o /tmp/capi-metadata.yaml https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.0/metadata.yaml
+for f in core bootstrap control-plane; do :; done
+sed -i '' 's|registry.k8s.io/cluster-api/cluster-api-controller:v1.14.0|swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-controller:v1.14.0|g' /tmp/core-components.yaml
+sed -i '' 's|registry.k8s.io/cluster-api/kubeadm-bootstrap-controller:v1.14.0|swr.cn-north-4.myhuaweicloud.com/capi_cce/kubeadm-bootstrap-controller:v1.14.0|g' /tmp/bootstrap-components.yaml
+sed -i '' 's|registry.k8s.io/cluster-api/kubeadm-control-plane-controller:v1.14.0|swr.cn-north-4.myhuaweicloud.com/capi_cce/kubeadm-control-plane-controller:v1.14.0|g' /tmp/control-plane-components.yaml
+scp -i capi-bastion-key.pem /tmp/core-components.yaml /tmp/bootstrap-components.yaml \
+  /tmp/control-plane-components.yaml /tmp/capi-metadata.yaml root@<BASTION_PUBLIC_IP>:/root/
+
+# 跳板机：组织 repository 目录（{basepath}/{provider}/{version}/{components|metadata}.yaml）
+cd /root/repository && mkdir -p cluster-api/v1.14.0 bootstrap-kubeadm/v1.14.0 control-plane-kubeadm/v1.14.0 infrastructure-cce/v0.1.0
+cp /root/core-components.yaml      cluster-api/v1.14.0/ && cp /root/capi-metadata.yaml cluster-api/v1.14.0/metadata.yaml
+cp /root/bootstrap-components.yaml bootstrap-kubeadm/v1.14.0/ && cp /root/capi-metadata.yaml bootstrap-kubeadm/v1.14.0/metadata.yaml
+cp /root/control-plane-components.yaml control-plane-kubeadm/v1.14.0/ && cp /root/capi-metadata.yaml control-plane-kubeadm/v1.14.0/metadata.yaml
+cp /root/infrastructure-components.yaml infrastructure-cce/v0.1.0/ && cp /root/metadata.yaml infrastructure-cce/v0.1.0/metadata.yaml
+rm -rf ~/.cluster-api/overrides   # ⚠️ overrides 目录会干扰 init（优先用 override 而非配置 url），init 前必须删
+
+# 跳板机：注册 clusterctl（4 个 provider 全指向本地 repository）
 mkdir -p ~/.cluster-api
 cat > ~/.cluster-api/clusterctl.yaml <<'EOF'
 providers:
+  - name: "cluster-api"
+    url: "file:///root/repository/cluster-api/v1.14.0/core-components.yaml"
+    type: "CoreProvider"
+  - name: "kubeadm"
+    url: "file:///root/repository/bootstrap-kubeadm/v1.14.0/bootstrap-components.yaml"
+    type: "BootstrapProvider"
+  - name: "kubeadm"
+    url: "file:///root/repository/control-plane-kubeadm/v1.14.0/control-plane-components.yaml"
+    type: "ControlPlaneProvider"
   - name: "cce"
-    url: "file:///root/cce/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
+    url: "file:///root/repository/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
     type: "InfrastructureProvider"
 EOF
 
-# 跳板机：clusterctl init（cert-manager/CAPI 从公网 registry 直拉，不搬运 SWR）
+# 跳板机：clusterctl init（全本地源：YAML 本地读、镜像从 SWR 拉，不碰 GitHub/registry.k8s.io）
 export KUBECONFIG=/root/capi-mgmt.kubeconfig
-clusterctl init --infrastructure cce
+clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
 ```
 
-> **对标 CAPA**：本步骤 cert-manager（quay.io）、CAPI（registry.k8s.io）**公网直拉**（节点有公网出网——公网 IP 或 NAT），无需搬运到 SWR + imagePullSecret（省去 e2e 指南的"搬运 CAPI 镜像"步骤）。
+> **说明**：本方式把 CAPI 官方组件的 YAML 放本地 + 镜像改 SWR，`clusterctl init` **完全不碰 GitHub/registry.k8s.io**（实测跳板机访问这两者很慢）。cert-manager 由 clusterctl 自动安装（quay.io 直拉，实测正常）；若 quay.io 也不可达，可改用 SWR 的 cert-manager 镜像（`capi_cce/cert-manager-*:v1.21.1`）。
+>
+> **若公网网络快**（海外 region 或大带宽），可简化为公网直拉：只配置 cce provider 本地源，`clusterctl init --infrastructure cce` 让 CAPI/cert-manager 走默认公网源。
 
 ### 步骤 8：Provider 镜像交付（私有 SWR / public SWR 二选一）+ webhook cert
 
@@ -377,6 +441,7 @@ webhook 证书已由 **cert-manager 自动签发**（`config/certmanager` 的 Is
 | `cert-manager-controller:v1.21.1` | quay.io/jetstack | cert-manager 控制器 | amd64 |
 | `cert-manager-cainjector:v1.21.1` | quay.io/jetstack | cert-manager CA 注入 | amd64 |
 | `cert-manager-webhook:v1.21.1` | quay.io/jetstack | cert-manager webhook | amd64 |
+| `capi-cce-tools:latest` | 本地打包 | 跳板机工具镜像：kubectl v1.30 + clusterctl v1.14 | amd64 |
 
 ## 阶段三：创建工作负载集群 + 验证
 
@@ -453,6 +518,8 @@ nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_DEPLOY_REGION=cn-north-4 \
 | 6 | 节点永久卡 `Installing` | 子网未指定 DNS | 子网 DNS 填 `100.125.1.250,100.125.129.250` | ✅ 已记录 |
 | 7 | 镜像推 SWR 报 `Invalid image, fail to parse 'manifest.json'` | BuildKit attestation / OCI manifest，SWR 不支持 | 构建 `--provenance=false --sbom=false`；或 `docker save` + `crane push` | ✅ 已记录 |
 | 8 | 命令连接失败 | 本地代理干扰 | 命令前加 `nocloud`（剥离代理） | ✅ 已记录 |
+| 9 | 集群 B 控制面 CreateCluster 429 持续 | 429 重试也计数、刷新窗口，provider 退避重试间隔不足 | 停止一切写操作等窗口清（10 分钟）后，`kubectl annotate ccemanagedcontrolplane <name> t=$(date +%s) --overwrite` 触发重试 | ✅ 已记录 |
+| 10 | 跳板机下载 kubectl/clusterctl 极慢 | 华为云国际出口访问 dl.k8s.io/GitHub 慢 | 用 SWR 工具镜像 `capi-cce-tools` 提取（内网快），或本地下载后 scp | ✅ 已记录 |
 
 ### 详细排查
 

@@ -315,6 +315,18 @@ kubectl version --client
 clusterctl version
 ```
 
+> ⚠️ **慢网警告**：跳板机从 `dl.k8s.io`/GitHub 直下 kubectl(47MB)+clusterctl(33MB) 可能很慢（华为云国际出口，实测 20+ 分钟）。**推荐用 SWR 工具镜像**（`swr.cn-north-4.myhuaweicloud.com/capi_cce/capi-cce-tools:latest`，内含 kubectl v1.30 + clusterctl v1.14，华为云内网秒下）：
+>
+> ```bash
+> docker pull swr.cn-north-4.myhuaweicloud.com/capi_cce/capi-cce-tools:latest
+> CID=$(docker create swr.cn-north-4.myhuaweicloud.com/capi_cce/capi-cce-tools:latest)
+> docker cp $CID:/usr/local/bin/kubectl /usr/local/bin/kubectl
+> docker cp $CID:/usr/local/bin/clusterctl /usr/local/bin/clusterctl
+> docker rm $CID && chmod +x /usr/local/bin/kubectl /usr/local/bin/clusterctl
+> ```
+>
+> 或本地（macOS）下载 linux/amd64 二进制后 scp。⚠️ 不要用跳板机 `yum install kubectl`（华为云源只有 v1.23，连不了 v1.35）。
+
 | 参数 | 含义 |
 |---|---|
 | `-LO` | curl 跟随重定向（-L）+ 按远程文件名保存（-O） |
