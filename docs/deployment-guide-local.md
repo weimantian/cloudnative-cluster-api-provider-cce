@@ -161,7 +161,7 @@ kubectl version --client && clusterctl version
 **步骤 2：CCE 管理集群 A（控制台，公网 endpoint）**
 
 1. 控制台 → 计算 → 云容器引擎 CCE → 购买集群：
-   - 集群类型：**CCE Turbo**（默认，eni 网络）；版本 `v1.35`；规模 `cce.s1.small`；按需计费。
+   - **集群名称：`capi-mgmt`**（固定，后续 kubeconfig/引用都以它为准）；集群类型：**CCE Turbo**（默认，eni 网络）；版本 `v1.35`；规模 `cce.s1.small`；按需计费。
    - 网络：VPC `capi-vpc`、节点子网 `capi-subnet-node`、**ENI 子网 `capi-subnet-eni`**（Turbo 必填，控制台对应「**容器子网**」字段，下拉选 `capi-subnet-eni`）。
    - 节点池：规格 `c7.large.2`（sub-ENI 配额）×2 节点，密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
 2. 提交，等待集群「可用」（约 5-10 分钟）。
@@ -178,7 +178,7 @@ kubectl version --client && clusterctl version
 
 ```bash
 export KUBECONFIG=~/.kube/capi-mgmt.kubeconfig
-kubectl config set-cluster <cluster-name> --server=https://<集群A公网IP>:5443
+kubectl config set-cluster capi-mgmt --server=https://<集群A公网IP>:5443
 kubectl get nodes    # 应看到 2 个 Ready 节点（本地直连公网 endpoint）
 ```
 
