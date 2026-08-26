@@ -491,7 +491,7 @@ kubectl get cluster my-cce-cluster -w        # 等 PHASE=Provisioned
 kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -w   # Ready=True
 kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -w          # Ready=True
 
-clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
+clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig  # provider 用当前 Internal endpoint 生成（59f43ca 修复过期地址）
 kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个 Ready 节点（pool-0/1/2 各 1，分布 3 个 AZ）
 kubectl get machinepool 2>&1 | tail -4   # 3 个 MachinePool（pool-0/1/2）
 ```
@@ -545,7 +545,7 @@ nocloud CLOUD_SDK_AK=<AK> CLOUD_SDK_SK=<SK> CCE_DEPLOY_REGION=cn-north-4 \
 | 2 | Provider pod ImagePullBackOff（方式 B） | SWR 仓库未设为 public | 仓库设为 public（免认证直拉） | ✅ 已记录 |
 | 3 | cert-manager/CAPI pod ImagePullBackOff | 公网拉镜像失败（NAT 未配 / region 不可达） | 确认 NAT + SNAT ACTIVE；region 不可达时改用 e2e 指南 SWR 搬运方案 | ✅ 已记录 |
 | 4 | 集群 A 无公网 endpoint | CCE 不自动分配公网 IP | `CCE_DEPLOY_PUBLIC=true` 自动绑 EIP；失败手动 `hack/bind-eip` | ✅ 已记录 |
-| 5 | 连续 429 限流（`APIGW.0308`） | CCE 写限流 10 次/分钟，429 重试也计数 | hack 脚本已内置 429 退避；脚本间隔 ≥60s；密集 429 后停止写 1-10 分钟 | ✅ 已修复（b3bfb4b） |
+| 5 | 连续 429 限流（`APIGW.0308`） | CCE 写限流 10 次/分钟，429 重试也计数；密集重试会累积平台惩罚 | ① hack 脚本内置 429 退避；② **provider 内置 3min 退避**（`requeue.go`，自动恢复不再手动 touch）；③ 脚本间隔 ≥60s；密集 429 后停止写 1-10 分钟 | ✅ 已修复（b3bfb4b + 5d5d272） |
 | 6 | 节点永久卡 `Installing` | 子网未指定 DNS | 子网 DNS 填 `100.125.1.250,100.125.129.250` | ✅ 已记录 |
 | 7 | 镜像推 SWR 报 `Invalid image, fail to parse 'manifest.json'` | BuildKit attestation / OCI manifest，SWR 不支持 | 构建 `--provenance=false --sbom=false`；或 `docker save` + `crane push` | ✅ 已记录 |
 | 8 | 命令连接失败 | 本地代理干扰 | 命令前加 `nocloud`（剥离代理） | ✅ 已记录 |

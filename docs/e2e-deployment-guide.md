@@ -203,7 +203,12 @@ nocloud CCE_DEPLOY_VPC="$CCE_DEPLOY_VPC" \
 | `CCE_DEPLOY_VPC` / `CCE_DEPLOY_SUBNET` | 管理集群所在 VPC/子网 |
 | `CCE_DEPLOY_KEYPAIR=capi-bastion-key` | 节点 SSH 密钥对（保留私钥的，可排查） |
 | `CCE_DEPLOY_K8S_VERSION=v1.35` | 集群 K8s 版本 |
-| 默认 flavor | 集群 `cce.s1.small`，节点 `c6.large.2` ×2 |
+| `CCE_DEPLOY_CATEGORY`（可选） | 集群类别：`turbo`（**默认**，eni 网络，需 `CCE_DEPLOY_ENI_SUBNET`）/ `standard`（vpc-router） |
+| `CCE_DEPLOY_ENI_SUBNET`（Turbo 必填） | ENI 子网 neutron ID（Turbo 容器网段来自 ENI 子网） |
+| `CCE_DEPLOY_SERVICE_CIDR`（可选） | 服务网段（默认 `10.247.0.0/16`，创建后不可变） |
+| `CCE_DEPLOY_CONTAINER_CIDR`（可选） | 容器网段（默认 `10.244.0.0/16`；Turbo 模式忽略，走 ENI 子网） |
+| `CCE_DEPLOY_MGMT_FLAVOR`（可选） | 节点规格（默认按类别：Turbo `c7.large.2` sub-ENI / Standard `c6.large.2`） |
+| 默认 flavor | 集群 `cce.s1.small`，节点按类别默认 ×2 |
 | `CCE_DEPLOY_MGMT_AZS`（可选） | 多 AZ 列表（逗号分隔，如 `cn-north-4a,cn-north-4b`）；默认单 AZ（`CCE_DEPLOY_AZ`）。首个 AZ 为主节点池，其余作为扩展组（管理集群高可用） |
 | `CCE_DEPLOY_PUBLIC` / `CCE_DEPLOY_PUBLIC_CIDRS`（可选） | 公网访问开关（默认 `true`）+ 来源 IP 白名单（逗号分隔 CIDR，空=全部开放）。对标 CAPA EKS 控制面"公网+私有"端点：默认自动绑定 EIP 开放公网；设 `false` 则仅内网 |
 | `CCE_DEPLOY_PUBLIC_NODES`（可选） | 节点出网方式（默认 `true`）：`true` = 每个节点绑公网 EIP（对标 AWS 公有子网，直连出网、无需 NAT）；`false` = 节点私有（需 `hack/nat-egress` NAT 出网）。`CCE_DEPLOY_PUBLIC_NODES_BANDWIDTH` 控制带宽（默认 5 Mbps） |
@@ -386,29 +391,31 @@ clusterctl init --infrastructure cce
 
 ### 步骤 8.5：使用 `clusterctl generate cluster` 生成集群 B（推荐，替代手写）
 
-provider 提供 clusterctl 模板（Standard 默认 + Turbo flavor），支持 `clusterctl generate cluster` 自动生成 5 个对象的清单。
+provider 提供 clusterctl 模板（**默认 Turbo** 多 pool + `--flavor standard` 可选 Standard），支持 `clusterctl generate cluster` 自动生成 5+ 对象清单（多 AZ = 3 个 MachinePool，对标 EKS 多节点组）。
 
 ```bash
 # 跳板机：安装模板到 clusterctl overrides 目录（目录名 = provider 标签/版本）
 mkdir -p ~/.cluster-api/overrides/infrastructure-cce/v0.1.0
-cp /root/cluster-template-clusterctl.yaml ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template.yaml
+cp /root/cluster-template.yaml          ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template.yaml
+cp /root/cluster-template-standard.yaml ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-standard.yaml
 cp /root/cluster-template-turbo.yaml    ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-turbo.yaml
 
-# 生成 Standard 集群 B 清单（默认 flavor）
-clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 > my-cluster.yaml
+# 生成集群 B 清单（默认 Turbo 多 pool；--worker-machine-count=1 → 3 个 pool 各 1 节点 = 3 节点分布 3 AZ）
+clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 --worker-machine-count=1 > my-cluster.yaml
 
-# 生成 Turbo 集群 B 清单（eni 网络模式）
-clusterctl generate cluster my-cce-cluster --flavor turbo --kubernetes-version v1.35.0 > my-cluster-turbo.yaml
+# 或 Standard（vpc-router）
+clusterctl generate cluster my-cce-cluster --flavor standard --kubernetes-version v1.35.0 --worker-machine-count=1 > my-cluster-standard.yaml
 ```
 
 | 参数 | 含义 |
 |---|---|
-| `--flavor turbo` | 选择 Turbo（eni）模板；省略则用默认 Standard（vpc-router）模板 |
+| `--flavor standard` | 选择 Standard（vpc-router）模板；省略则用默认 Turbo（eni）模板 |
 | `--kubernetes-version` | K8s 版本（替换 `${KUBERNETES_VERSION}`） |
-| `${CLUSTER_NAME}` / `${WORKER_MACHINE_COUNT}` | clusterctl 自动替换；`--worker-machine-count` 控制节点数 |
+| `--worker-machine-count` | 每个 MachinePool 的节点数（默认模板 3 个 pool，各 AZ 一个） |
+| `${CLUSTER_NAME}` / `${WORKER_MACHINE_COUNT}` | clusterctl 自动替换 |
 
-> ⚠️ 生成后仍需替换 **`VERIFY-*` 占位符**（region/VPC/子网/ENI 子网/密钥对/AZ，clusterctl 不替换这些），再创建 credentials/bootstrap Secret 并 `kubectl apply`（见步骤 9 后半段）。
-> 模板源文件：`config/samples/cluster-template-clusterctl.yaml`（Standard）与 `config/samples/cluster-template-turbo.yaml`（Turbo）；纯 kubectl apply 的手写模板仍保留在 `config/samples/cluster-template.yaml`。
+> ⚠️ 生成后仍需替换 **`VERIFY-*` 占位符**（region/VPC/子网/ENI 子网/密钥对/AZ/AZ2/AZ3/flavor，clusterctl 不替换这些），再创建 credentials/bootstrap Secret 并 `kubectl apply`（见步骤 9 后半段）。
+> 模板源文件：`config/samples/cluster-template.yaml`（默认 Turbo 多 pool）、`cluster-template-standard.yaml`（Standard）、`cluster-template-turbo.yaml`（Turbo）；纯 kubectl apply 的手写模板保留在 `config/samples/cluster-template.yaml`（Standard 单 pool）。
 
 ### 步骤 9：生成集群 B 配置（托管节点组）+ kubectl apply
 
@@ -416,6 +423,7 @@ clusterctl generate cluster my-cce-cluster --flavor turbo --kubernetes-version v
 
 ```bash
 # 跳板机：写入标准版（vpc-router）my-cluster.yaml —— 替换 VERIFY-* 占位符
+# ⚠️ 以下为 **Standard 变体** 示例（`--flavor standard`）；默认 Turbo 多 pool（pool-0/1/2 各一 AZ）请用步骤 8.5 的 `clusterctl generate cluster`（含 VERIFY-FLAVOR/AZ2/AZ3 占位符）
 # 模板亦见 config/samples/cluster-template.yaml（本配置为占位符替换后的完整版）
 cat > my-cluster.yaml <<'EOF'
 apiVersion: cluster.x-k8s.io/v1beta1
@@ -463,7 +471,7 @@ metadata:
     cluster.x-k8s.io/cluster-name: my-cce-cluster
 spec:
   clusterName: my-cce-cluster
-  category: CCE # 默认即 CCE，可省略
+  category: CCE # Standard；默认 Turbo 可省略（eni 模式自动推断）
   version: "v1.35.0" # webhook 要求完整 semver；provider 内部去 patch 调 CCE API
   flavor: cce.s1.small
   containerNetwork:
@@ -575,7 +583,7 @@ kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes
 |---|---|---|
 | 网络模式 | `containerNetwork.mode: vpc-router`（overlay_l2） | `containerNetwork.mode: eni` |
 | 容器网段 | 独立 CIDR（如 10.245.0.0/16） | 走 ENI 子网（无需容器 CIDR） |
-| 集群类别 | `category: CCE`（默认） | `category: Turbo`（eni 模式自动推断） |
+| 集群类别 | `category: CCE`（Standard；`--flavor standard`） | `category: Turbo`（**默认**；eni 模式自动推断） |
 | 必备网络 | 节点子网 | 节点子网 + **ENI 子网**（`type: eni`） |
 | 节点 flavor | 任意通用型（c6.large.2） | **sub-ENI 配额 > 0**（如 c7.large.2；c6sne 已废弃） |
 | 必填 spec | — | `containerNetwork.eniSubnets`（webhook 强制） |
