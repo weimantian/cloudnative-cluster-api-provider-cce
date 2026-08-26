@@ -102,7 +102,7 @@ cloudnative-cluster-api-provider-cce/
 关键流程:
 
 - **API → 控制器**:`api/*` 类型由 `controllers/*` 协调;每次 reconcile 通过 `internal/services/*`(SDK 封装)读取华为云状态,并经 `internal/scope`(patchHelper)持久化结果。
-- **部署**:`hack/deploy-*` 预置真实云(VPC、跳板机、管理集群);`scripts/deploy-kind.sh` 在本地完成;完整端到端指南见 [docs/e2e-deployment-guide.md](docs/e2e-deployment-guide.md)。
+- **部署**:`hack/deploy-*` 预置真实云(VPC、跳板机、管理集群);`scripts/deploy-kind.sh` 在本地完成;完整部署指南见 [docs/deployment-guide.md](docs/deployment-guide.md)(控制台 + CloudShell),零公网/公网详细版见 [docs/e2e-deployment-guide.md](docs/e2e-deployment-guide.md) 和 [docs/public-access-deployment-guide.md](docs/public-access-deployment-guide.md)。
 - **冒烟测试**:`scripts/smoke-cce.sh` + `hack/cleanup-smoke-clusters` 驱动真实云冒烟测试,与部署流程相互独立。
 
 ## 架构
@@ -360,6 +360,8 @@ clusterctl delete --infrastructure cce
 
 ## 详细文档
 
+- **[部署指导（控制台 + CloudShell，推荐）](docs/deployment-guide.md)** — 统一精简版：SWR 公共镜像清单 + 三阶段部署 + 踩坑记录
+- [端到端部署文档（零公网详细版）](docs/e2e-deployment-guide.md) · [公网访问部署指导（详细版）](docs/public-access-deployment-guide.md)
 - [架构设计文档](docs/architecture-design.md)
 - [需求设计文档](docs/requirements-design.md)
 - [调研依据与事实清单(含验证清单)](docs/research-sources.md)

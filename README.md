@@ -110,7 +110,7 @@ cloudnative-cluster-api-provider-cce/
 Key flows:
 
 - **API → reconciler**: `api/*` types are reconciled by `controllers/*`; each reconcile reads the Huawei Cloud state through `internal/services/*` (SDK wrappers) and persists results via `internal/scope` (patchHelper).
-- **Deployment**: `hack/deploy-*` provisions the real cloud (VPC, bastion, management cluster); `scripts/deploy-kind.sh` runs everything locally; the full end-to-end guide is in [docs/e2e-deployment-guide.md](docs/e2e-deployment-guide.md).
+- **Deployment**: `hack/deploy-*` provisions the real cloud (VPC, bastion, management cluster); `scripts/deploy-kind.sh` runs everything locally; the full deployment guide is in [docs/deployment-guide.md](docs/deployment-guide.md) (console + CloudShell) with detailed zero-public/public variants in [docs/e2e-deployment-guide.md](docs/e2e-deployment-guide.md) and [docs/public-access-deployment-guide.md](docs/public-access-deployment-guide.md).
 - **Smoke test**: `scripts/smoke-cce.sh` + `hack/cleanup-smoke-clusters` drive the real-cloud smoke test, independent of the deploy flow.
 
 ## Architecture
@@ -417,6 +417,8 @@ clusterctl delete --infrastructure cce
 
 ## Detailed Documentation
 
+- **[部署指导（控制台 + CloudShell，推荐）](docs/deployment-guide.md)** — 统一精简版：SWR 公共镜像清单 + 三阶段部署 + 踩坑记录
+- [端到端部署文档（零公网详细版）](docs/e2e-deployment-guide.md) · [公网访问部署指导（详细版）](docs/public-access-deployment-guide.md)
 - [Architecture design (Chinese)](docs/architecture-design.md)
 - [Requirements design (Chinese)](docs/requirements-design.md)
 - [Research sources & verification checklist (Chinese)](docs/research-sources.md)
