@@ -2,7 +2,9 @@
 # the contract version may change between minor or major versions, but *not*
 # between patch versions.
 #
-# update this file only when a new major or minor version is released
+# Shared by every provider published in this repository's GitHub Release:
+#   cluster-api (core), kubeadm bootstrap/control-plane (CAPI v1.x series)
+#   and cce (this infrastructure provider, 0.x series).
 apiVersion: clusterctl.cluster.x-k8s.io/v1alpha3
 kind: Metadata
 releaseSeries:
@@ -51,3 +53,6 @@ releaseSeries:
   - major: 1
     minor: 0
     contract: v1beta1
+  - major: 0
+    minor: 1
+    contract: v1beta2
