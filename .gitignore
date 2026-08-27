@@ -41,3 +41,10 @@ _artifacts/
 /regtest
 /create-bastion
 /swr-login
+
+# ===== docs: only the four deployment guides are tracked/pushed =====
+/docs/*
+!/docs/deployment-guide.md
+!/docs/deployment-guide.en.md
+!/docs/deployment-guide-local.md
+!/docs/deployment-guide-local.en.md
