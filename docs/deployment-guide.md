@@ -166,7 +166,7 @@
    - 节点池：**节点子网选 `capi-subnet-node`**（⚠️ 不是 ENI 子网——ENI 子网只给容器用）；规格 `c7.large.2`（sub-ENI 配额）× **3-4** 节点（⚠️ 管理集群要跑 CAPI + cert-manager + CCE 监控，`×2` 会 pod 数满导致 provider Pending；`c7.xlarge.2` ×2 也可），密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
 2. 提交，等待集群「可用」（约 5-10 分钟）。
 3. **公网 endpoint**：集群详情 → 连接信息 → 绑定公网 IP。
-4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件 → 保存到本地，**上传到跳板机 `/root/capi-mgmt.kubeconfig`**（CloudShell 文件上传；华为云下载的文件名可能是 `capi-mgmt-kubeconfig.yaml` 或 `capi-a-kubeconfig.yaml` 之类，上传后重命名，步骤 5 用）：
+4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件（下载的文件名为 `capi-mgmt-kubeconfig.yaml`）→ 保存到本地，**上传到跳板机 `/root/capi-mgmt.kubeconfig`**（CloudShell 文件上传，步骤 5 用）：
 
 ```bash
 # CloudShell 上传后确认
