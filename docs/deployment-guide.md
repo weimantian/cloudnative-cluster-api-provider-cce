@@ -207,7 +207,17 @@ export KUBECONFIG=/root/capi-mgmt-kubeconfig.yaml
 kubectl get nodes    # 应看到 2 个 Ready 节点
 ```
 
-**步骤 6：clusterctl init（方式 A / 方式 B 二选一，各自完整可复制）**
+> ⚠️ **终端代理会干扰 GitHub 拉取**：`clusterctl`（Go 程序）和 `curl` 默认走 `http_proxy`/`https_proxy` 环境变量。若终端配了不可达的代理（如 `127.0.0.1:7890`），GitHub API/资产拉取会静默失败，表现为 `failed to find releases tagged with a valid semantic version number`、`SSL_ERROR_SYSCALL` 等。执行前先检查并处理：
+>
+> ```bash
+> env | grep -i proxy   # 看是否有代理变量
+> # 方案一（彻底）：剥离代理，下面所有命令都不走代理
+> unset http_proxy https_proxy HTTP_PROXY HTTPS_PROXY all_proxy ALL_PROXY SOCKS_PROXY
+> # 方案二（保留代理）：仅让 GitHub 域名绕过代理
+> export NO_PROXY=github.com,api.github.com,raw.githubusercontent.com,*.githubusercontent.com
+> ```
+>
+> 方式 A / 方式 B 的命令请在剥离代理（或设置 NO_PROXY）后执行；kubectl 连集群 A 同理。
 
 **方式 A：clusterctl 默认（cert-manager 由 clusterctl 自动装，quay.io 拉取）**
 
