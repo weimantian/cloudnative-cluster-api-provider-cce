@@ -166,11 +166,11 @@
    - 节点池：**节点子网选 `capi-subnet-node`**（⚠️ 不是 ENI 子网——ENI 子网只给容器用）；规格 `c7.large.2`（sub-ENI 配额）× **3-4** 节点（⚠️ 管理集群要跑 CAPI + cert-manager + CCE 监控，`×2` 会 pod 数满导致 provider Pending；`c7.xlarge.2` ×2 也可），密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
 2. 提交，等待集群「可用」（约 5-10 分钟）。
 3. **公网 endpoint**：集群详情 → 连接信息 → 绑定公网 IP。
-4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件（下载的文件名为 `capi-mgmt-kubeconfig.yaml`）→ 保存到本地，**上传到跳板机 `/root/capi-mgmt.kubeconfig`**（CloudShell 文件上传，步骤 5 用）：
+4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件（下载的文件名为 `capi-mgmt-kubeconfig.yaml`）→ 保存到本地，**上传到跳板机 `/root/capi-mgmt-kubeconfig.yaml`**（CloudShell 文件上传，步骤 5 用）：
 
 ```bash
 # CloudShell 上传后确认
-ls -l /root/capi-mgmt.kubeconfig
+ls -l /root/capi-mgmt-kubeconfig.yaml
 ```
 
 > 若用 Standard（vpc-router）集群：集群类型选 CCE Standard，不填 ENI 子网，节点规格任意通用型（`c6.large.2`）。
@@ -200,10 +200,10 @@ kubectl version --client && clusterctl version
 
 **步骤 5：连集群 A（kubeconfig）**
 
-上传步骤 3 下载的 `capi-mgmt.kubeconfig` 到跳板机 `/root/`（CloudShell 文件上传），验证：
+上传步骤 3 下载的 `capi-mgmt-kubeconfig.yaml` 到跳板机 `/root/`（CloudShell 文件上传），验证：
 
 ```bash
-export KUBECONFIG=/root/capi-mgmt.kubeconfig
+export KUBECONFIG=/root/capi-mgmt-kubeconfig.yaml
 kubectl get nodes    # 应看到 2 个 Ready 节点
 ```
 
@@ -220,7 +220,7 @@ curl -L -o /root/.cluster-api/clusterctl.yaml \
   https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/clusterctl.yaml
 
 # 2. clusterctl init（自动装 cert-manager + CAPI + bootstrap + control-plane + cce）
-export KUBECONFIG=/root/capi-mgmt.kubeconfig
+export KUBECONFIG=/root/capi-mgmt-kubeconfig.yaml
 clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
 ```
 
@@ -245,7 +245,7 @@ kubectl apply -f /root/cert-manager.yaml
 kubectl -n cert-manager rollout status deploy/cert-manager deploy/cert-manager-cainjector deploy/cert-manager-webhook --timeout=180s
 
 # 3. clusterctl init（安装 CAPI + bootstrap + control-plane + cce，全部走 SWR）
-export KUBECONFIG=/root/capi-mgmt.kubeconfig
+export KUBECONFIG=/root/capi-mgmt-kubeconfig.yaml
 clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
 ```
 
@@ -380,7 +380,7 @@ kubectl create secret generic my-cce-cluster-credentials \
 
 | 操作 | 命令 |
 |---|---|
-| 连集群 A | `export KUBECONFIG=/root/capi-mgmt.kubeconfig && kubectl get nodes` |
+| 连集群 A | `export KUBECONFIG=/root/capi-mgmt-kubeconfig.yaml && kubectl get nodes` |
 | 初始化 Provider | `clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce` |
 | 生成集群 B | `clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 --worker-machine-count=1 > my-cluster.yaml` |
 | 提交集群 B | `kubectl apply -f my-cluster.yaml` |
