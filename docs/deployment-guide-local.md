@@ -274,7 +274,7 @@ sed -i '' \
   -e 's|VERIFY-REGION|cn-north-4|g' -e 's|VERIFY-VPC-ID|<VPC-ID>|g' \
   -e 's|VERIFY-SUBNET-ID|<节点子网-ID>|g' -e 's|VERIFY-ENI-SUBNET-ID|<ENI子网-ID>|g' \
   -e 's|VERIFY-ENI-NEUTRON-ID|<ENI子网-neutron-ID>|g' \
-  -e 's|VERIFY-AZ2|cn-north-4b|g' -e 's|VERIFY-AZ3|cn-north-4c|g' \
+  -e 's|VERIFY-AZ2|cn-north-4b|g' -e 's|VERIFY-AZ3|cn-north-4g|g' \   # AZ3 -> AZ7 (cn-north-4g)
   -e 's|VERIFY-AZ|cn-north-4a|g' -e 's|VERIFY-KEYPAIR-NAME|capi-bastion-key|g' \
   -e 's|VERIFY-FLAVOR|c7.large.2|g' \
   my-cluster.yaml
@@ -294,7 +294,7 @@ kubectl apply -f my-cluster.yaml
 ```
 
 > 多 AZ = 多 MachinePool：`pool-0/1/2` 各在一个 AZ。
-> ⚠️ ① 各 AZ 需有可用 sub-ENI flavor：如 `cn-north-4c` 常缺 `c7.large.2`（售罄/资源不足），可换 `at7.large.1` 或改用 `cn-north-4a/4b`。
+> ⚠️ ① 各 AZ 需有可用 sub-ENI flavor：pool-2 用 AZ7（`cn-north-4g`，有 `c7.large.2`）；若某 AZ 缺货，可换 `at7.large.1` 或换其他 AZ。
 > ⚠️ ② **节点池 AZ 创建后不可变**：AZ/flavor 填错必须删池重建（`kubectl delete machinepool <name>` + `ccemanagedmachinepool <name>` → 改 yaml → `kubectl apply`），不能只 patch（CCE 节点池不会重建）。
 > ⚠️ ③ 所有 `VERIFY-*` 都要替换（10 个）：REGION / VPC-ID / SUBNET-ID / ENI-SUBNET-ID / ENI-NEUTRON-ID / AZ / AZ2 / AZ3 / KEYPAIR-NAME / FLAVOR——漏任何一�g 都导致创建失败。替换后 `grep VERIFY my-cluster.yaml` 应无输出。
 

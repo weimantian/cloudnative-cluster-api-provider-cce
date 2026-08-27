@@ -269,7 +269,7 @@ sed -i '' \
   -e 's|VERIFY-REGION|cn-north-4|g' -e 's|VERIFY-VPC-ID|<VPC-ID>|g' \
   -e 's|VERIFY-SUBNET-ID|<node-subnet-ID>|g' -e 's|VERIFY-ENI-SUBNET-ID|<ENI-subnet-ID>|g' \
   -e 's|VERIFY-ENI-NEUTRON-ID|<ENI-subnet-neutron-ID>|g' \
-  -e 's|VERIFY-AZ2|cn-north-4b|g' -e 's|VERIFY-AZ3|cn-north-4c|g' \
+  -e 's|VERIFY-AZ2|cn-north-4b|g' -e 's|VERIFY-AZ3|cn-north-4g|g' \   # AZ3 -> AZ7 (cn-north-4g)
   -e 's|VERIFY-AZ|cn-north-4a|g' -e 's|VERIFY-KEYPAIR-NAME|capi-bastion-key|g' \
   -e 's|VERIFY-FLAVOR|c7.large.2|g' \
   my-cluster.yaml
@@ -289,7 +289,7 @@ kubectl apply -f my-cluster.yaml
 ```
 
 > Multi-AZ = multiple MachinePools: `pool-0/1/2` each lives in one AZ.
-> ⚠️ ① Every AZ must have an available sub-ENI flavor: e.g. `cn-north-4c` often lacks `c7.large.2` (sold out / insufficient resources) — switch to `at7.large.1` or use `cn-north-4a/4b`.
+> ⚠️ ① Every AZ must have an available sub-ENI flavor: pool-2 uses AZ7 (`cn-north-4g`, has `c7.large.2`); if an AZ runs out, switch to `at7.large.1` or another AZ.
 > ⚠️ ② **A node pool's AZ is immutable after creation**: if the AZ/flavor is wrong you must delete the pool and recreate it (`kubectl delete machinepool <name>` + `ccemanagedmachinepool <name>` → edit the yaml → `kubectl apply`); patching alone does not work (CCE does not rebuild the pool).
 > ⚠️ ③ Replace every `VERIFY-*` placeholder (10 of them): REGION / VPC-ID / SUBNET-ID / ENI-SUBNET-ID / ENI-NEUTRON-ID / AZ / AZ2 / AZ3 / KEYPAIR-NAME / FLAVOR — missing any one of them fails the creation. After replacing, `grep VERIFY my-cluster.yaml` should output nothing.
 
