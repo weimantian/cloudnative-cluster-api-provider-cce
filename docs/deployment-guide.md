@@ -236,32 +236,21 @@ kubectl get nodes    # 应看到 2 个 Ready 节点
 ```bash
 # ===== 方式 A（完整版，一次复制执行）=====
 
-# 1. 组织 repository 目录 + 配置 clusterctl
-mkdir -p /root/repository/{cluster-api,bootstrap-kubeadm,control-plane-kubeadm}/v1.14.0
-mkdir -p /root/repository/infrastructure-cce/v0.1.0
-cp /root/core-components.yaml          /root/repository/cluster-api/v1.14.0/
-cp /root/capi-metadata.yaml            /root/repository/cluster-api/v1.14.0/metadata.yaml
-cp /root/bootstrap-components.yaml     /root/repository/bootstrap-kubeadm/v1.14.0/
-cp /root/capi-metadata.yaml            /root/repository/bootstrap-kubeadm/v1.14.0/metadata.yaml
-cp /root/control-plane-components.yaml /root/repository/control-plane-kubeadm/v1.14.0/
-cp /root/capi-metadata.yaml            /root/repository/control-plane-kubeadm/v1.14.0/metadata.yaml
-cp /root/infrastructure-components.yaml /root/repository/infrastructure-cce/v0.1.0/
-cp /root/metadata.yaml                  /root/repository/infrastructure-cce/v0.1.0/metadata.yaml
-
+# 1. 配置 clusterctl（4 个 provider 全部从 GitHub 拉；组件镜像已指向 public SWR）
 mkdir -p /root/.cluster-api
 cat > /root/.cluster-api/clusterctl.yaml <<'EOF'
 providers:
   - name: "cluster-api"
-    url: "file:///root/repository/cluster-api/v1.14.0/core-components.yaml"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/core-components.yaml"
     type: "CoreProvider"
   - name: "kubeadm"
-    url: "file:///root/repository/bootstrap-kubeadm/v1.14.0/bootstrap-components.yaml"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/bootstrap-components.yaml"
     type: "BootstrapProvider"
   - name: "kubeadm"
-    url: "file:///root/repository/control-plane-kubeadm/v1.14.0/control-plane-components.yaml"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/control-plane-components.yaml"
     type: "ControlPlaneProvider"
   - name: "cce"
-    url: "file:///root/repository/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/infrastructure-components.yaml"
     type: "InfrastructureProvider"
 EOF
 
@@ -279,32 +268,21 @@ clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm -
 ```bash
 # ===== 方式 B：全部镜像走 public SWR（完整安装，一次复制执行）=====
 
-# 1. 组织 repository 目录 + 配置 clusterctl
-mkdir -p /root/repository/{cluster-api,bootstrap-kubeadm,control-plane-kubeadm}/v1.14.0
-mkdir -p /root/repository/infrastructure-cce/v0.1.0
-cp /root/core-components.yaml          /root/repository/cluster-api/v1.14.0/
-cp /root/capi-metadata.yaml            /root/repository/cluster-api/v1.14.0/metadata.yaml
-cp /root/bootstrap-components.yaml     /root/repository/bootstrap-kubeadm/v1.14.0/
-cp /root/capi-metadata.yaml            /root/repository/bootstrap-kubeadm/v1.14.0/metadata.yaml
-cp /root/control-plane-components.yaml /root/repository/control-plane-kubeadm/v1.14.0/
-cp /root/capi-metadata.yaml            /root/repository/control-plane-kubeadm/v1.14.0/metadata.yaml
-cp /root/infrastructure-components.yaml /root/repository/infrastructure-cce/v0.1.0/
-cp /root/metadata.yaml                  /root/repository/infrastructure-cce/v0.1.0/metadata.yaml
-
+# 1. 配置 clusterctl（4 个 provider 全部从 GitHub 拉；组件镜像已指向 public SWR）
 mkdir -p /root/.cluster-api
 cat > /root/.cluster-api/clusterctl.yaml <<'EOF'
 providers:
   - name: "cluster-api"
-    url: "file:///root/repository/cluster-api/v1.14.0/core-components.yaml"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/core-components.yaml"
     type: "CoreProvider"
   - name: "kubeadm"
-    url: "file:///root/repository/bootstrap-kubeadm/v1.14.0/bootstrap-components.yaml"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/bootstrap-components.yaml"
     type: "BootstrapProvider"
   - name: "kubeadm"
-    url: "file:///root/repository/control-plane-kubeadm/v1.14.0/control-plane-components.yaml"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/control-plane-components.yaml"
     type: "ControlPlaneProvider"
   - name: "cce"
-    url: "file:///root/repository/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/infrastructure-components.yaml"
     type: "InfrastructureProvider"
 EOF
 
