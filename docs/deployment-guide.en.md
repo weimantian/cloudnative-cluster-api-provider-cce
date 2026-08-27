@@ -291,7 +291,7 @@ sed -i \
   -e 's|VERIFY-REGION|cn-north-4|g' -e 's|VERIFY-VPC-ID|<VPC-ID>|g' \
   -e 's|VERIFY-SUBNET-ID|<node-subnet-ID>|g' -e 's|VERIFY-ENI-SUBNET-ID|<ENI-subnet-ID>|g' \
   -e 's|VERIFY-ENI-NEUTRON-ID|<ENI-subnet-neutron-ID>|g' \
-  -e 's|VERIFY-AZ2|cn-north-4b|g' -e 's|VERIFY-AZ3|cn-north-4g|g' \   # AZ3 -> AZ7 (cn-north-4g)
+  -e 's|VERIFY-AZ2|cn-north-4b|g' -e 's|VERIFY-AZ7|cn-north-4g|g' \   # AZ7 = cn-north-4g
   -e 's|VERIFY-AZ|cn-north-4a|g' -e 's|VERIFY-KEYPAIR-NAME|capi-bastion-key|g' \
   -e 's|VERIFY-FLAVOR|c7.large.2|g' \
   my-cluster.yaml
@@ -308,7 +308,7 @@ kubectl apply -f my-cluster.yaml
 > Multi-AZ = multiple MachinePools: `pool-0/1/2` each lives in one AZ.
 > ⚠️ ① Every AZ must have an available sub-ENI flavor: pool-2 uses AZ7 (`cn-north-4g`, has `c7.large.2`); if an AZ runs out, switch to `at7.large.1` or another AZ.
 > ⚠️ ② **A node pool's AZ is immutable after creation**: if the AZ/flavor is wrong you must delete the pool and recreate it (delete machinepool + ccemanagedmachinepool → edit the yaml → apply); patching alone does not work.
-> ⚠️ ③ Replace every `VERIFY-*` placeholder (10 of them); after replacing, `grep VERIFY my-cluster.yaml` should output nothing; replace `VERIFY-AZ` last (do AZ2/AZ3 first).
+> ⚠️ ③ Replace every `VERIFY-*` placeholder (10 of them); after replacing, `grep VERIFY my-cluster.yaml` should output nothing; replace `VERIFY-AZ` last (do AZ2/AZ7 first).
 
 **Step 9: Verify + scale**
 
@@ -348,7 +348,7 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # wait for CURRENT/AVAILAB
 | 10 | Cluster deletion stuck on a finalizer | Deletion path for clusters that never became Available | Remove the finalizer manually | ✅ |
 | 11 | Provider pods stuck Pending (`Too many pods`) | Management cluster nodes too small (2C4G×2, 16 pods/node cap filled by CCE's own monitoring) | Use 4U8G (c7.xlarge.2) ×3 for cluster A; Pending pods schedule automatically | ✅ |
 | 12 | Node pool AZ wrong (immutable after creation) | CCE node pool AZ cannot be changed after creation; patch does not rebuild | Delete the pool and recreate (delete machinepool → edit yaml → apply) | ✅ |
-| 13 | Cluster B creation fails `Az [VERIFY-AZ] is not in available az list` | `VERIFY-AZ\b` does not work on macOS sed (BSD lacks `\b`), the primary AZ was left unreplaced | Replace AZ2/AZ3 first, then AZ (no `\b`); confirm with `grep VERIFY` afterwards | ✅ |
+| 13 | Cluster B creation fails `Az [VERIFY-AZ] is not in available az list` | `VERIFY-AZ\b` does not work on macOS sed (BSD lacks `\b`), the primary AZ was left unreplaced | Replace AZ2/AZ7 first, then AZ (no `\b`); confirm with `grep VERIFY` afterwards | ✅ |
 | 14 | `clusterctl get kubeconfig` outputs nothing | The kubeconfig Secret has not been created yet (provider still working) | `kubectl get secret my-cce-cluster-kubeconfig -n default`; wait 1-2 min or check provider logs | ✅ |
 
 ---

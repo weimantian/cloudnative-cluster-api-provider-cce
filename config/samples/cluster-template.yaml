@@ -7,7 +7,7 @@
 # Multi-AZ layout (EKS parity):
 #   pool-0 -> VERIFY-AZ  (cn-north-4a)
 #   pool-1 -> VERIFY-AZ2 (cn-north-4b)
-#   pool-2 -> VERIFY-AZ3 (cn-north-4c)
+#   pool-2 -> VERIFY-AZ7 (cn-north-4g = AZ7, has c7.large.2)
 # Each pool gets ${WORKER_MACHINE_COUNT} nodes (e.g. 1 => 3 nodes across 3 AZs).
 # Scale a pool with: kubectl scale machinepool <name>-pool-N --replicas=M
 #
@@ -197,6 +197,6 @@ spec:
     - size: 100
       type: GPSSD
   sshKey: VERIFY-KEYPAIR-NAME
-  availabilityZone: VERIFY-AZ3
+  availabilityZone: VERIFY-AZ7
   replicas: ${WORKER_MACHINE_COUNT}
   billingMode: 0
