@@ -171,10 +171,15 @@
 1. 控制台 → 计算 → 云容器引擎 CCE → 购买集群：
    - **集群名称：`capi-mgmt`**（固定，后续 kubeconfig/引用都以它为准）；集群类型：**CCE Turbo**（默认，eni 网络）；版本 `v1.35`；规模 `cce.s1.small`；按需计费。
    - 网络：VPC `capi-vpc`、节点子网 `capi-subnet-node`、**ENI 子网 `capi-subnet-eni`**（Turbo 必填，控制台对应「**容器子网**」字段，下拉选 `capi-subnet-eni`）。
-   - 节点池：规格 `c7.large.2`（sub-ENI 配额）×2 节点，密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
+   - 节点池：规格 `c7.large.2`（sub-ENI 配额）× **3-4** 节点（⚠️ 管理集群要跑 CAPI + cert-manager + CCE 监控，`×2` 会 pod 数满导致 provider Pending；`c7.xlarge.2` ×2 也可），密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
 2. 提交，等待集群「可用」（约 5-10 分钟）。
 3. **公网 endpoint**：集群详情 → 连接信息 → 绑定公网 IP（对标 EKS 公网+私有端点）。
-4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件 → 保存到本地（**之后上传到跳板机 `/root/capi-mgmt.kubeconfig`**，步骤 6 用）。
+4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件 → 保存到本地，**上传到跳板机 `/root/capi-mgmt.kubeconfig`**（CloudShell 文件上传；华为云下载的文件名可能是 `capi-a-kubeconfig.yaml` 之类，上传后重命名，步骤 6 用）：
+
+```bash
+# CloudShell 上传后确认
+ls -l /root/capi-mgmt.kubeconfig
+```
 
 > 若用 Standard（vpc-router）集群：集群类型选 CCE Standard，不填 ENI 子网，节点规格任意通用型（`c6.large.2`）。
 
@@ -358,7 +363,7 @@ sed -i \
   -e 's|VERIFY-SUBNET-ID|<节点子网-ID>|g' -e 's|VERIFY-ENI-SUBNET-ID|<ENI子网-ID>|g' \
   -e 's|VERIFY-ENI-NEUTRON-ID|<ENI子网-neutron-ID>|g' \
   -e 's|VERIFY-AZ2|cn-north-4b|g' -e 's|VERIFY-AZ3|cn-north-4c|g' \
-  -e 's|VERIFY-AZ\b|cn-north-4a|g' -e 's|VERIFY-KEYPAIR-NAME|capi-bastion-key|g' \
+  -e 's|VERIFY-AZ|cn-north-4a|g' -e 's|VERIFY-KEYPAIR-NAME|capi-bastion-key|g' \
   -e 's|VERIFY-FLAVOR|c7.large.2|g' \
   my-cluster.yaml
 
@@ -371,7 +376,10 @@ kubectl create secret generic my-cce-cluster-bootstrap \
 kubectl apply -f my-cluster.yaml
 ```
 
-> 多 AZ = 多 MachinePool（对标 EKS 多节点组）：`pool-0/1/2` 各在一个 AZ。⚠️ 各 AZ 需有可用 sub-ENI flavor（如 `cn-north-4c` 常缺 `c7.large.2`，换 `at7.large.1` 或换 AZ）。
+> 多 AZ = 多 MachinePool（对标 EKS 多节点组）：`pool-0/1/2` 各在一个 AZ。
+> ⚠️ ① 各 AZ 需有可用 sub-ENI flavor：如 `cn-north-4c` 常缺 `c7.large.2`（售罄/资源不足），可换 `at7.large.1` 或改用 `cn-north-4a/4b`。
+> ⚠️ ② **节点池 AZ 创建后不可变**：AZ/flavor 填错必须删池重建（delete machinepool + ccemanagedmachinepool → 改 yaml → apply），不能只 patch。
+> ⚠️ ③ 所有 `VERIFY-*` 都要替换（10 个），替换后 `grep VERIFY my-cluster.yaml` 应无输出；`VERIFY-AZ` 最后替换（先 AZ2/AZ3）。
 
 **步骤 10：验证 + 扩缩容**
 
@@ -380,7 +388,8 @@ kubectl get cluster my-cce-cluster -w        # PHASE=Provisioned
 kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -w   # Ready=True
 
 clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
-kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个 Ready 节点，3 个 AZ
+ls -l my-cce-cluster.kubeconfig   # 应有几 KB 内容；无输出则 `kubectl get secret my-cce-cluster-kubeconfig -n default` 检查（不存在则等 1-2 分钟）
+kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个 Ready 节点（跳板机同 VPC，私网 endpoint 可直达）
 
 # 扩缩容 = 调整 replicas（期望值，对标 EKS desiredSize；同一个 scale 命令，replicas 调大=扩容、调小=减容）
 # 扩容：pool-0 replicas 1→3（集群 B 节点 3→5）
@@ -408,6 +417,10 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # 等 CURRENT/AVAILABLE=1�
 | 8 | 某 AZ flavor 售罄/无 sub-ENI | 资源紧张（如 4c 无 2C4G） | 换 flavor（`at7.large.1`）或换 AZ | ✅ |
 | 9 | kubeconfig server 地址过期 | CCE cert API 返回旧地址 | provider 用当前 Internal endpoint 覆盖 | ✅ |
 | 10 | 删除集群卡 finalizer | 未成功创建的集群删除路径 | 手动移除 finalizer | ✅ |
+| 11 | provider 等 pod 卡 Pending（`Too many pods`） | 管理集群节点规格小（c7.large.2×2，pod 上限 16/节点，被 CCE 自带监控占满） | 集群 A 节点池扩到 ×3-4 或换 c7.xlarge.2；Pending pod 自动调度 | ✅ |
+| 12 | 节点池 AZ 填错（创建后不可变） | CCE 节点池 AZ 创建后不可改，patch 不重建 | 删池重建（delete machinepool → 改 yaml → apply） | ✅ |
+| 13 | 集群 B 创建失败 `Az [VERIFY-AZ] is not in available az list` | `VERIFY-AZ\b` 在 macOS sed 不生效（BSD 不支持 \b），主 AZ 漏替换 | sed 先替换 AZ2/AZ3 再 AZ（不用 \b）；替换后 `grep VERIFY` 确认 | ✅ |
+| 14 | `clusterctl get kubeconfig` 无输出 | kubeconfig Secret 未生成（provider 等待中） | `kubectl get secret my-cce-cluster-kubeconfig -n default`；等 1-2 分钟或查 provider 日志 | ✅ |
 
 ---
 
