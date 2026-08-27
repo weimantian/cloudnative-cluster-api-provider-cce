@@ -166,7 +166,7 @@
    - 节点池：**节点子网选 `capi-subnet-node`**（⚠️ 不是 ENI 子网——ENI 子网只给容器用）；规格 `c7.large.2`（sub-ENI 配额）× **3-4** 节点（⚠️ 管理集群要跑 CAPI + cert-manager + CCE 监控，`×2` 会 pod 数满导致 provider Pending；`c7.xlarge.2` ×2 也可），密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
 2. 提交，等待集群「可用」（约 5-10 分钟）。
 3. **公网 endpoint**：集群详情 → 连接信息 → 绑定公网 IP。
-4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件 → 保存到本地，**上传到跳板机 `/root/capi-mgmt.kubeconfig`**（CloudShell 文件上传；华为云下载的文件名可能是 `capi-mgmt-kubeconfig.yaml` 或 `capi-a-kubeconfig.yaml` 之类，上传后重命名，步骤 6 用）：
+4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件 → 保存到本地，**上传到跳板机 `/root/capi-mgmt.kubeconfig`**（CloudShell 文件上传；华为云下载的文件名可能是 `capi-mgmt-kubeconfig.yaml` 或 `capi-a-kubeconfig.yaml` 之类，上传后重命名，步骤 5 用）：
 
 ```bash
 # CloudShell 上传后确认
@@ -196,31 +196,9 @@ kubectl version --client && clusterctl version
 
 > ⚠️ 慢网备选：用 SWR 工具镜像 `capi-cce-tools`（见第 3 章）`docker pull` + `docker cp` 提取。⚠️ 勿用 `yum install kubectl`（华为云源只有 v1.23）。
 
-**步骤 5：下载 provider 组件（curl GitHub）**
 
-```bash
-# 本项目组件（components + metadata + 模板，已发布到 GitHub）
-BASE=https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main
-curl -L -o /root/infrastructure-components.yaml $BASE/release/infrastructure-components.yaml
-curl -L -o /root/metadata.yaml $BASE/metadata.yaml
-curl -L -o /root/cluster-template.yaml $BASE/config/samples/cluster-template.yaml
-curl -L -o /root/cluster-template-standard.yaml $BASE/config/samples/cluster-template-standard.yaml
-curl -L -o /root/cluster-template-turbo.yaml $BASE/config/samples/cluster-template-turbo.yaml
 
-# CAPI 官方组件（core/bootstrap/control-plane），镜像改 SWR
-for c in core bootstrap control-plane; do
-  curl -L -o /root/$c-components.yaml https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.0/$c-components.yaml
-done
-curl -L -o /root/capi-metadata.yaml https://github.com/kubernetes-sigs/cluster-api/releases/download/v1.14.0/metadata.yaml
-
-sed -i 's|registry.k8s.io/cluster-api/cluster-api-controller:v1.14.0|swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-controller:v1.14.0|g' /root/core-components.yaml
-sed -i 's|registry.k8s.io/cluster-api/kubeadm-bootstrap-controller:v1.14.0|swr.cn-north-4.myhuaweicloud.com/capi_cce/kubeadm-bootstrap-controller:v1.14.0|g' /root/bootstrap-components.yaml
-sed -i 's|registry.k8s.io/cluster-api/kubeadm-control-plane-controller:v1.14.0|swr.cn-north-4.myhuaweicloud.com/capi_cce/kubeadm-control-plane-controller:v1.14.0|g' /root/control-plane-components.yaml
-```
-
-> GitHub 慢时，在 URL 前加加速前缀（如 `https://ghfast.top/`）。
-
-**步骤 6：连集群 A（kubeconfig）**
+**步骤 5：连集群 A（kubeconfig）**
 
 上传步骤 3 下载的 `capi-mgmt.kubeconfig` 到跳板机 `/root/`（CloudShell 文件上传），验证：
 
@@ -229,30 +207,17 @@ export KUBECONFIG=/root/capi-mgmt.kubeconfig
 kubectl get nodes    # 应看到 2 个 Ready 节点
 ```
 
-**步骤 7：clusterctl init（方式 A / 方式 B 二选一，各自完整可复制）**
+**步骤 6：clusterctl init（方式 A / 方式 B 二选一，各自完整可复制）**
 
 **方式 A：clusterctl 默认（cert-manager 由 clusterctl 自动装，quay.io 拉取）**
 
 ```bash
 # ===== 方式 A（完整版，一次复制执行）=====
 
-# 1. 配置 clusterctl（4 个 provider 全部从 GitHub 拉；组件镜像已指向 public SWR）
+# 1. 下载现成的 clusterctl.yaml（4 个 provider 已配好，指向 GitHub release）
 mkdir -p /root/.cluster-api
-cat > /root/.cluster-api/clusterctl.yaml <<'EOF'
-providers:
-  - name: "cluster-api"
-    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/core-components.yaml"
-    type: "CoreProvider"
-  - name: "kubeadm"
-    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/bootstrap-components.yaml"
-    type: "BootstrapProvider"
-  - name: "kubeadm"
-    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/control-plane-components.yaml"
-    type: "ControlPlaneProvider"
-  - name: "cce"
-    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/infrastructure-components.yaml"
-    type: "InfrastructureProvider"
-EOF
+curl -L -o /root/.cluster-api/clusterctl.yaml \
+  https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/clusterctl.yaml
 
 # 2. clusterctl init（自动装 cert-manager + CAPI + bootstrap + control-plane + cce）
 export KUBECONFIG=/root/capi-mgmt.kubeconfig
@@ -290,7 +255,7 @@ clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm -
 
 
 
-**步骤 8：Provider 镜像（方式 B：public SWR 免认证）**
+**步骤 7：Provider 镜像（方式 B：public SWR 免认证）**
 
 clusterctl init 装完，provider 镜像从 public SWR 免认证直拉，webhook 证书由 cert-manager 自动签发——**无任何手动步骤**：
 
@@ -301,9 +266,15 @@ kubectl get certificate -n capi-cce-system serving-cert   # Ready=True
 
 ### 阶段三：工作负载集群 B + 验证（CloudShell）
 
-**步骤 9：创建集群 B（默认 Turbo 多 pool，3 节点 3 AZ）**
+**步骤 8：创建集群 B（默认 Turbo 多 pool，3 节点 3 AZ）**
 
 ```bash
+# 1. 下载集群 B 模板（已发布到 GitHub）
+curl -L -o /root/cluster-template.yaml          https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/config/samples/cluster-template.yaml
+curl -L -o /root/cluster-template-standard.yaml https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/config/samples/cluster-template-standard.yaml
+curl -L -o /root/cluster-template-turbo.yaml    https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/config/samples/cluster-template-turbo.yaml
+
+# 2. 安装模板到 clusterctl overrides
 mkdir -p ~/.cluster-api/overrides/infrastructure-cce/v0.1.0
 cp /root/cluster-template.yaml          ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template.yaml
 cp /root/cluster-template-standard.yaml ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-standard.yaml
@@ -339,7 +310,7 @@ kubectl apply -f my-cluster.yaml
 > ⚠️ ② **节点池 AZ 创建后不可变**：AZ/flavor 填错必须删池重建（delete machinepool + ccemanagedmachinepool → 改 yaml → apply），不能只 patch。
 > ⚠️ ③ 所有 `VERIFY-*` 都要替换（10 个），替换后 `grep VERIFY my-cluster.yaml` 应无输出；`VERIFY-AZ` 最后替换（先 AZ2/AZ3）。
 
-**步骤 10：验证 + 扩缩容**
+**步骤 9：验证 + 扩缩容**
 
 ```bash
 kubectl get cluster my-cce-cluster -w        # PHASE=Provisioned
