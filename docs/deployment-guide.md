@@ -217,7 +217,7 @@ kubectl get nodes    # 应看到 2 个 Ready 节点
 # 1. 下载现成的 clusterctl.yaml（4 个 provider 已配好，指向 GitHub release）
 mkdir -p /root/.cluster-api
 curl -L -o /root/.cluster-api/clusterctl.yaml \
-  https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/clusterctl.yaml
+  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/raw/main/release/clusterctl.yaml
 
 # 2. clusterctl init（自动装 cert-manager + CAPI + bootstrap + control-plane + cce）
 export KUBECONFIG=/root/capi-mgmt-kubeconfig.yaml
@@ -236,11 +236,11 @@ clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm -
 # 1. 下载现成的 clusterctl.yaml（4 个 provider 已配好，指向 GitHub release）
 mkdir -p /root/.cluster-api
 curl -L -o /root/.cluster-api/clusterctl.yaml \
-  https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/clusterctl.yaml
+  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/raw/main/release/clusterctl.yaml
 
 # 2. 安装 cert-manager（SWR 镜像，现成 yaml，无需 sed）
 curl -L -o /root/cert-manager.yaml \
-  https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/cert-manager.yaml
+  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/raw/main/release/cert-manager.yaml
 kubectl apply -f /root/cert-manager.yaml
 kubectl -n cert-manager rollout status deploy/cert-manager deploy/cert-manager-cainjector deploy/cert-manager-webhook --timeout=180s
 
@@ -270,9 +270,9 @@ kubectl get certificate -n capi-cce-system serving-cert   # Ready=True
 
 ```bash
 # 1. 下载集群 B 模板（已发布到 GitHub）
-curl -L -o /root/cluster-template.yaml          https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/config/samples/cluster-template.yaml
-curl -L -o /root/cluster-template-standard.yaml https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/config/samples/cluster-template-standard.yaml
-curl -L -o /root/cluster-template-turbo.yaml    https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/config/samples/cluster-template-turbo.yaml
+curl -L -o /root/cluster-template.yaml          https://github.com/weimantian/cloudnative-cluster-api-provider-cce/raw/main/config/samples/cluster-template.yaml
+curl -L -o /root/cluster-template-standard.yaml https://github.com/weimantian/cloudnative-cluster-api-provider-cce/raw/main/config/samples/cluster-template-standard.yaml
+curl -L -o /root/cluster-template-turbo.yaml    https://github.com/weimantian/cloudnative-cluster-api-provider-cce/raw/main/config/samples/cluster-template-turbo.yaml
 
 # 2. 安装模板到 clusterctl overrides
 mkdir -p ~/.cluster-api/overrides/infrastructure-cce/v0.1.0
