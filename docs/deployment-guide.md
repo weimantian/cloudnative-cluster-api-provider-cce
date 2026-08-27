@@ -161,7 +161,7 @@
 1. 控制台 → 计算 → 云容器引擎 CCE → 购买集群：
    - **集群名称：`capi-mgmt`**（固定，后续 kubeconfig/引用都以它为准）；集群类型：**CCE Turbo**（默认，eni 网络）；版本 `v1.35`；规模 `cce.s1.small`；按需计费。
    - 网络：VPC `capi-vpc`、节点子网 `capi-subnet-node`、**ENI 子网 `capi-subnet-eni`**（Turbo 必填，控制台对应「**容器子网**」字段，下拉选 `capi-subnet-eni`）。
-   - 节点池：**节点子网选 `capi-subnet-node`**（⚠️ 不是 ENI 子网——ENI 子网只给容器用）；规格 `c7.large.2`（sub-ENI 配额）× **3-4** 节点（⚠️ 管理集群要跑 CAPI + cert-manager + CCE 监控，`×2` 会 pod 数满导致 provider Pending；`c7.xlarge.2` ×2 也可），密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
+   - 节点池：**节点子网选 `capi-subnet-node`**（⚠️ 不是 ENI 子网——ENI 子网只给容器用）；规格 `c7.xlarge.2`（4U8G，sub-ENI 配额）× **3** 节点（⚠️ 管理集群要跑 CAPI + cert-manager + CCE 监控，2C4G×2 会 pod 数满导致 provider Pending；3×4U8G 是推荐配置），密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
 2. 提交，等待集群「可用」（约 5-10 分钟）。
 3. **公网 endpoint**：集群详情 → 连接信息 → 绑定公网 IP。
 4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件（下载的文件名为 `capi-mgmt-kubeconfig.yaml`）→ 保存到本地，**上传到跳板机 `/root/capi-mgmt-kubeconfig.yaml`**（CloudShell 文件上传，步骤 5 用）：
@@ -354,7 +354,7 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # 等 CURRENT/AVAILABLE=1�
 | 8 | 某 AZ flavor 售罄/无 sub-ENI | 资源紧张（如 4c 无 2C4G） | 换 flavor（`at7.large.1`）或换 AZ | ✅ |
 | 9 | kubeconfig server 地址过期 | CCE cert API 返回旧地址 | provider 用当前 Internal endpoint 覆盖 | ✅ |
 | 10 | 删除集群卡 finalizer | 未成功创建的集群删除路径 | 手动移除 finalizer | ✅ |
-| 11 | provider 等 pod 卡 Pending（`Too many pods`） | 管理集群节点规格小（c7.large.2×2，pod 上限 16/节点，被 CCE 自带监控占满） | 集群 A 节点池扩到 ×3-4 或换 c7.xlarge.2；Pending pod 自动调度 | ✅ |
+| 11 | provider 等 pod 卡 Pending（`Too many pods`） | 管理集群节点规格小（2C4G×2，pod 上限 16/节点，被 CCE 自带监控占满） | 集群 A 用 4U8G（c7.xlarge.2）×3；Pending pod 自动调度 | ✅ |
 | 12 | 节点池 AZ 填错（创建后不可变） | CCE 节点池 AZ 创建后不可改，patch 不重建 | 删池重建（delete machinepool → 改 yaml → apply） | ✅ |
 | 13 | 集群 B 创建失败 `Az [VERIFY-AZ] is not in available az list` | `VERIFY-AZ\b` 在 macOS sed 不生效（BSD 不支持 \b），主 AZ 漏替换 | sed 先替换 AZ2/AZ3 再 AZ（不用 \b）；替换后 `grep VERIFY` 确认 | ✅ |
 | 14 | `clusterctl get kubeconfig` 无输出 | kubeconfig Secret 未生成（provider 等待中） | `kubectl get secret my-cce-cluster-kubeconfig -n default`；等 1-2 分钟或查 provider 日志 | ✅ |

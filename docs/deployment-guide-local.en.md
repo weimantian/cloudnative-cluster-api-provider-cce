@@ -152,7 +152,7 @@ The following **8 images** are pre-built / mirrored to **public SWR** (`swr.cn-n
 1. Console → Compute → Cloud Container Engine CCE → Buy Cluster:
    - **Cluster name: `capi-mgmt`** (fixed; the kubeconfig/references all use it); cluster type: **CCE Turbo** (default, eni network); version `v1.35`; scale `cce.s1.small`; pay-per-use.
    - Network: VPC `capi-vpc`, node subnet `capi-subnet-node`, **ENI subnet `capi-subnet-eni`** (mandatory for Turbo; in the console this is the "**container subnet**" field — pick `capi-subnet-eni` from the dropdown).
-   - Node pool: **node subnet must be `capi-subnet-node`** (⚠️ not the ENI subnet — the ENI subnet is for containers only); flavor `c7.large.2` (sub-ENI quota) × **3-4** nodes (⚠️ the management cluster runs CAPI + cert-manager + CCE monitoring; `×2` saturates the pod count and leaves the provider Pending; `c7.xlarge.2` ×2 also works), key pair `capi-bastion-key`, availability zone `cn-north-4a`.
+   - Node pool: **node subnet must be `capi-subnet-node`** (⚠️ not the ENI subnet — the ENI subnet is for containers only); flavor `c7.xlarge.2` (4U8G, sub-ENI quota) × **3** nodes (⚠️ the management cluster runs CAPI + cert-manager + CCE monitoring; 2C4G ×2 saturates the pod count and leaves the provider Pending; 3 × 4U8G is the recommended config), key pair `capi-bastion-key`, availability zone `cn-north-4a`.
 2. Submit and wait for the cluster to become "Available" (about 5-10 minutes).
 3. **Public endpoint**: cluster details → Connection Information → bind a public IP, note `https://<public-IP>:5443`.
 4. **Download kubeconfig**: Connection Information → Download kubectl config (the file is named `capi-mgmt-kubeconfig.yaml`, browsers save it to `~/Downloads` by default) → **move it to `~/.kube/`** (keep the filename so `export KUBECONFIG` can use it directly):
@@ -336,7 +336,7 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # wait for CURRENT/AVAILAB
 | 8 | A flavor is sold out / no sub-ENI in some AZ | Tight resources (e.g. no 2C4G in 4c) | Switch flavor (`at7.large.1`) or AZ | ✅ |
 | 9 | Cluster B kubeconfig unreachable locally | Cluster B defaults to a private endpoint | Enable cluster B's public endpoint (`spec.endpointAccess.public=true`) | ✅ |
 | 10 | Cluster deletion stuck on a finalizer | Deletion path for clusters that never became Available | Remove the finalizer manually | ✅ |
-| 11 | Provider pods stuck Pending (`Too many pods`) | Management cluster nodes too small (c7.large.2×2, 16 pods/node cap filled by CCE's own monitoring) | Scale cluster A's node pool to ×3-4 or switch to c7.xlarge.2; Pending pods schedule automatically | ✅ |
+| 11 | Provider pods stuck Pending (`Too many pods`) | Management cluster nodes too small (2C4G×2, 16 pods/node cap filled by CCE's own monitoring) | Use 4U8G (c7.xlarge.2) ×3 for cluster A; Pending pods schedule automatically | ✅ |
 | 12 | Node pool AZ wrong (immutable after creation) | CCE node pool AZ cannot be changed after creation; patch does not rebuild | Delete the pool and recreate (delete machinepool → edit yaml → apply) | ✅ |
 | 13 | Cluster B creation fails `Az [VERIFY-AZ] is not in available az list` | `VERIFY-AZ\b` does not work on macOS sed (BSD lacks `\b`), the primary AZ was left unreplaced | Replace AZ2/AZ3 first, then AZ (no `\b`); confirm with `grep VERIFY` afterwards | ✅ |
 | 14 | `clusterctl get kubeconfig` outputs nothing | The kubeconfig Secret has not been created yet (provider still working) | `kubectl get secret my-cce-cluster-kubeconfig -n default`; wait 1-2 min or check provider logs | ✅ |
