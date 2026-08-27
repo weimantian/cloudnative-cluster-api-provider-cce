@@ -1,0 +1,15 @@
+# Pre-configured clusterctl.yaml — all 4 providers fetch components from
+# this project's GitHub release/; component images already point to public SWR.
+providers:
+  - name: "cluster-api"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/core-components.yaml"
+    type: "CoreProvider"
+  - name: "kubeadm"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/bootstrap-components.yaml"
+    type: "BootstrapProvider"
+  - name: "kubeadm"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/control-plane-components.yaml"
+    type: "ControlPlaneProvider"
+  - name: "cce"
+    url: "https://raw.githubusercontent.com/weimantian/cloudnative-cluster-api-provider-cce/main/release/infrastructure-components.yaml"
+    type: "InfrastructureProvider"
