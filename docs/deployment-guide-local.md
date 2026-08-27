@@ -156,10 +156,10 @@ kubectl version --client && clusterctl version
 1. 控制台 → 计算 → 云容器引擎 CCE → 购买集群：
    - **集群名称：`capi-mgmt`**（固定，后续 kubeconfig/引用都以它为准）；集群类型：**CCE Turbo**（默认，eni 网络）；版本 `v1.35`；规模 `cce.s1.small`；按需计费。
    - 网络：VPC `capi-vpc`、节点子网 `capi-subnet-node`、**ENI 子网 `capi-subnet-eni`**（Turbo 必填，控制台对应「**容器子网**」字段，下拉选 `capi-subnet-eni`）。
-   - 节点池：规格 `c7.large.2`（sub-ENI 配额）× **3-4** 节点（⚠️ 管理集群要跑 CAPI + cert-manager + CCE 监控，`×2` 会 pod 数满导致 provider Pending；`c7.xlarge.2` ×2 也可），密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
+   - 节点池：**节点子网选 `capi-subnet-node`**（⚠️ 不是 ENI 子网——ENI 子网只给容器用）；规格 `c7.large.2`（sub-ENI 配额）× **3-4** 节点（⚠️ 管理集群要跑 CAPI + cert-manager + CCE 监控，`×2` 会 pod 数满导致 provider Pending；`c7.xlarge.2` ×2 也可），密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
 2. 提交，等待集群「可用」（约 5-10 分钟）。
 3. **公网 endpoint**：集群详情 → 连接信息 → 绑定公网 IP，记录 `https://<公网IP>:5443`。
-4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件 → **复制到 `~/.kube/capi-mgmt.kubeconfig`**（华为云下载的文件名可能是 `capi-a-kubeconfig.yaml` 之类，需重命名/复制到这个路径；步骤 3 用 `export KUBECONFIG` 指向它）：
+4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件 → **复制到 `~/.kube/capi-mgmt.kubeconfig`**（华为云下载的文件名可能是 `capi-mgmt-kubeconfig.yaml` 或 `capi-a-kubeconfig.yaml` 之类，需复制/重命名到这个路径；步骤 3 用 `export KUBECONFIG` 指向它）：
 
 ```bash
 mkdir -p ~/.kube
