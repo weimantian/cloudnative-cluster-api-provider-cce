@@ -336,7 +336,7 @@ sed -i '' \
   -e 's|VERIFY-SUBNET-ID|<节点子网-ID>|g' -e 's|VERIFY-ENI-SUBNET-ID|<ENI子网-ID>|g' \
   -e 's|VERIFY-ENI-NEUTRON-ID|<ENI子网-neutron-ID>|g' \
   -e 's|VERIFY-AZ2|cn-north-4b|g' -e 's|VERIFY-AZ3|cn-north-4c|g' \
-  -e 's|VERIFY-AZ\b|cn-north-4a|g' -e 's|VERIFY-KEYPAIR-NAME|capi-bastion-key|g' \
+  -e 's|VERIFY-AZ|cn-north-4a|g' -e 's|VERIFY-KEYPAIR-NAME|capi-bastion-key|g' \
   -e 's|VERIFY-FLAVOR|c7.large.2|g' \
   my-cluster.yaml
 
@@ -346,6 +346,10 @@ kubectl create secret generic my-cce-cluster-credentials \
   --namespace default --from-literal=accessKey="$CLOUD_SDK_AK" --from-literal=secretKey="$CLOUD_SDK_SK"
 kubectl create secret generic my-cce-cluster-bootstrap \
   --namespace default --from-literal=value=""
+
+# （可选）集群 B 公网 endpoint：本地直连验证节点时需要（默认私网，本地无法直达）
+# 需要公网则取消注释执行；保持私网则跳过
+sed -i '' 's|    public: false|    public: true|g' my-cluster.yaml
 
 kubectl apply -f my-cluster.yaml
 ```
@@ -359,12 +363,13 @@ kubectl get cluster my-cce-cluster -w        # PHASE=Provisioned
 kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -w   # Ready=True
 
 clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
-# 集群 B 私有 endpoint 时本地无法直达：需在集群 A 所在 VPC 内访问（或开集群 B 公网 endpoint）。
-# 开公网 endpoint：改 my-cluster.yaml 的 spec.endpointAccess.public=true 后 apply。
 
-kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个 Ready 节点，3 个 AZ
+# 验证节点——按集群 B endpoint 方式二选一：
+# 公网（步骤 7 可选已开启）：本地直连
+kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个 Ready 节点
+# 私网（默认，本地无法直达）：在同 VPC 的跳板机内执行上述命令
 
-# 扩缩容（对标 EKS 节点组 desiredSize，按 pool 操作）
+# 扩缩容（对标 EKS 节点组 desiredSize，按 pool 操作；管理侧执行，不受 endpoint 影响）
 kubectl scale machinepool my-cce-cluster-pool-0 --replicas=3   # 扩容
 kubectl scale machinepool my-cce-cluster-pool-0 --replicas=1   # 减容
 ```
