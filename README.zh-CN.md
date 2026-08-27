@@ -127,7 +127,7 @@ flowchart LR
 - **声明式管理托管集群**——CCE 控制面完全由华为云托管,Provider 只负责翻译与调谐。
 - **CCE Standard + CCE Turbo 双支持**——两者都支持(默认推荐 Turbo,与 EKS 托管定位对齐)。
 - **MachinePool ↔ 节点池**——通过 `MachinePool.spec.replicas` 扩缩容;托管节点池无需 bootstrap provider。
-- **兼容 `clusterctl`**——`metadata.yaml` + `infrastructure-components.yaml` 打包(进行中),支持 `clusterctl describe cluster` / `get kubeconfig`。
+- **兼容 `clusterctl`**——`metadata.yaml` + `infrastructure-components.yaml` 已发布为 [GitHub Release v0.1.0](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.0),支持 `clusterctl describe cluster` / `get kubeconfig`。
 - **GitOps 就绪**——通过 ArgoCD/Flux 从 Git 全流程驱动。
 - **CCE 访问策略(对标 EKS access entries)**——在控制面用声明式 `spec.accessPolicies[]` 将 IAM 用户/组/委托映射到 CCE 权限角色(`CCEClusterAdminPolicy` / `CCEAdminPolicy` / `CCEEditPolicy` / `CCEViewPolicy`),并可限定到命名空间。
 - **身份管理**——按集群 `CCEClusterIdentity`(AK/SK Secret 或 `SecretKey` 对象引用)与控制器默认身份,对标 CAPA 的三身份模型。
@@ -231,21 +231,16 @@ kubectl get ccemanagedcontrolplane --watch
 
    > RBAC 注意:leader-election RoleBinding 的 subject.namespace 必须是真实命名空间(`capi-cce-system`);kustomize 不会改写 RoleBinding 的 subjects。
 
-4. **配置 clusterctl 并安装**(发布前使用本地源):
+4. **配置 clusterctl 并安装**(组件已发布为 [GitHub Release v0.1.0](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.0);本地开发则按 `scripts/deploy-kind.sh` 构建镜像并用本地 `file://` 源):
 
    ```bash
-   mkdir -p /tmp/cce/infrastructure-cce/v0.1.0
-   cp infrastructure-components.yaml metadata.yaml /tmp/cce/infrastructure-cce/v0.1.0/
    mkdir -p ~/.cluster-api
-   cat > ~/.cluster-api/clusterctl.yaml <<'EOF'
-   providers:
-     - name: "cce"
-       url: "file:///tmp/cce/infrastructure-cce/v0.1.0/infrastructure-components.yaml"
-       type: "InfrastructureProvider"
-   EOF
-   clusterctl init --infrastructure cce --wait-providers
+   curl -L -o ~/.cluster-api/clusterctl.yaml \
+     https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/clusterctl.yaml
+   clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
    # 会安装 cert-manager + CAPI 核心 + bootstrap-kubeadm + control-plane-kubeadm + infrastructure-cce
-   kubectl get pods -A | grep -E 'capi-|cert-manager|cloudnative-cluster-api-provider-cce'   # 全部 Running
+   # (方式 B:全部镜像走 public SWR,先装 cert-manager,见 docs/deployment-guide.md)
+   kubectl get pods -A | grep -E 'capi-|cert-manager|cluster-api-cce'   # 全部 Running
    ```
 
 5. **创建工作集群**(Cluster + CCECluster + CCEManagedControlPlane + MachinePool + CCEManagedMachinePool;样例见 `config/samples/cluster-template.yaml`,填好每个 `VERIFY-...` 占位符):
