@@ -383,8 +383,13 @@ clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
 kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个 Ready 节点，3 个 AZ
 
 # 扩缩容（对标 EKS 节点组 desiredSize，按 pool 操作）
-kubectl scale machinepool my-cce-cluster-pool-0 --replicas=3   # 扩容
-kubectl scale machinepool my-cce-cluster-pool-0 --replicas=1   # 减容
+# 扩容：pool-0 1→3（集群 B 节点 3→5）
+kubectl scale machinepool my-cce-cluster-pool-0 --replicas=3
+kubectl get machinepool my-cce-cluster-pool-0 -w      # 等 CURRENT/AVAILABLE=3（约 2-3 分钟）
+
+# 减容：pool-0 3→1（集群 B 节点 5→3）——CCE 缩容需节点排水，稍慢
+kubectl scale machinepool my-cce-cluster-pool-0 --replicas=1
+kubectl get machinepool my-cce-cluster-pool-0 -w      # 等 CURRENT/AVAILABLE=1（约 3-5 分钟）
 ```
 
 ---
