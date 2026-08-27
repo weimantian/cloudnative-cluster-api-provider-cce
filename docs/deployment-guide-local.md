@@ -229,7 +229,7 @@ clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm -
 
 
 
-**步骤 6：Provider 镜像（方式 B：public SWR 免认证）**
+**步骤 5：Provider 镜像（方式 B：public SWR 免认证）**
 
 clusterctl init 装完，provider 镜像从 public SWR 免认证直拉，webhook 证书由 cert-manager 自动签发——**无任何手动步骤**：
 
@@ -240,7 +240,7 @@ kubectl get certificate -n capi-cce-system serving-cert   # Ready=True
 
 ### 阶段三：工作负载集群 B + 验证
 
-**步骤 7：创建集群 B（默认 Turbo 多 pool，3 节点 3 AZ）**
+**步骤 6：创建集群 B（默认 Turbo 多 pool，3 节点 3 AZ）**
 
 ```bash
 # 1. 下载集群 B 模板（已发布到 GitHub）
@@ -290,7 +290,7 @@ kubectl apply -f my-cluster.yaml
 > ⚠️ ② **节点池 AZ 创建后不可变**：AZ/flavor 填错必须删池重建（`kubectl delete machinepool <name>` + `ccemanagedmachinepool <name>` → 改 yaml → `kubectl apply`），不能只 patch（CCE 节点池不会重建）。
 > ⚠️ ③ 所有 `VERIFY-*` 都要替换（10 个）：REGION / VPC-ID / SUBNET-ID / ENI-SUBNET-ID / ENI-NEUTRON-ID / AZ / AZ2 / AZ3 / KEYPAIR-NAME / FLAVOR——漏任何一�g 都导致创建失败。替换后 `grep VERIFY my-cluster.yaml` 应无输出。
 
-**步骤 8：验证 + 扩缩容**
+**步骤 7：验证 + 扩缩容**
 
 ```bash
 kubectl get cluster my-cce-cluster -w        # PHASE=Provisioned
@@ -302,7 +302,7 @@ ls -l my-cce-cluster.kubeconfig   # 应有几 KB 内容
 > `kubectl get secret my-cce-cluster-kubeconfig -n default` —— 不存在则等 1-2 分钟（provider 生成中）或查 provider 日志
 
 # 验证节点——按集群 B endpoint 方式二选一：
-# 公网（步骤 7 可选已开启）：本地直连
+# 公网（步骤 6 可选已开启）：本地直连
 kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个 Ready 节点
 # 私网（默认，本地无法直达）：在同 VPC 的跳板机内执行上述命令
 # （kubeconfig 不依赖节点验证：MachinePool 全部 1/1 即节点已 Ready）
