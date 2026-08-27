@@ -107,14 +107,13 @@
 
 【阶段二：跳板机部署】控制台 CloudShell（浏览器内，所有命令在跳板机内）
   4. 装工具（kubectl + clusterctl）
-  5. 下载 provider 组件（curl GitHub）
-  6. 连集群 A（kubeconfig）
-  7. clusterctl init（本地源 + 镜像走 SWR）
-  8. Provider 镜像（方式 B：public SWR 免认证）
+  5. 连集群 A（kubeconfig）
+  6. clusterctl init（GitHub Release 组件 + 镜像走 SWR）
+  7. Provider 镜像（方式 B：public SWR 免认证）
 
 【阶段三：工作负载集群 B + 验证】CloudShell
-  9. 创建集群 B（默认 Turbo 多 pool，3 节点 3 AZ）
-  10. 验证 + 扩缩容
+  8. 创建集群 B（默认 Turbo 多 pool，3 节点 3 AZ）
+  9. 验证 + 扩缩容
 ```
 
 | 步骤 | 操作 | 耗时 | 产物 |
@@ -123,12 +122,11 @@
 | 2 | ECS 跳板机 | 3 min | 跳板机（公网 IP） |
 | 3 | CCE 管理集群 A | 10-20 min | 集群 A + kubeconfig |
 | 4 | 装工具 | 5 min | kubectl + clusterctl |
-| 5 | 下载组件 | 2 min | components/metadata/模板 |
-| 6 | 连集群 A | 1 min | 2 节点 Ready |
-| 7 | clusterctl init | 5 min | CAPI + Provider Running |
-| 8 | Provider 镜像 | 1 min | 方式 B 免认证 |
-| 9 | 集群 B | 10-20 min | 集群 B Provisioned |
-| 10 | 验证 + 扩缩容 | 5 min | 节点 Ready + scale |
+| 5 | 连集群 A | 1 min | 2 节点 Ready |
+| 6 | clusterctl init | 5 min | CAPI + Provider Running |
+| 7 | Provider 镜像 | 1 min | 方式 B 免认证 |
+| 8 | 集群 B | 10-20 min | 集群 B Provisioned |
+| 9 | 验证 + 扩缩容 | 5 min | 节点 Ready + scale |
 
 ---
 

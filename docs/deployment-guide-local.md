@@ -115,13 +115,12 @@ kubectl version --client && clusterctl version
 
 【阶段二：本地直连集群 A】
   3. 配置 kubeconfig（server 改公网 endpoint）
-  4. 下载 provider 组件（curl GitHub）
-  5. clusterctl init（本地源 + 镜像走 SWR）
-  6. Provider 镜像（方式 B：public SWR 免认证）
+  4. clusterctl init（GitHub Release 组件 + 镜像走 SWR）
+  5. Provider 镜像（方式 B：public SWR 免认证）
 
 【阶段三：工作负载集群 B + 验证】
-  7. 创建集群 B（默认 Turbo 多 pool，3 节点 3 AZ）
-  8. 验证 + 扩缩容
+  6. 创建集群 B（默认 Turbo 多 pool，3 节点 3 AZ）
+  7. 验证 + 扩缩容
 ```
 
 | 步骤 | 操作 | 耗时 | 产物 |
@@ -129,11 +128,10 @@ kubectl version --client && clusterctl version
 | 1 | VPC/子网/密钥对 | 3 min | 网络 + 密钥对 |
 | 2 | CCE 管理集群 A | 10-20 min | 集群 A + kubeconfig |
 | 3 | 配置 kubeconfig | 1 min | 本地连集群 A |
-| 4 | 下载组件 | 2 min | components/metadata/模板 |
-| 5 | clusterctl init | 5 min | CAPI + Provider Running |
-| 6 | Provider 镜像 | 1 min | 方式 B 免认证 |
-| 7 | 集群 B | 10-20 min | 集群 B Provisioned |
-| 8 | 验证 + 扩缩容 | 5 min | 节点 Ready + scale |
+| 4 | clusterctl init | 5 min | CAPI + Provider Running |
+| 5 | Provider 镜像 | 1 min | 方式 B 免认证 |
+| 6 | 集群 B | 10-20 min | 集群 B Provisioned |
+| 7 | 验证 + 扩缩容 | 5 min | 节点 Ready + scale |
 
 ---
 
