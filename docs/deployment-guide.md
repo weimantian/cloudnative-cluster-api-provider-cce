@@ -1,7 +1,7 @@
-# 华为云 CCE Provider 部署指导（对标 CAPA/EKS 托管模式）
+# 华为云 CCE Provider 部署指导
 
 > 在华为云 CCE 管理集群上安装 Cluster API（CAPI）+ CCE Provider，声明式管理 CCE 工作负载集群。
-> **对标 EKS 生产实践**：基础设施全部在华为云控制台创建，所有 CLI 命令在 ECS 跳板机终端内执行，本地电脑不参与。
+> **生产实践**：基础设施全部在华为云控制台创建，所有 CLI 命令在 ECS 跳板机终端内执行，本地电脑不参与。
 
 ---
 
@@ -34,15 +34,7 @@
 | CCE Provider（本项目） | CAPI 插件，把 CAPI 对象翻译成 CCE API 调用 | 管理集群 A 上运行 |
 | cert-manager | 证书管理 | 自动签发 webhook 证书 |
 
-### 1.3 对标 EKS 的对应关系
 
-| EKS/CAPA | 本项目 |
-|---|---|
-| AWS 控制台创建 EKS 集群 A | 华为云控制台创建 CCE 集群 A |
-| EC2 跳板机（IAM 角色） | ECS 跳板机（AK/SK 环境变量） |
-| `clusterctl init --infrastructure aws` | `clusterctl init --infrastructure cce`（本地源） |
-| `clusterawsadm` 准备 IAM | （华为云无等价物，用 AK/SK） |
-| `--flavor eks-managedmachinepool` | 默认 Turbo 多 pool |
 
 ---
 
@@ -173,7 +165,7 @@
    - 网络：VPC `capi-vpc`、节点子网 `capi-subnet-node`、**ENI 子网 `capi-subnet-eni`**（Turbo 必填，控制台对应「**容器子网**」字段，下拉选 `capi-subnet-eni`）。
    - 节点池：规格 `c7.large.2`（sub-ENI 配额）× **3-4** 节点（⚠️ 管理集群要跑 CAPI + cert-manager + CCE 监控，`×2` 会 pod 数满导致 provider Pending；`c7.xlarge.2` ×2 也可），密钥对 `capi-bastion-key`，可用区 `cn-north-4a`。
 2. 提交，等待集群「可用」（约 5-10 分钟）。
-3. **公网 endpoint**：集群详情 → 连接信息 → 绑定公网 IP（对标 EKS 公网+私有端点）。
+3. **公网 endpoint**：集群详情 → 连接信息 → 绑定公网 IP。
 4. **下载 kubeconfig**：连接信息 → 下载 kubectl 配置文件 → 保存到本地，**上传到跳板机 `/root/capi-mgmt.kubeconfig`**（CloudShell 文件上传；华为云下载的文件名可能是 `capi-a-kubeconfig.yaml` 之类，上传后重命名，步骤 6 用）：
 
 ```bash
@@ -376,7 +368,7 @@ kubectl create secret generic my-cce-cluster-bootstrap \
 kubectl apply -f my-cluster.yaml
 ```
 
-> 多 AZ = 多 MachinePool（对标 EKS 多节点组）：`pool-0/1/2` 各在一个 AZ。
+> 多 AZ = 多 MachinePool：`pool-0/1/2` 各在一个 AZ。
 > ⚠️ ① 各 AZ 需有可用 sub-ENI flavor：如 `cn-north-4c` 常缺 `c7.large.2`（售罄/资源不足），可换 `at7.large.1` 或改用 `cn-north-4a/4b`。
 > ⚠️ ② **节点池 AZ 创建后不可变**：AZ/flavor 填错必须删池重建（delete machinepool + ccemanagedmachinepool → 改 yaml → apply），不能只 patch。
 > ⚠️ ③ 所有 `VERIFY-*` 都要替换（10 个），替换后 `grep VERIFY my-cluster.yaml` 应无输出；`VERIFY-AZ` 最后替换（先 AZ2/AZ3）。
@@ -391,7 +383,7 @@ clusterctl get kubeconfig my-cce-cluster > my-cce-cluster.kubeconfig
 ls -l my-cce-cluster.kubeconfig   # 应有几 KB 内容；无输出则 `kubectl get secret my-cce-cluster-kubeconfig -n default` 检查（不存在则等 1-2 分钟）
 kubectl --kubeconfig=my-cce-cluster.kubeconfig get nodes -o wide   # 3 个 Ready 节点（跳板机同 VPC，私网 endpoint 可直达）
 
-# 扩缩容 = 调整 replicas（期望值，对标 EKS desiredSize；同一个 scale 命令，replicas 调大=扩容、调小=减容）
+# 扩缩容 = 调整 replicas（期望值；同一个 scale 命令，replicas 调大=扩容、调小=减容）
 # 扩容：pool-0 replicas 1→3（集群 B 节点 3→5）
 kubectl scale machinepool my-cce-cluster-pool-0 --replicas=3
 kubectl get machinepool my-cce-cluster-pool-0 -w      # 等 CURRENT/AVAILABLE=3（约 2-3 分钟）
@@ -461,15 +453,7 @@ kubectl create secret generic my-cce-cluster-credentials \
 | 扩缩容 | `kubectl scale machinepool my-cce-cluster-pool-0 --replicas=N` |
 | 删集群 B | `kubectl delete cluster my-cce-cluster` |
 
-### 8.3 EKS 能力对照
 
-| 能力 | EKS / CAPA | 本项目 |
-|---|---|---|
-| 集群类型 | EKS 托管控制面 | CCE 托管（Turbo 默认 / Standard 可选） |
-| 节点数 | `MachinePool.spec.replicas` | 同（`kubectl scale`） |
-| 节点规格 | `instanceType` | `CCEManagedMachinePool.spec.flavor` |
-| 多 AZ | 节点组跨 AZ / 多节点组 | 多 MachinePool（每 AZ 一个） |
-| ServiceCIDR | 创建时指定不可变 | 控制台创建时指定 |
 
 ---
 
@@ -486,4 +470,4 @@ kubectl create secret generic my-cce-cluster-credentials \
 | `hack/survey-hw` | 盘点所有资源 | `CLOUD_SDK_AK/SK` |
 | `hack/swr-login` | 获取 SWR 临时登录凭据 | `CLOUD_SDK_AK/SK` |
 
-> **IAM 委托（可选，对标 EC2 IAM 角色）**：跳板机可绑定 IAM 委托（`CCE_DEPLOY_BASTION_AGENCY`），从 ECS metadata 获取临时凭证（免静态 AK/SK），详见旧版 `docs/e2e-deployment-guide.md` 凭证轮换章节。
+> **IAM 委托（可选）**：跳板机可绑定 IAM 委托（`CCE_DEPLOY_BASTION_AGENCY`），从 ECS metadata 获取临时凭证（免静态 AK/SK），详见旧版 `docs/e2e-deployment-guide.md` 凭证轮换章节。
