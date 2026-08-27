@@ -312,6 +312,9 @@ cp /root/cluster-template-turbo.yaml    ~/.cluster-api/overrides/infrastructure-
 # 生成（默认 Turbo 多 pool；--worker-machine-count=1 → 3 个 pool 各 1 节点 = 3 节点 3 AZ）
 clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 --worker-machine-count=1 > my-cluster.yaml
 
+# 可选：Standard（vpc-router）版（无需 ENI 子网；节点通用型 flavor，如 c6.large.2）
+# clusterctl generate cluster my-cce-cluster --flavor standard --kubernetes-version v1.35.0 --worker-machine-count=1 > my-cluster.yaml
+
 # 替换 VERIFY-*（region/VPC/子网/ENI 子网/密钥对/AZ/AZ2/AZ3/flavor）
 sed -i \
   -e 's|VERIFY-REGION|cn-north-4|g' -e 's|VERIFY-VPC-ID|<VPC-ID>|g' \
