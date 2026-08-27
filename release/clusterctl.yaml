@@ -2,14 +2,14 @@
 # this project's GitHub release/; component images already point to public SWR.
 providers:
   - name: "cluster-api"
-    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/latest/core-components.yaml"
+    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/v0.1.0/core-components.yaml"
     type: "CoreProvider"
   - name: "kubeadm"
-    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/latest/bootstrap-components.yaml"
+    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/v0.1.0/bootstrap-components.yaml"
     type: "BootstrapProvider"
   - name: "kubeadm"
-    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/latest/control-plane-components.yaml"
+    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/v0.1.0/control-plane-components.yaml"
     type: "ControlPlaneProvider"
   - name: "cce"
-    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/latest/infrastructure-components.yaml"
+    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/v0.1.0/infrastructure-components.yaml"
     type: "InfrastructureProvider"
