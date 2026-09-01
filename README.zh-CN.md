@@ -108,16 +108,50 @@ cloudnative-cluster-api-provider-cce/
 ## 架构
 
 ```mermaid
-flowchart LR
-    subgraph MGMT["管理集群"]
-        CAPI["cluster-api (core)<br/>Cluster / MachinePool"]
-        P["capi-cce<br/>(本 Provider)"]
-        CAPI -->|infrastructureRef / controlPlaneRef| P
+flowchart TB
+    subgraph OPS["运维 / 交付层"]
+        U["用户<br/>kubectl · clusterctl · CloudShell"]
+        GH["GitHub Release v0.1.0<br/>clusterctl.yaml · 组件 · 集群模板"]
+        SWR["Public SWR（免认证）<br/>CAPI · cert-manager · cce-provider 镜像"]
     end
-    P -->|华为云 Go SDK| HW["华为云(目标项目)"]
-    HW --> CCE["CCE 托管集群"]
-    HW --> NP["节点池(ECS 节点)"]
-    CCE -->|kubeconfig| P
+
+    subgraph MGMT["管理集群 A（CCE）"]
+        CORE["cluster-api (core)<br/>Cluster / MachinePool 控制器"]
+        P["capi-cce Provider<br/>CCECluster · CCEManagedControlPlane<br/>CCEManagedMachinePool 控制器<br/>scope → services（cce · network · iam）"]
+        CM["cert-manager"]
+        WH["webhook（默认 / 校验）"]
+        SEC["Secrets<br/>-credentials（AK/SK）<br/>-kubeconfig"]
+    end
+
+    subgraph HW["华为云 cn-north-4（目标账号）"]
+        IAM["IAM<br/>AK/SK 鉴权 · 委托"]
+        VPC["VPC / 子网<br/>节点子网 · ENI 子网"]
+        CCEAPI["CCE 控制面 API<br/>集群 · 节点池 · kubeconfig"]
+        ECS["ECS<br/>节点（c7.xlarge.2）· 跳板机"]
+        EIP["EIP / ELB<br/>公网 endpoint"]
+    end
+
+    subgraph WB["工作负载集群 B（CCE）"]
+        APISERVER["API Server"]
+        POOLS["节点池 pool-0/1/2<br/>AZ 4a / 4b / 4g"]
+    end
+
+    U -->|1 下载发布物| GH
+    U -->|2 clusterctl init / kubectl| CORE
+    GH -->|3 安装组件| CORE
+    CORE -->|4 infrastructureRef / controlPlaneRef| P
+    CM -.->|5 签发 webhook 证书| WH
+    P -->|6 SDK 以 AK/SK 鉴权| IAM
+    P -->|7 创建集群 / 节点池 / kubeconfig| CCEAPI
+    P -->|8 读写| SEC
+    CCEAPI -->|9 创建节点池| ECS
+    CCEAPI -->|10 挂接 VPC / 子网| VPC
+    CCEAPI -->|11 绑定公网访问| EIP
+    ECS -->|12 拉取镜像| SWR
+    CCEAPI -->|13 kubeconfig → Secret| SEC
+    U -->|14 clusterctl get kubeconfig| SEC
+    U -->|15 访问工作负载| APISERVER
+    APISERVER --> POOLS
 ```
 
 设计细节:参见 [docs/architecture-design.md](docs/architecture-design.md) 与 [docs/research-sources.md](docs/research-sources.md)(每个设计决策背后的事实依据)。

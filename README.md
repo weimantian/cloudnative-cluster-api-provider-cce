@@ -116,16 +116,50 @@ Key flows:
 ## Architecture
 
 ```mermaid
-flowchart LR
-    subgraph MGMT["Management Cluster"]
-        CAPI["cluster-api (core)<br/>Cluster / MachinePool"]
-        P["capi-cce<br/>(this provider)"]
-        CAPI -->|infrastructureRef / controlPlaneRef| P
+flowchart TB
+    subgraph OPS["Ops / Delivery layer"]
+        U["User<br/>kubectl · clusterctl · CloudShell"]
+        GH["GitHub Release v0.1.0<br/>clusterctl.yaml · components · cluster-templates"]
+        SWR["Public SWR (no auth)<br/>CAPI · cert-manager · cce-provider images"]
     end
-    P -->|Huawei Cloud Go SDK| HW["Huawei Cloud (target project)"]
-    HW --> CCE["CCE managed cluster"]
-    HW --> NP["Node Pools (ECS nodes)"]
-    CCE -->|kubeconfig| P
+
+    subgraph MGMT["Management cluster A (CCE)"]
+        CORE["cluster-api (core)<br/>Cluster / MachinePool controllers"]
+        P["capi-cce provider<br/>CCECluster · CCEManagedControlPlane<br/>CCEManagedMachinePool controllers<br/>scope → services (cce · network · iam)"]
+        CM["cert-manager"]
+        WH["webhooks (mutating / validating)"]
+        SEC["Secrets<br/>-credentials (AK/SK)<br/>-kubeconfig"]
+    end
+
+    subgraph HW["Huawei Cloud cn-north-4 (target account)"]
+        IAM["IAM<br/>AK/SK auth · agency"]
+        VPC["VPC / subnets<br/>node subnet · ENI subnet"]
+        CCEAPI["CCE control plane API<br/>cluster · node pool · kubeconfig"]
+        ECS["ECS<br/>nodes (c7.xlarge.2) · bastion"]
+        EIP["EIP / ELB<br/>public endpoint"]
+    end
+
+    subgraph WB["Workload cluster B (CCE)"]
+        APISERVER["API Server"]
+        POOLS["Node pools pool-0/1/2<br/>AZ 4a / 4b / 4g"]
+    end
+
+    U -->|1 download release artifacts| GH
+    U -->|2 clusterctl init / kubectl| CORE
+    GH -->|3 install components| CORE
+    CORE -->|4 infrastructureRef / controlPlaneRef| P
+    CM -.->|5 issue webhook cert| WH
+    P -->|6 AK/SK auth via SDK| IAM
+    P -->|7 create cluster / node pool / kubeconfig| CCEAPI
+    P -->|8 read / write| SEC
+    CCEAPI -->|9 create node pools| ECS
+    CCEAPI -->|10 attach VPC / subnets| VPC
+    CCEAPI -->|11 bind public access| EIP
+    ECS -->|12 pull images| SWR
+    CCEAPI -->|13 kubeconfig → Secret| SEC
+    U -->|14 clusterctl get kubeconfig| SEC
+    U -->|15 access workload| APISERVER
+    APISERVER --> POOLS
 ```
 
 Design details: see [docs/architecture-design.md](docs/architecture-design.md) (Chinese) and [docs/research-sources.md](docs/research-sources.md) for the verified facts behind every design decision.
