@@ -10,6 +10,8 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
+
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 )
 
 // CCEManagedControlPlaneSpec defines the desired state of
@@ -130,6 +132,15 @@ type CCEManagedControlPlaneSpec struct {
 	// reads spec.controlPlaneEndpoint, not status.
 	// +optional
 	ControlPlaneEndpoint *clusterv1.APIEndpoint `json:"controlPlaneEndpoint,omitempty"`
+
+	// AdditionalTags is an optional set of tags to add to the CCE cluster (maps
+	// to CCE clusterTags / ResourceTag), in addition to the provider owned tag
+	// cluster-api-provider-cce.cluster.<clusterName>=owned that is always added.
+	// The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags.
+	// Tag updates on an already-created cluster are reconciled via the CCE
+	// BatchCreateClusterTags API (see requirements FR-1.9).
+	// +optional
+	AdditionalTags common.Tags `json:"additionalTags,omitempty"`
 }
 
 // EncryptionConfigSpec controls etcd secret encryption (CCE spec.encryptionConfig).

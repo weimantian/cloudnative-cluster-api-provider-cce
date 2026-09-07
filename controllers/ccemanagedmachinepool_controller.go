@@ -618,6 +618,7 @@ func toCreateNodePoolInput(clusterID string, pool *infrav1beta2.CCEManagedMachin
 		PreInstall:            pool.Spec.PreInstall,
 		PostInstall:           pool.Spec.PostInstall,
 		WaitPostInstallFinish: pool.Spec.WaitPostInstallFinish,
+		Tags:                  map[string]string(pool.Spec.AdditionalTags),
 	}
 	if features.Enabled(features.NodePoolAutoscaling) {
 		in.Autoscaling = toProviderAutoscaling(pool.Spec.Autoscaling)

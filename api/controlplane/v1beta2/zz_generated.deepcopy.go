@@ -11,6 +11,7 @@ Licensed under the MIT No Attribution (MIT-0) License.
 package v1beta2
 
 import (
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	"k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	runtime "k8s.io/apimachinery/pkg/runtime"
@@ -229,6 +230,13 @@ func (in *CCEManagedControlPlaneSpec) DeepCopyInto(out *CCEManagedControlPlaneSp
 		in, out := &in.ControlPlaneEndpoint, &out.ControlPlaneEndpoint
 		*out = new(corev1beta2.APIEndpoint)
 		**out = **in
+	}
+	if in.AdditionalTags != nil {
+		in, out := &in.AdditionalTags, &out.AdditionalTags
+		*out = make(common.Tags, len(*in))
+		for key, val := range *in {
+			(*out)[key] = val
+		}
 	}
 }
 

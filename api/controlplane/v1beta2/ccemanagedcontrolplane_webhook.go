@@ -256,6 +256,10 @@ func (c *CCEManagedControlPlane) validate() error {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "endpointAccess", "private"),
 			"private cannot be disabled (CCE always exposes a VPC-internal endpoint)"))
 	}
+	// Additional tags follow the Huawei Cloud resource-tag constraints (official
+	// CCE ResourceTag limits: key 1-128 no '/' no _sys_, value 0-255, <=19 user
+	// tags so the owned tag keeps the total at the official 20-cap).
+	allErrs = append(allErrs, c.Spec.AdditionalTags.Validate(field.NewPath("spec", "additionalTags"))...)
 	if len(allErrs) == 0 {
 		return nil
 	}

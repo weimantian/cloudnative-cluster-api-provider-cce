@@ -166,6 +166,10 @@ func (m *CCEManagedMachinePool) validate() error {
 				m.Spec.Autoscaling.MaxNodeCount, "must be greater than or equal to minNodeCount"))
 		}
 	}
+	// Additional tags follow the Huawei Cloud resource-tag constraints (official
+	// CCE UserTag limits: key 1-128 no '/' no _sys_, value 0-255, <=19 user
+	// tags so the owned tag keeps the total at the official 20-cap).
+	allErrs = append(allErrs, m.Spec.AdditionalTags.Validate(field.NewPath("spec", "additionalTags"))...)
 	if len(allErrs) == 0 {
 		return nil
 	}

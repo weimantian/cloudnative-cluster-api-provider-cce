@@ -61,6 +61,15 @@ spec:
                       It maps 1:1 to a CCE node pool (NodePool). Field semantics follow the
                       official CreateNodePool API (nodeTemplate / initialNodeCount / autoscaling).
                     properties:
+                      additionalTags:
+                        additionalProperties:
+                          type: string
+                        description: |-
+                          AdditionalTags is an optional set of tags to add to the CCE node pool
+                          (maps to CCE userTags / UserTag), in addition to the provider owned tag
+                          cluster-api-provider-cce.cluster.<clusterName>=owned that is always added.
+                          The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags.
+                        type: object
                       autoscaling:
                         description: |-
                           Autoscaling maps to the CCE node pool autoscaling

@@ -161,6 +161,13 @@ type CCEManagedMachinePoolSpec struct {
 	// NodeLifecycleConfig waitPostInstallFinish.
 	// +optional
 	WaitPostInstallFinish *bool `json:"waitPostInstallFinish,omitempty"`
+
+	// AdditionalTags is an optional set of tags to add to the CCE node pool
+	// (maps to CCE userTags / UserTag), in addition to the provider owned tag
+	// cluster-api-provider-cce.cluster.<clusterName>=owned that is always added.
+	// The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags.
+	// +optional
+	AdditionalTags common.Tags `json:"additionalTags,omitempty"`
 }
 
 type UpdateConfigSpec struct {

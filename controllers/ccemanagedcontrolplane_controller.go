@@ -751,6 +751,7 @@ func toCreateClusterInput(cp *controlplanev1beta2.CCEManagedControlPlane, vpcID,
 		BillingMode:           cp.Spec.Billing.Mode,
 		EncryptionConfig:      toEncryptionConfigInput(cp.Spec.EncryptionConfig),
 		Authentication:        toAuthenticationInput(cp.Spec.Authentication),
+		Tags:                  map[string]string(cp.Spec.AdditionalTags),
 	}
 }
 

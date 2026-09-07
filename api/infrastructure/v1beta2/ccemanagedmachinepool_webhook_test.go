@@ -208,3 +208,27 @@ func TestMachinePoolNodePoolNameImmutability(t *testing.T) {
 		t.Errorf("expected unchanged NodePoolName to pass, got %v", err)
 	}
 }
+
+func TestMachinePoolAdditionalTagsValidation(t *testing.T) {
+	// Valid tags pass; a key with '/' (invalid CCE charset) is rejected.
+	ok := validPool()
+	ok.Spec.AdditionalTags = common.Tags{"env": "prod", "owner": "platform"}
+	if err := ok.validate(); err != nil {
+		t.Fatalf("valid additionalTags rejected: %v", err)
+	}
+
+	bad := validPool()
+	bad.Spec.AdditionalTags = common.Tags{"a/b": "v"} // '/' not allowed in keys
+	if err := bad.validate(); err == nil {
+		t.Error("expected validation error for '/' in tag key")
+	}
+
+	tooMany := validPool()
+	tooMany.Spec.AdditionalTags = common.Tags{}
+	for i := 0; i <= common.MaxAdditionalTags; i++ {
+		tooMany.Spec.AdditionalTags["key"+string(rune('a'+i%26))] = "v"
+	}
+	if err := tooMany.validate(); err == nil {
+		t.Error("expected validation error for too many tags")
+	}
+}
