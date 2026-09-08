@@ -34,6 +34,8 @@ type ClusterInfo struct {
 	Version string
 	// Endpoints of the cluster API server.
 	Endpoints []Endpoint
+	// Tags are the cluster's current custom tags (spec.clusterTags).
+	Tags map[string]string
 }
 
 // CreateClusterInput maps the CCEManagedControlPlane spec to the CCE
@@ -442,6 +444,11 @@ type AccessPolicyInfo struct {
 // Service is the CCE API surface consumed by the provider controllers.
 type Service interface { // ShowCluster returns the current state of a CCE cluster.
 	ShowCluster(ctx context.Context, clusterID string) (*ClusterInfo, error)
+	// ReconcileClusterTags brings the CCE cluster tags in line with the desired
+	// set (owned + role + user tags): adds/updates drifted tags via
+	// BatchCreateClusterTags and deletes tags no longer desired (never the owned
+	// tag) via BatchDeleteClusterTags. No-op when already in sync.
+	ReconcileClusterTags(ctx context.Context, clusterID, clusterName string, userTags map[string]string) error
 	// CreateCluster creates a CCE cluster and returns its ID.
 	CreateCluster(ctx context.Context, in CreateClusterInput) (string, error)
 	// DeleteCluster deletes a CCE cluster with the given delete options.

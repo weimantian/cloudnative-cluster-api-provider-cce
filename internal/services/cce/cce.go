@@ -148,36 +148,109 @@ func buildAuxClients(c *Client, regionID string, cred auth.ICredential) error {
 }
 
 // ShowCluster implements Service.
-func (s *Client) ShowCluster(_ context.Context, clusterID string) (*ClusterInfo, error) {
-	resp, err := s.cce.ShowCluster(&model.ShowClusterRequest{ClusterId: clusterID})
-	if err != nil {
-		return nil, errors.Wrapf(err, "ShowCluster %s failed", clusterID)
-	}
-	info := &ClusterInfo{}
-	if resp.Metadata != nil && resp.Metadata.Uid != nil {
-		info.ClusterID = *resp.Metadata.Uid
-	}
-	if resp.Status != nil {
-		if resp.Status.Phase != nil {
-			info.Phase = *resp.Status.Phase
+	func (s *Client) ShowCluster(_ context.Context, clusterID string) (*ClusterInfo, error) {
+		resp, err := s.cce.ShowCluster(&model.ShowClusterRequest{ClusterId: clusterID})
+		if err != nil {
+			return nil, errors.Wrapf(err, "ShowCluster %s failed", clusterID)
 		}
-		if resp.Status.Endpoints != nil {
-			for _, ep := range *resp.Status.Endpoints {
-				e := Endpoint{}
-				if ep.Url != nil {
-					e.URL = *ep.Url
+		info := &ClusterInfo{}
+		if resp.Metadata != nil && resp.Metadata.Uid != nil {
+			info.ClusterID = *resp.Metadata.Uid
+		}
+		if resp.Status != nil {
+			if resp.Status.Phase != nil {
+				info.Phase = *resp.Status.Phase
+			}
+			if resp.Status.Endpoints != nil {
+				for _, ep := range *resp.Status.Endpoints {
+					e := Endpoint{}
+					if ep.Url != nil {
+						e.URL = *ep.Url
+					}
+					if ep.Type != nil {
+						e.Type = *ep.Type
+					}
+					info.Endpoints = append(info.Endpoints, e)
 				}
-				if ep.Type != nil {
-					e.Type = *ep.Type
-				}
-				info.Endpoints = append(info.Endpoints, e)
 			}
 		}
+		if resp.Spec != nil {
+			if resp.Spec.Version != nil {
+				info.Version = *resp.Spec.Version
+			}
+			// Current custom tags (spec.clusterTags) — the diff base for tag sync.
+			info.Tags = map[string]string{}
+			if resp.Spec.ClusterTags != nil {
+				for _, t := range *resp.Spec.ClusterTags {
+					if t.Key != nil && t.Value != nil {
+						info.Tags[*t.Key] = *t.Value
+					}
+				}
+			}
+		}
+		return info, nil
 	}
-	if resp.Spec != nil && resp.Spec.Version != nil {
-		info.Version = *resp.Spec.Version
+
+
+
+// clusterTagsDiff computes the tag updates needed to converge cur to want:
+// add carries keys missing or with a different value; del carries keys present
+// in cur but absent from want, excluding the owned key (never deleted).
+func clusterTagsDiff(cur, want map[string]string, ownedKey string) (d struct {
+	add []model.ResourceTag
+	del []model.ResourceDeleteTag
+}) {
+	for k, v := range want {
+		if cv, ok := cur[k]; !ok || cv != v {
+			d.add = append(d.add, model.ResourceTag{Key: stringPtr(k), Value: stringPtr(v)})
+		}
 	}
-	return info, nil
+	for k := range cur {
+		if _, ok := want[k]; !ok && k != ownedKey {
+			d.del = append(d.del, model.ResourceDeleteTag{Key: stringPtr(k)})
+		}
+	}
+	return d
+}
+
+// ReconcileClusterTags implements Service. The desired set is owned + role +
+// user tags (toClusterTags): missing/drifted tags are created/updated via
+// BatchCreateClusterTags, tags no longer desired are deleted (the owned tag is
+// never deleted). Idempotent — a no-op when the cluster is already in sync.
+func (s *Client) ReconcileClusterTags(ctx context.Context, clusterID, clusterName string, userTags map[string]string) error {
+	info, err := s.ShowCluster(ctx, clusterID)
+	if err != nil {
+		return err
+	}
+	cur := map[string]string{}
+	for k, v := range info.Tags {
+		cur[k] = v
+	}
+	want := map[string]string{}
+	for _, t := range *toClusterTags(clusterName, userTags) {
+		if t.Key != nil && t.Value != nil {
+			want[*t.Key] = *t.Value
+		}
+	}
+
+	d := clusterTagsDiff(cur, want, ownedTagKey(clusterName))
+	toCreate, toDelete := d.add, d.del
+
+	if len(toCreate) > 0 {
+		req := &model.BatchCreateClusterTagsRequest{ClusterId: clusterID,
+			Body: &model.BatchCreateClusterTagsRequestBody{Tags: toCreate}}
+		if _, err := s.cce.BatchCreateClusterTags(req); err != nil {
+			return errors.Wrapf(err, "BatchCreateClusterTags %s failed", clusterID)
+		}
+	}
+	if len(toDelete) > 0 {
+		req := &model.BatchDeleteClusterTagsRequest{ClusterId: clusterID,
+			Body: &model.BatchDeleteClusterTagsRequestBody{Tags: toDelete}}
+		if _, err := s.cce.BatchDeleteClusterTags(req); err != nil {
+			return errors.Wrapf(err, "BatchDeleteClusterTags %s failed", clusterID)
+		}
+	}
+	return nil
 }
 
 // CreateCluster implements Service.

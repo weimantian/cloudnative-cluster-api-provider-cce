@@ -26,6 +26,7 @@ import (
 // "nodepool-1", desired count as requested).
 type FakeCCEService struct {
 	ShowClusterFn            func(ctx context.Context, clusterID string) (*cceService.ClusterInfo, error)
+	ReconcileClusterTagsFn   func(ctx context.Context, clusterID, clusterName string, userTags map[string]string) error
 	CreateClusterFn          func(ctx context.Context, in cceService.CreateClusterInput) (string, error)
 	DeleteClusterFn          func(ctx context.Context, in cceService.DeleteClusterInput) error
 	GetClusterKubeconfigFn   func(ctx context.Context, clusterID string, durationDays int32) (string, error)
@@ -386,6 +387,14 @@ func (f *FakeNetworkManager) DeleteNetwork(ctx context.Context, spec *common.Net
 }
 
 // --- Service interface methods ---
+
+// ReconcileClusterTags implements cceService.Service.
+func (f *FakeCCEService) ReconcileClusterTags(ctx context.Context, clusterID, clusterName string, userTags map[string]string) error {
+	if f.ReconcileClusterTagsFn != nil {
+		return f.ReconcileClusterTagsFn(ctx, clusterID, clusterName, userTags)
+	}
+	return nil
+}
 
 // ShowCluster implements cceService.Service.
 func (f *FakeCCEService) ShowCluster(ctx context.Context, clusterID string) (*cceService.ClusterInfo, error) {

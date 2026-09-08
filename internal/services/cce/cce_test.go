@@ -410,3 +410,48 @@ func TestPaginateAllErrorStopsIteration(t *testing.T) {
 		t.Errorf("expected nil result on error, got %v", got)
 	}
 }
+
+func TestClusterTagsDiff(t *testing.T) {
+	owned := ownedTagKey("demo")
+	cur := map[string]string{
+		owned:        "owned",
+		RoleTagKey:   "apiserver",
+		"env":        "prod",
+		"stale":      "gone",   // in cur but not want -> delete
+		"role-clash": "user-x", // a foreign role-ish user key -> delete
+	}
+	want := map[string]string{
+		owned:      "owned",
+		RoleTagKey: "apiserver",
+		"env":      "prod",
+		"team":     "platform", // missing -> add
+	}
+	d := clusterTagsDiff(cur, want, owned)
+	if len(d.add) != 1 || len(d.del) != 2 {
+		t.Fatalf("expected 1 add / 2 del, got add=%v del=%v", d.add, d.del)
+	}
+	if d.add[0].Key == nil || *d.add[0].Key != "team" || d.add[0].Value == nil || *d.add[0].Value != "platform" {
+		t.Errorf("unexpected add: %v", d.add)
+	}
+	for _, x := range d.del {
+		if x.Key != nil && *x.Key == owned {
+			t.Errorf("owned tag must never be deleted")
+		}
+	}
+
+	// Value drift on a user tag -> add (update).
+	cur2 := map[string]string{"env": "staging"}
+	want2 := map[string]string{"env": "prod"}
+	d2 := clusterTagsDiff(cur2, want2, owned)
+	if len(d2.add) != 1 || d2.add[0].Key == nil || *d2.add[0].Key != "env" {
+		t.Fatalf("drift must produce an add, got %v", d2.add)
+	}
+	if len(d2.del) != 0 {
+		t.Errorf("same key must not be deleted, got %v", d2.del)
+	}
+
+	// In sync -> nothing.
+	if d3 := clusterTagsDiff(want2, want2, owned); len(d3.add)+len(d3.del) != 0 {
+		t.Errorf("in-sync must be a no-op, got %v/%v", d3.add, d3.del)
+	}
+}

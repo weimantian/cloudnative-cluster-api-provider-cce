@@ -319,10 +319,16 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 			cp.Spec.ControlPlaneEndpoint = endpoint
 		}
 	}
-	cp.Status.Version = info.Version
 	conditions.MarkTrue(cp, conditions.CCEClusterReadyCondition, "ClusterAvailable", "CCE cluster is available")
 	recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "ClusterAvailable", "CCE cluster %s is available", clusterID)
-	conditions.MarkTrue(cp, conditions.CCEClusterReadyCondition, "ClusterAvailable", "CCE cluster is available")
+
+	// Tag drift sync (FR-1.9 / CAPA tag Ensure): reconcile spec.additionalTags
+	// against the cloud cluster tags so declarations stay authoritative even
+	// after creation (add/update drifted tags, remove extras, never the owned
+	// tag). Failures requeue without flipping the readiness condition.
+	if err := svc.ReconcileClusterTags(ctx, clusterID, cp.Spec.ClusterName, cp.Spec.AdditionalTags); err != nil {
+		return ctrl.Result{}, err
+	}
 
 	// Addons reconciliation (declarative set, mirrors CAPA EKS addons): install
 	// missing, upgrade version drift, remove those no longer listed.
