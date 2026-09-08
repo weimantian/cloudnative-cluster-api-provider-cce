@@ -90,7 +90,7 @@ The following **8 images** are pre-built / mirrored to **public SWR** (`swr.cn-n
 | `cert-manager-webhook:v1.21.1` | quay.io/jetstack | cert-manager webhook |
 | `capi-cce-tools:latest` | Packaged locally | Bastion tools: kubectl v1.30 + clusterctl v1.14 |
 
-> The current `cluster-api-cce-controller:latest` digest is `c5d01fba` (includes kubeconfig endpoint override + 429 back-off fix + cluster/node-pool `additionalTags`).
+> The current `cluster-api-cce-controller:latest` digest is `62032aa` (includes kubeconfig endpoint override + 429 back-off fix + cluster/node-pool `additionalTags`).
 > Full path example: `swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller:latest`.
 
 ---
