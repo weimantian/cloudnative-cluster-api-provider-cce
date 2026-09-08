@@ -329,6 +329,13 @@ type FakeNetworkManager struct {
 	// ReconcileCalls counts the total step invocations (Vpc+Subnets+NatGateway).
 	ReconcileCalls int
 	DeleteCalls    int
+	// AdditionalTags records the last SetAdditionalTags payload.
+	AdditionalTags map[string]string
+}
+
+// SetAdditionalTags implements network.ManagerInterface.
+func (f *FakeNetworkManager) SetAdditionalTags(tags map[string]string) {
+	f.AdditionalTags = tags
 }
 
 func (f *FakeNetworkManager) ReconcileVpc(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {

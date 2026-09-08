@@ -81,6 +81,12 @@ func IsManaged(spec *common.NetworkSpec, clusterName string) bool {
 // ManagerInterface is the managed-network surface used by controllers; tests
 // inject fakes (pattern mirrors ValidatorInterface).
 type ManagerInterface interface {
+	// SetAdditionalTags stores cluster-level user tags to stamp on every
+	// provider-managed network resource (VPC/subnets/NAT/EIP) in addition to
+	// the owned tag, mirroring CAPA applying AdditionalTags to its managed
+	// network. Called once before the reconcile steps when the cluster carries
+	// tags.
+	SetAdditionalTags(tags map[string]string)
 	// ReconcileVpc ensures the managed VPC exists (or adopts an existing
 	// owned-tagged VPC) and prepares the default subnet spec, backfilling
 	// ResourceID.
@@ -109,6 +115,8 @@ type Manager struct {
 	vpc *vpcv2.VpcClient
 	nat *natv2.NatClient
 	eip *eipv2.EipClient
+	// additionalTags are cluster-level user tags stamped on managed resources.
+	additionalTags map[string]string
 }
 
 // NewManager builds a VPC/NAT/EIP API-backed network manager.
@@ -152,6 +160,25 @@ func NewManager(regionID string, creds *credentials.Credentials) (*Manager, erro
 }
 
 // ReconcileVpc implements ManagerInterface.
+// SetAdditionalTags implements ManagerInterface.
+func (m *Manager) SetAdditionalTags(tags map[string]string) {
+	m.additionalTags = tags
+}
+
+// resourceTagList builds the VPC/NAT star-form tag list (key*value) for a
+// managed resource: the owned tag first, then the cluster-level additional
+// tags (a user tag with the owned key is skipped — owned always wins).
+func (m *Manager) resourceTagList(clusterName string) []string {
+	tags := []string{ownedTagKey(clusterName) + "*owned"}
+	owned := ownedTagKey(clusterName)
+	for k, v := range m.additionalTags {
+		if k != owned {
+			tags = append(tags, k+"*"+v)
+		}
+	}
+	return tags
+}
+
 func (m *Manager) ReconcileVpc(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {
 	if spec.VPC.ID != "" {
 		// vpc.id set: BYO (no owned tag) is a no-op; adopted (owned tag) is
@@ -280,9 +307,9 @@ func (m *Manager) ensureVpc(ctx context.Context, spec *common.NetworkSpec, clust
 	}
 	// Managed VPCs carry the provider owned tag (key*value star format, verified
 	// live: ShowVpcTags splits on '*' — the equal sign is NOT a separator).
-	ownedTag := []string{ownedTagKey(clusterName) + "*owned"}
+	resTags := m.resourceTagList(clusterName)
 	resp, err := m.vpc.CreateVpc(&vpcmodel.CreateVpcRequest{Body: &vpcmodel.CreateVpcRequestBody{
-		Vpc: &vpcmodel.CreateVpcOption{Name: strPtr(name), Cidr: strPtr(cidr), Description: strPtr(spec.VPC.Description), Tags: &ownedTag},
+		Vpc: &vpcmodel.CreateVpcOption{Name: strPtr(name), Cidr: strPtr(cidr), Description: strPtr(spec.VPC.Description), Tags: &resTags},
 	}})
 	if err != nil {
 		return errors.Wrapf(err, "CreateVpc %q failed", name)
@@ -337,6 +364,7 @@ func (m *Manager) ensureSubnets(ctx context.Context, spec *common.NetworkSpec, c
 		if s.CIDR == "" {
 			return errors.Errorf("subnet %q has no cidr (managed subnets require one)", name)
 		}
+		subTags := m.resourceTagList(clusterName)
 		resp, err := m.vpc.CreateSubnet(&vpcmodel.CreateSubnetRequest{Body: &vpcmodel.CreateSubnetRequestBody{
 			Subnet: &vpcmodel.CreateSubnetOption{
 				Name:             name,
@@ -344,6 +372,7 @@ func (m *Manager) ensureSubnets(ctx context.Context, spec *common.NetworkSpec, c
 				VpcId:            spec.VPC.ResourceID,
 				GatewayIp:        gatewayIP(s.CIDR),
 				AvailabilityZone: strPtr(s.AvailabilityZone),
+				Tags:             &subTags,
 			},
 		}})
 		if err != nil {
@@ -652,12 +681,23 @@ func (m *Manager) createEip(ctx context.Context, name, clusterName string) (stri
 	eipID := *resp.Publicip.Id
 	// EIP has no tags on the create call; tag it separately (CreatePublicipTag,
 	// {Key,Value} structured — key ≤128, official 2026-08-05). The GC sweeper
-	// relies on this owned tag to find orphaned EIPs.
-	if _, err := m.eip.CreatePublicipTag(&eipmodel.CreatePublicipTagRequest{
-		PublicipId: eipID,
-		Body:       &eipmodel.CreatePublicipTagRequestBody{Tag: &eipmodel.ResourceTagOption{Key: ownedTagKey(clusterName), Value: "owned"}},
-	}); err != nil {
-		return "", errors.Wrapf(err, "CreatePublicipTag on %s failed", eipID)
+	// relies on this owned tag to find orphaned EIPs. Cluster-level additional
+	// tags are stamped too (one call each; owned always wins).
+	tags := []eipmodel.ResourceTagOption{{Key: ownedTagKey(clusterName), Value: "owned"}}
+	owned := ownedTagKey(clusterName)
+	for k, v := range m.additionalTags {
+		if k != owned {
+			tags = append(tags, eipmodel.ResourceTagOption{Key: k, Value: v})
+		}
+	}
+	for _, t := range tags {
+		tag := t
+		if _, err := m.eip.CreatePublicipTag(&eipmodel.CreatePublicipTagRequest{
+			PublicipId: eipID,
+			Body:       &eipmodel.CreatePublicipTagRequestBody{Tag: &tag},
+		}); err != nil {
+			return "", errors.Wrapf(err, "CreatePublicipTag(%s) on %s failed", tag.Key, eipID)
+		}
 	}
 	return eipID, nil
 }
@@ -666,7 +706,7 @@ func (m *Manager) createNatGateway(ctx context.Context, name, vpcID, subnetID, s
 	// Managed NAT gateways carry the provider owned tag (same star format as
 	// VPC — inferred, unverified live due to account balance; the independent
 	// CreateNatGatewayTag API is the fallback).
-	ownedTag := []string{ownedTagKey(clusterName) + "*owned"}
+	natTags := m.resourceTagList(clusterName)
 	resp, err := m.nat.CreateNatGateway(&natmodel.CreateNatGatewayRequest{
 		Body: &natmodel.CreateNatGatewayRequestBody{
 			NatGateway: &natmodel.CreateNatGatewayOption{
@@ -674,7 +714,7 @@ func (m *Manager) createNatGateway(ctx context.Context, name, vpcID, subnetID, s
 				RouterId:          vpcID,
 				InternalNetworkId: subnetID,
 				Spec:              natSpecEnum(spec),
-				Tags:              &ownedTag,
+				Tags:              &natTags,
 			},
 		},
 	})

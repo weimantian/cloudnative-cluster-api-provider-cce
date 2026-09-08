@@ -191,6 +191,17 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 					conditions.NetworkValidationFailedReason, serr.Error())
 				return ctrl.Result{RequeueAfter: requeueAfterForError(key, serr)}, nil
 			}
+			// Stamp cluster-level additionalTags on the provider-managed network
+			// resources (mirrors CAPA applying AdditionalTags to managed
+			// networking). Sourced from the owning control plane, if present.
+			var cpTags map[string]string
+			if cluster.Spec.ControlPlaneRef.Name != "" {
+				cp := &controlplanev1beta2.CCEManagedControlPlane{}
+				if err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err == nil {
+					cpTags = map[string]string(cp.Spec.AdditionalTags)
+				}
+			}
+			svc.SetAdditionalTags(cpTags)
 			if rerr := r.reconcileManagedNetwork(ctx, cceCluster, cluster.Name, svc); rerr != nil {
 				conditions.MarkFalse(cceCluster,
 					conditions.NetworkReadyCondition,

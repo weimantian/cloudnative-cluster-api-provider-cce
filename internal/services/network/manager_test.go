@@ -94,3 +94,32 @@ func TestSecurityGroupRuleExists(t *testing.T) {
 		})
 	}
 }
+
+func TestManagerResourceTagList(t *testing.T) {
+	m := &Manager{additionalTags: map[string]string{"env": "prod", "cost-center": "cc-42"}}
+	tags := m.resourceTagList("demo")
+	owned := ownedTagKey("demo")
+	if len(tags) != 3 {
+		t.Fatalf("expected owned + 2 user tags, got %v", tags)
+	}
+	if tags[0] != owned+"*owned" {
+		t.Errorf("owned tag must come first, got %q", tags[0])
+	}
+	seen := map[string]bool{}
+	for _, tg := range tags[1:] {
+		seen[tg] = true
+	}
+	if !seen["env*prod"] || !seen["cost-center*cc-42"] {
+		t.Errorf("expected env/cost-center star tags, got %v", tags)
+	}
+
+	// A user tag colliding with the owned key is dropped.
+	m2 := &Manager{additionalTags: map[string]string{owned: "user", "env": "prod"}}
+	if got := m2.resourceTagList("demo"); len(got) != 2 {
+		t.Errorf("owned-key collision must be dropped, got %v", got)
+	}
+	// No additional tags -> owned only.
+	if got := (&Manager{}).resourceTagList("demo"); len(got) != 1 {
+		t.Errorf("expected owned-only, got %v", got)
+	}
+}
