@@ -257,3 +257,18 @@ func TestToCreateNodePoolInputLifecycleHooks(t *testing.T) {
 		t.Errorf("expected nil WaitPostInstallFinish, got %v", *empty.WaitPostInstallFinish)
 	}
 }
+
+func TestMergedTags(t *testing.T) {
+	cp := common.Tags{"env": "prod", "cost-center": "cc-42"}
+	pool := common.Tags{"team": "platform", "env": "staging"} // pool wins on env
+	got := mergedTags(cp, pool)
+	if got["env"] != "staging" {
+		t.Errorf("pool tag must win, env=%q", got["env"])
+	}
+	if got["cost-center"] != "cc-42" || got["team"] != "platform" {
+		t.Errorf("expected inherited + pool tags, got %v", got)
+	}
+	if mergedTags(nil, nil) == nil {
+		t.Error("expected non-nil empty map")
+	}
+}

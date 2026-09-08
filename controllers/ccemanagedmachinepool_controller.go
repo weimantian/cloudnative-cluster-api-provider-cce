@@ -30,6 +30,7 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
@@ -226,7 +227,12 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		}
 	}
 	if pool.Status.NodePoolID == "" {
-		id, err := svc.CreateNodePool(ctx, toCreateNodePoolInput(clusterID, pool, effectiveSGs))
+		in := toCreateNodePoolInput(clusterID, pool, effectiveSGs)
+		// Cluster-level tags propagate to every node pool (control plane's
+		// additionalTags), the pool's own tags win on collision — mirrors
+		// CAPA's AdditionalTags scope merge.
+		in.Tags = mergedTags(cp.Spec.AdditionalTags, pool.Spec.AdditionalTags)
+		id, err := svc.CreateNodePool(ctx, in)
 		if err != nil {
 			conditions.MarkFalse(pool,
 				conditions.NodePoolReadyCondition,
@@ -711,4 +717,19 @@ func (r *CCEManagedMachinePoolReconciler) syncReplicasFromOwner(ctx context.Cont
 		pool.Spec.Replicas = *mp.Spec.Replicas
 	}
 	return nil
+}
+
+// mergedTags overlays pool-level tags on cluster-level tags (the pool wins on
+// key collision), mirroring CAPA's AdditionalTags scope merge: setting
+// additionalTags once on the control plane reaches every node pool, and a pool
+// can still override or add its own.
+func mergedTags(clusterTags, poolTags common.Tags) map[string]string {
+	out := map[string]string{}
+	for k, v := range clusterTags {
+		out[k] = v
+	}
+	for k, v := range poolTags {
+		out[k] = v
+	}
+	return out
 }
