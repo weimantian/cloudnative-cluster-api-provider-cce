@@ -1463,6 +1463,28 @@ func (s *Client) DeleteAddonInstance(_ context.Context, _, addonID string) error
 // addressing and future external-resource GC.
 const OwnedTagPrefix = "cluster-api-provider-cce.cluster"
 
+// RoleTagKey is the reserved tag key marking a resource's role inside the
+// cluster, mirroring CAPA's sigs.k8s.io/cluster-api-provider-aws/role tag
+// (dots instead of '/' — CCE tag keys reject '/'). The full CAPA value set is
+// declared up front so a future ECS-based (self-managed) mode can reuse it
+// unchanged; the managed-CCE mode currently sets apiserver on the CCE cluster
+// and node on every node pool. Role is reserved: a user-supplied tag with this
+// key is dropped in favor of the built-in value (same precedence as owned).
+const RoleTagKey = "cluster-api-provider-cce.role"
+
+// CAPA role values (cluster-api-provider-cce.role). apiserver/node are used in
+// the managed-CCE mode today; the rest are reserved for a future ECS-based
+// (self-managed, CAPI KubeadmControlPlane) mode covering the same resource
+// roles CAPA tags.
+const (
+	RoleApiserver = "apiserver" // control-plane / API server cost role
+	RoleNode      = "node"      // worker nodes
+	RoleCommon    = "common"    // shared networking resources (future)
+	RolePublic    = "public"    // public subnets (future)
+	RolePrivate   = "private"   // private subnets (future)
+	RoleBastion   = "bastion"   // bastion host (future)
+)
+
 // ownedTagKey returns the ownership tag key for a cluster.
 func ownedTagKey(clusterName string) string { return OwnedTagPrefix + "." + clusterName }
 
@@ -1861,27 +1883,45 @@ func logConfigType(t string) *model.ClusterLogConfigLogConfigsType {
 	return &v
 }
 
-// toClusterTags builds the CCE clusterTags array: the owned tag plus any
-// user-supplied additional tags (user tags never override the owned tag).
-func toClusterTags(clusterName string, userTags map[string]string) *[]model.ResourceTag {
-	tags := []model.ResourceTag{{Key: stringPtr(ownedTagKey(clusterName)), Value: stringPtr("owned")}}
-	for k, v := range userTags {
-		if k == ownedTagKey(clusterName) {
-			continue
+// toClusterTags builds the CCE clusterTags array: the owned tag, the built-in
+	// role=apiserver (the managed control plane is the cluster's control-plane
+	// cost role), plus user tags. Internal tags (owned + role) are reserved and
+	// win over any colliding user tag.
+	func toClusterTags(clusterName string, userTags map[string]string) *[]model.ResourceTag {
+		tags := []model.ResourceTag{
+			{Key: stringPtr(ownedTagKey(clusterName)), Value: stringPtr("owned")},
+			{Key: stringPtr(RoleTagKey), Value: stringPtr(RoleApiserver)},
 		}
-		tags = append(tags, model.ResourceTag{Key: stringPtr(k), Value: stringPtr(v)})
+		for k, v := range userTags {
+			if skipReservedTagKey(k, clusterName) {
+				continue
+			}
+			tags = append(tags, model.ResourceTag{Key: stringPtr(k), Value: stringPtr(v)})
+		}
+		return &tags
 	}
-	return &tags
-}
 
-// toUserTags builds the CCE node pool userTags array (owned tag + user tags).
-func toUserTags(clusterName string, userTags map[string]string) *[]model.UserTag {
-	tags := []model.UserTag{{Key: stringPtr(ownedTagKey(clusterName)), Value: stringPtr("owned")}}
-	for k, v := range userTags {
-		if k == ownedTagKey(clusterName) {
-			continue
+	// toUserTags builds the CCE node pool userTags array (owned tag, built-in
+	// role=node, plus user tags). Internal tags (owned + role) are reserved and
+	// win over any colliding user tag.
+	func toUserTags(clusterName string, userTags map[string]string) *[]model.UserTag {
+		tags := []model.UserTag{
+			{Key: stringPtr(ownedTagKey(clusterName)), Value: stringPtr("owned")},
+			{Key: stringPtr(RoleTagKey), Value: stringPtr(RoleNode)},
 		}
-		tags = append(tags, model.UserTag{Key: stringPtr(k), Value: stringPtr(v)})
+		for k, v := range userTags {
+			if skipReservedTagKey(k, clusterName) {
+				continue
+			}
+			tags = append(tags, model.UserTag{Key: stringPtr(k), Value: stringPtr(v)})
+		}
+		return &tags
 	}
-	return &tags
-}
+
+	// skipReservedTagKey reports whether a user-supplied tag key is managed
+	// internally (the per-cluster owned key and the reserved role key) and must
+	// be dropped in favor of the built-in value (mirrors CAPA Build write order:
+	// owned and role are written after user tags and therefore win).
+	func skipReservedTagKey(userKey, clusterName string) bool {
+		return userKey == ownedTagKey(clusterName) || userKey == RoleTagKey
+	}

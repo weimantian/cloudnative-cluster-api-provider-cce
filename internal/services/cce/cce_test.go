@@ -266,14 +266,51 @@ func TestOwnedTagKeyCCEConstraints(t *testing.T) {
 		}
 	}
 
-	// The owned tag must be first and the value "owned".
+	// The owned tag must be first and the value "owned"; the built-in role tag
+	// (apiserver for a cluster) comes second; user tags follow.
 	tags := toClusterTags("demo", map[string]string{"env": "test"})
-	if tags == nil || len(*tags) != 2 {
-		t.Fatalf("expected owned + 1 user tag, got %v", tags)
+	if tags == nil || len(*tags) != 3 {
+		t.Fatalf("expected owned + role + 1 user tag, got %v", tags)
 	}
-	first := (*tags)[0]
-	if first.Key == nil || *first.Key != ownedTagKey("demo") || first.Value == nil || *first.Value != "owned" {
-		t.Errorf("unexpected owned tag: key=%v value=%v", first.Key, first.Value)
+	owned := (*tags)[0]
+	if owned.Key == nil || *owned.Key != ownedTagKey("demo") || owned.Value == nil || *owned.Value != "owned" {
+		t.Errorf("unexpected owned tag: key=%v value=%v", owned.Key, owned.Value)
+	}
+	role := (*tags)[1]
+	if role.Key == nil || *role.Key != RoleTagKey || role.Value == nil || *role.Value != RoleApiserver {
+		t.Errorf("unexpected role tag: key=%v value=%v", role.Key, role.Value)
+	}
+}
+
+func TestRoleTagReservedAndValues(t *testing.T) {
+	// The role tag key satisfies the CCE charset constraints (no '/', <=128).
+	for _, key := range []string{RoleTagKey, "cluster-api-provider-cce.cluster"} {
+		if strings.Contains(key, "/") || len(key) > 128 || strings.HasPrefix(key, "_sys_") {
+			t.Errorf("role/owned key %q violates CCE tag constraints", key)
+		}
+	}
+
+	// Node pools carry role=node; the user cannot override either reserved key.
+	poolTags := toUserTags("demo", map[string]string{
+		"env":      "prod",
+		RoleTagKey: "user-wants-role", // reserved: dropped
+	})
+	if poolTags == nil || len(*poolTags) != 3 {
+		t.Fatalf("expected owned + role + 1 user tag (reserved role dropped), got %v", poolTags)
+	}
+	for _, tg := range *poolTags {
+		if tg.Key != nil && *tg.Key == RoleTagKey && (tg.Value == nil || *tg.Value != RoleNode) {
+			t.Errorf("role tag must be node on a node pool, got %v", tg)
+		}
+		if tg.Key != nil && *tg.Key == ownedTagKey("demo") && (tg.Value == nil || *tg.Value != "owned") {
+			t.Errorf("owned tag must survive, got %v", tg)
+		}
+	}
+	// A user tag whose key equals the owned key of another cluster is not
+	// special-cased (only this cluster's owned key is reserved).
+	other := toUserTags("demo", map[string]string{ownedTagKey("other-cluster"): "x"})
+	if other == nil || len(*other) != 3 {
+		t.Fatalf("expected owned + role + 1 foreign-owned user tag, got %v", other)
 	}
 }
 
