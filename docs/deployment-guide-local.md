@@ -359,7 +359,8 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # 等 CURRENT/AVAILABLE=1�
 
 **规则**：`owned` / `role` 是保留 key——用户 `additionalTags` 写同 key 会被忽略（内置值优先）；单资源用户标签 ≤ 19（+2 内置 = 官方 20 上限）；key ≤128 字符、无 `/`、不以 `_sys_` 开头、无首尾空格；value ≤255 字符（可空，但条目必须存在）。
 
-> ⚠️ 标签在 CCE 资源**创建时**一次性写入（对应 CCE `ClusterTags`/`UserTags`）；已创建资源的标签**增量同步（`BatchCreateClusterTags`，FR-1.9）尚未实现**——要验证标签，必须在 apply 集群 B **之前**把 `additionalTags` 加进 yaml。
+> ✅ **集群标签是声明式的**：改 `spec.additionalTags` 后，provider 会把 CCE 集群标签自动同步一致（`BatchCreateClusterTags` + 10 分钟周期巡检——控制台里手改/删除的标签也会被自动纠回）。
+> ⚠️ **节点池标签仍在创建时写入**（CCE 无节点池标签更新 API）：新节点池的标签 = 控制面的 `additionalTags`（自动继承）+ 自身的 `additionalTags`（叠加覆盖）——所以验证节点池标签仍需在 apply 前配好。
 
 **方式一（推荐）：随创建验证**——步骤 6 的**第 4 步**已在 `kubectl apply` 前给 `my-cluster.yaml` 打了标签（控制面 env/cost-center、pool-0 team）。
 
@@ -377,6 +378,11 @@ kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -o jsonpath='{.spec.addi
 
 # 3. 保留 key 阴性用例：若 additionalTags 里写了 role / 本集群 owned key，
 #    控制台/API 里看不到（被内置值覆盖）
+
+# 4. （#1 漂移同步）改 CP 的 spec.additionalTags（如 env: staging）后重新 apply：
+#    kubectl apply -f my-cluster.yaml
+#    ~1 分钟内 CCE 集群标签自动同步（BatchCreateClusterTags）
+#    或在控制台给集群手加一个多余标签，10 分钟巡检周期内会被自动删除（纠回 spec）
 ```
 
 ## 6. 踩坑问题记录

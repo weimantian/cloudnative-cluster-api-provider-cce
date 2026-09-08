@@ -354,7 +354,8 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # wait for CURRENT/AVAILAB
 
 **Rules**: `owned` and `role` are reserved keys — a user `additionalTags` entry with the same key is dropped (the built-in value wins); at most 19 user tags per resource (+2 built-in = the official cap of 20); key ≤ 128 chars, no `/`, must not start with `_sys_`, no leading/trailing spaces; value ≤ 255 chars (may be empty but the entry must exist).
 
-> ⚠️ Tags are written **once, at CCE resource creation** (CCE `ClusterTags`/`UserTags`); incremental tag sync on already-created resources (`BatchCreateClusterTags`, FR-1.9) is **not implemented yet** — to exercise tags you must add `additionalTags` to the yaml **before** applying cluster B.
+> ✅ **Cluster tags are declarative**: edit `spec.additionalTags` and the provider syncs the CCE cluster tags to match (`BatchCreateClusterTags` + a 10-minute periodic sweep — tags added/edited/deleted in the console are pulled back to the spec).
+> ⚠️ **Node-pool tags are still stamped at creation** (CCE has no node-pool tag update API): a new pool's tags = the control plane's `additionalTags` (inherited) + its own `additionalTags` (overlaid) — so verify pool tags before apply.
 
 **Way 1 (recommended): verify at creation** — Step 6's **sub-step 4** already tags `my-cluster.yaml` (env/cost-center on the control plane, team on pool-0) **before** `kubectl apply`.
 
@@ -371,6 +372,11 @@ kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -o jsonpath='{.spec.addi
 
 # 3. Reserved-key negative case: put role / this cluster's owned key in additionalTags
 #    → not visible in the console/API (overridden by the built-in value)
+
+# 4. (FR-1.9 drift sync) edit the control plane's spec.additionalTags (e.g. env: staging)
+#    and re-apply: kubectl apply -f my-cluster.yaml
+#    → CCE cluster tags converge within ~1 min (BatchCreateClusterTags)
+#    Or add a stray tag in the console: the 10-min periodic sweep deletes it (pull-back)
 ```
 
 ## 6. Troubleshooting / Pitfall Log

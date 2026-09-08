@@ -73,7 +73,7 @@ spec:
   # Billing controls billing mode: 0=on-demand, 1=subscription.
   billing:
     mode: 0               # 0=按需 1=包周期
-  # AdditionalTags is an optional set of tags to add to the CCE cluster (maps to CCE clusterTags / ResourceTag), in addition to the provider owned tag cluster-api-provider-cce.cluster.<clusterName>=owned that is always added. The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags. Tag updates on an already-created cluster are reconciled via the CCE BatchCreateClusterTags API (see requirements FR-1.9).
+  # AdditionalTags is an optional set of tags to add to the CCE cluster (maps to CCE clusterTags / ResourceTag), in addition to the provider owned tag cluster-api-provider-cce.cluster.<clusterName>=owned that is always added. The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags. Cluster tag changes are reconciled automatically (BatchCreateClusterTags + periodic sweep); node-pool tags are stamped at creation (CCE has no pool tag-update API).
   additionalTags:         # 写入 CCE 集群 clusterTags（owned/role 保留 key 自动且优先）
     env: prod
     cost-center: cc-42
