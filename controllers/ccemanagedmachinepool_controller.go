@@ -87,10 +87,9 @@ func (r *CCEManagedMachinePoolReconciler) newCCEService(regionID string, creds *
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 // Reconcile implements the reconcile loop of CCEManagedMachinePool using
-// the per-reconcile CCEManagedMachinePoolScope (CAPA pkg/cloud/scope pattern).
+// the per-reconcile CCEManagedMachinePoolScope.
 // The scope's PatchObject() (called via defer) atomically updates
-// status.observedGeneration via patch.WithStatusObservedGeneration (CAPA
-// commit 9e9bb6b31).
+// status.observedGeneration via patch.WithStatusObservedGeneration.
 func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
@@ -143,7 +142,7 @@ func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctr
 		return res, err
 	}
 
-	// CAPA b5d6d3081: requeue when observed generation is behind current.
+	// Requeue when observed generation is behind current.
 	if scope.ObservedGenerationAtStart() < scope.GenerationAtStart() {
 		log.Info("Observed generation behind current generation, requeueing",
 			"observedGeneration", scope.ObservedGenerationAtStart(),
@@ -229,8 +228,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	if pool.Status.NodePoolID == "" {
 		in := toCreateNodePoolInput(clusterID, pool, effectiveSGs)
 		// Cluster-level tags propagate to every node pool (control plane's
-		// additionalTags), the pool's own tags win on collision — mirrors
-		// CAPA's AdditionalTags scope merge.
+		// additionalTags), the pool's own tags win on collision.
 		in.Tags = mergedTags(cp.Spec.AdditionalTags, pool.Spec.AdditionalTags)
 		id, err := svc.CreateNodePool(ctx, in)
 		if err != nil {
@@ -258,7 +256,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	// machinepool). When the owner carries the external-autoscaler annotation
 	// (cluster.x-k8s.io/replicas-managed-by), the provider does NOT drive the
 	// count - it reverse-syncs the CAPI MachinePool.spec.replicas from the
-	// cloud-side desired count instead (mirrors CAPA eks/nodegroup.go).
+	// cloud-side desired count instead.
 	mp, err := r.findOwnerMachinePool(ctx, pool)
 	if err != nil {
 		return ctrl.Result{}, err
@@ -327,7 +325,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			return ctrl.Result{}, err
 		}
 		// Roll the updated attributes onto existing nodes (CCE 同步节点池 /
-		// UpgradeNodePool — the analogue of CAPA's UpdateConfig rolling update).
+		// UpgradeNodePool — the analogue of UpdateConfig rolling update).
 		// UpdateNodePool alone only affects newly created nodes (Q5/Q11b).
 		// Default the batch size defensively (do not rely on webhook defaulting,
 		// which may be disabled); official range [1,20].
@@ -367,7 +365,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			pool.Status.Replicas = p.NodeCount
 			pool.Status.AvailableReplicas = p.ActiveNodeCount
 			// Externally managed replicas: reverse-sync the CAPI MachinePool.
-			// spec.replicas from the cloud-side node count (mirrors CAPA: the
+			// spec.replicas from the cloud-side node count (the
 			// external autoscaler is the source of truth, and MachinePool.spec
 			// must reflect the cloud's desired count so it does not drift).
 			if externallyManaged && mp != nil {
@@ -405,8 +403,8 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	slices.Sort(providerIDs)
 	pool.Spec.ProviderIDList = providerIDs
 
-	// Node auto-repair (mirrors CAPA NodeRepairConfig.Enabled). CCE has no
-	// EKS-style auto-repair switch, so the provider drives repair directly:
+	// Node auto-repair (NodeRepairConfig.Enabled). CCE has no
+	// auto-repair switch, so the provider drives repair directly:
 	// detect Abnormal/Error nodes and reset them via CCE ResetNode.
 	if pool.Spec.NodeRepair != nil && pool.Spec.NodeRepair.Enabled {
 		if err := r.reconcileNodeRepair(ctx, svc, clusterID, pool); err != nil {
@@ -663,7 +661,7 @@ func toProviderAutoscaling(s infrav1beta2.AutoscalingSpec) *cceService.NodePoolA
 }
 
 // reconcileNodeRepair detects Abnormal/Error nodes in THIS pool and resets
-// them via CCE ResetNode (node auto-repair; the CCE substitute for EKS
+// them via CCE ResetNode (node auto-repair; the CCE substitute for
 // NodeRepairConfig). Nodes are scoped to the pool via metadata.
 // ownerReferences.nodepoolID (ListNodes is cluster-wide, so filter by pool).
 func (r *CCEManagedMachinePoolReconciler) reconcileNodeRepair(ctx context.Context, svc cceService.Service, clusterID string, pool *infrav1beta2.CCEManagedMachinePool) error {
@@ -720,7 +718,7 @@ func (r *CCEManagedMachinePoolReconciler) syncReplicasFromOwner(ctx context.Cont
 }
 
 // mergedTags overlays pool-level tags on cluster-level tags (the pool wins on
-// key collision), mirroring CAPA's AdditionalTags scope merge: setting
+// key collision), setting
 // additionalTags once on the control plane reaches every node pool, and a pool
 // can still override or add its own.
 func mergedTags(clusterTags, poolTags common.Tags) map[string]string {

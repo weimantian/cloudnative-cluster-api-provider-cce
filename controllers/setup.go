@@ -18,8 +18,7 @@ import (
 )
 
 // ControllerConcurrency holds the max-concurrent-reconciles settings for the
-// provider controllers. Tunable via manager flags (mirrors CAPA's
-// --aws-cluster-concurrency / --aws-machine-concurrency). A value of 0 means
+// provider controllers. Tunable via manager flags. A value of 0 means
 // "use the controller-runtime default" (1, i.e. sequential).
 type ControllerConcurrency struct {
 	Cluster      int

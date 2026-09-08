@@ -50,7 +50,7 @@ const (
 const ownedTagPrefix = "cluster-api-provider-cce.cluster"
 
 // HasOwnedTag reports whether tags carry the provider owned tag for
-// clusterName (cluster-api-provider-cce.cluster.<name>=owned), the CAPA
+// clusterName (cluster-api-provider-cce.cluster.<name>=owned), the
 // adoption marker.
 func HasOwnedTag(tags common.Tags, clusterName string) bool {
 	return tags[ownedTagPrefix+"."+clusterName] == "owned"
@@ -63,7 +63,7 @@ func ownedTagKey(clusterName string) string {
 }
 
 // IsManaged reports whether the network spec asks the provider to own the
-// VPC/subnets/NAT. Two managed forms (mirrors CAPA):
+// VPC/subnets/NAT. Two managed forms:
 //   - create: vpc.id empty with a cidr (create) or a recorded ResourceID;
 //   - adopt:  vpc.id set with the owned tag (managed, including deletion).
 //
@@ -83,7 +83,7 @@ func IsManaged(spec *common.NetworkSpec, clusterName string) bool {
 type ManagerInterface interface {
 	// SetAdditionalTags stores cluster-level user tags to stamp on every
 	// provider-managed network resource (VPC/subnets/NAT/EIP) in addition to
-	// the owned tag, mirroring CAPA applying AdditionalTags to its managed
+	// the owned tag, applying AdditionalTags to its managed
 	// network. Called once before the reconcile steps when the cluster carries
 	// tags.
 	SetAdditionalTags(tags map[string]string)
@@ -238,7 +238,7 @@ func (m *Manager) DeleteNetwork(ctx context.Context, spec *common.NetworkSpec, c
 		if gwID == "" {
 			// Resource IDs may have been lost (spec patch failure after
 			// creation); fall back to name discovery so the gateway does
-			// not leak (mirrors CAPA's describe-based deletion).
+			// not leak.
 			if id := m.findNatGatewayByName(ctx, clusterName+"-nat"); id != "" {
 				gwID = id
 			}
@@ -890,8 +890,8 @@ func natSpecEnum(spec string) natmodel.CreateNatGatewayOptionSpec {
 	}
 }
 
-// joinErrors aggregates errors without importing kerrors (CAPA uses
-// kerrors.NewAggregate; errors.Join is the stdlib equivalent and preserves
+// joinErrors aggregates errors without importing kerrors (errors.Join is the
+// stdlib equivalent and preserves
 // individual messages).
 func joinErrors(errs []error) error {
 	switch len(errs) {

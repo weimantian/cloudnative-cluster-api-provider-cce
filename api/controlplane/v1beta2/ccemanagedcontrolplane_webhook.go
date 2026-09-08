@@ -251,7 +251,7 @@ func (c *CCEManagedControlPlane) validate() error {
 		}
 	}
 	// CCE always exposes a VPC-internal (private) API server endpoint and
-	// cannot disable it, so private: false is rejected (CAPA parity field).
+	// cannot disable it, so private: false is rejected.
 	if !c.Spec.EndpointAccess.Private {
 		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "endpointAccess", "private"),
 			"private cannot be disabled (CCE always exposes a VPC-internal endpoint)"))

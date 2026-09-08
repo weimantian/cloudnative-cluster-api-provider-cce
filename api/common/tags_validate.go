@@ -24,7 +24,7 @@ import (
 // One resource carries at most MaxResourceTags tags in total. The provider
 // owned tag (cluster-api-provider-cce.cluster.<name>=owned) counts toward that
 // limit and is always added by the service layer, so user-facing
-// AdditionalTags is capped one lower. Mirrors CAPA's Tags.Validate().
+// AdditionalTags is capped one lower.
 const (
 	// MaxResourceTags is the maximum number of tags on one Huawei Cloud
 	// resource (official limit: 20 per resource).

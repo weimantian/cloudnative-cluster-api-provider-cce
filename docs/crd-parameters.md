@@ -92,11 +92,11 @@ spec:
   # identityRef: <value>
   # CCE 插件实例（声明式）
   # addons: <value>
-  # SA 绑定委托（对标 EKS Pod Identity）
+  # SA 绑定委托（对标 Pod Identity）
   # podIdentityAssociations: <value>
   # 控制面日志（ttl/logs）
   # logging: <value>
-  # CCE 访问策略（对标 EKS access entries）
+  # CCE 访问策略（对标 access entries）
   # accessPolicies: <value>
   # etcd 加密（不可变）
   # encryptionConfig: <value>

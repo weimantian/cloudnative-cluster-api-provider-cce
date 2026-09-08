@@ -785,7 +785,7 @@ func TestMachinePoolToInfraPoolMapper(t *testing.T) {
 	}
 
 	got = r.machinePoolToInfraPool(context.Background(), mp(clusterv1.ContractVersionedObjectReference{
-		Kind: "AWSManagedMachinePool", Name: "pool-0",
+		Kind: "ExampleMachinePool", Name: "pool-0",
 	}))
 	if len(got) != 0 {
 		t.Errorf("expected no mapping for foreign infra ref, got %+v", got)
@@ -1078,11 +1078,10 @@ func TestMachinePoolReconcileDeleteControlPlaneGone(t *testing.T) {
 	}
 }
 
-// TestMachinePoolReconcileReplicasExternallyManaged verifies the CAPA-parity
+// TestMachinePoolReconcileReplicasExternallyManaged verifies the reverse-sync:
 // reverse-sync: when the owning MachinePool carries the external-autoscaler
 // annotation, the provider does NOT scale, and instead patches the CAPI
-// MachinePool.spec.replicas to the cloud-side node count (mirrors CAPA
-// eks/nodegroup.go).
+// MachinePool.spec.replicas to the cloud-side node count.
 func TestMachinePoolReconcileReplicasExternallyManaged(t *testing.T) {
 	ctx := context.Background()
 	ns := "mp-test-ext-managed"
@@ -1178,7 +1177,7 @@ func TestMachinePoolReconcileReplicasExternallyManaged(t *testing.T) {
 
 // TestMachinePoolReconcileNodeRepair verifies node auto-repair: when
 // spec.nodeRepair.enabled is set, Abnormal/Error nodes are reset via CCE
-// ResetNode (the CCE substitute for EKS NodeRepairConfig).
+// ResetNode (the CCE substitute for NodeRepairConfig).
 func TestMachinePoolReconcileNodeRepair(t *testing.T) {
 	ctx := context.Background()
 	ns := "mp-test-node-repair"
@@ -1268,7 +1267,7 @@ func TestMachinePoolReconcileNodeRepair(t *testing.T) {
 
 // TestMachinePoolReconcileObservedGenerationUpdates verifies that after a
 // successful reconcile, status.observedGeneration matches metadata.generation
-// (CAPA v2.13.0 commit 9e9bb6b31 — patch.WithStatusObservedGeneration writes
+// (patch.WithStatusObservedGeneration writes
 // the field during Patch).
 func TestMachinePoolReconcileObservedGenerationUpdates(t *testing.T) {
 	ctx := context.Background()

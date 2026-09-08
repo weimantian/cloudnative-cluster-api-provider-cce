@@ -34,8 +34,7 @@ func (c *CCEClusterStaticIdentity) ValidateCreate(_ context.Context, obj *CCEClu
 
 // ValidateUpdate implements admission.Validator. secretRef is immutable —
 // prevents credentials from being swapped out on an existing identity (which
-// could break live reconcile loops pointing at the old Secret). Mirrors
-// CAPA's AWSClusterStaticIdentity webhook (commit 9e9bb6b31 family).
+// could break live reconcile loops pointing at the old Secret).
 func (c *CCEClusterStaticIdentity) ValidateUpdate(_ context.Context, oldObj, newObj *CCEClusterStaticIdentity) (admission.Warnings, error) {
 	if newObj.Spec.SecretRef != oldObj.Spec.SecretRef {
 		return nil, apierrors.NewInvalid(

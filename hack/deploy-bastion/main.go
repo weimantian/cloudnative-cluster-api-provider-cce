@@ -248,7 +248,7 @@ func createServer(ctx context.Context, ecs *ecsv2.EcsClient, vpcID, subnetID, sg
 	bandSize := int32(1)
 	// Bind an IAM trust agency (CCE_DEPLOY_BASTION_AGENCY) so the bastion can
 	// fetch temporary credentials from the ECS metadata service — the Huawei
-	// Cloud equivalent of the CAPA EC2 IAM-role pattern. Unset keeps key-pair
+	// Cloud equivalent of the IAM-role pattern. Unset keeps key-pair
 	// auth only.
 	metadata := map[string]string{}
 	if agency := os.Getenv("CCE_DEPLOY_BASTION_AGENCY"); agency != "" {

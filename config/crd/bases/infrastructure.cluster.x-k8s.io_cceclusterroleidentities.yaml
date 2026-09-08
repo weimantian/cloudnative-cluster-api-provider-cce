@@ -21,9 +21,7 @@ spec:
   - name: v1beta2
     schema:
       openAPIV3Schema:
-        description: |-
-          CCEClusterRoleIdentity is a Huawei Cloud agency identity (mirrors CAPA
-          AWSClusterRoleIdentity, but with an agency instead of an AssumeRole ARN).
+        description: CCEClusterRoleIdentity is a Huawei Cloud agency identity.
         properties:
           apiVersion:
             description: |-
@@ -45,7 +43,7 @@ spec:
           spec:
             description: |-
               CCEClusterRoleIdentitySpec defines a Huawei Cloud agency (委托) based
-              identity — the CCE equivalent of CAPA's assumed-role identity. The agency
+              identity — the CCE equivalent of an assumed-role identity. The agency
               must already exist and grant trust to the calling account.
             properties:
               agencyName:

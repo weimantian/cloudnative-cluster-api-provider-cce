@@ -13,7 +13,7 @@ package common
 // If ID is set, the provider references an existing VPC and never modifies it.
 // Otherwise the provider may create a VPC with the given name/CIDR and record
 // the created resource in ResourceID/UID (mirrors the "reference vs create"
-// dual-mode design of the Alibaba ACK provider).
+// dual-mode reference/create design).
 type VPC struct {
 	// ID of an existing VPC. If set, the VPC is referenced and not managed.
 	// +optional
@@ -37,7 +37,7 @@ type VPC struct {
 
 	// Tags attached to the VPC. The provider owned tag
 	// (cluster-api-provider-cce.cluster.<name>=owned) marks an existing VPC
-	// as ADOPTED (managed, including deletion) - the CAPA three-state model:
+	// as ADOPTED (managed, including deletion) - a three-state model:
 	// vpc.id empty = create, vpc.id + owned tag = adopt, vpc.id + no tag = BYO.
 	// +optional
 	Tags Tags `json:"tags,omitempty"`
@@ -124,9 +124,7 @@ type NetworkSpec struct {
 }
 
 // NatGatewaySpec declares a managed NAT gateway for node egress. Its mere
-// presence enables managed NAT (mirrors CAPA, which builds a NAT gateway by
-// default whenever a managed VPC has private subnets - there is no enabled
-// switch; BYO or an omitted natGateway disables it).
+// presence enables managed NAT (there is no enabled
 type NatGatewaySpec struct {
 	// Spec of the NAT gateway: "1" (small, default), "2", "3", "4".
 	// +kubebuilder:default="1"

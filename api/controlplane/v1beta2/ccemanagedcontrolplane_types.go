@@ -72,8 +72,8 @@ type CCEManagedControlPlaneSpec struct {
 	// AgencyTrustPolicy is the IAM v5 trust-policy JSON document used to
 	// auto-create the trust agency (信任委托) referenced by the role identity
 	// (identityRef -> CCEClusterRoleIdentity.spec.agencyName) when that agency
-	// does not already exist. Mirrors CAPA auto-creating the cluster IAM role:
-	// a non-empty policy + a role identity triggers EnsureAgency (List -> Create
+	// does not already exist.
+	// A non-empty policy + a role identity triggers EnsureAgency (List -> Create
 	// when absent); an existing agency is adopted (never overwritten). When the
 	// identity has no agency (controller/static identity), creation is skipped.
 	// The document must declare "Version": "5.0".
@@ -91,36 +91,36 @@ type CCEManagedControlPlaneSpec struct {
 
 	// Addons are the CCE addon instances to manage (declarative set; the
 	// controller installs missing ones, upgrades version drift, and removes
-	// those no longer listed — mirrors CAPA EKS addons).
+	// those no longer listed).
 	// +optional
 	Addons []AddonSpec `json:"addons,omitempty"`
 
 	// PodIdentityAssociations bind Kubernetes ServiceAccounts to Huawei Cloud
-	// agencies (the CCE equivalent of EKS Pod Identity). Declarative set:
+	// agencies (the CCE equivalent of Pod Identity). Declarative set:
 	// create missing, delete removed.
 	// +optional
 	PodIdentityAssociations []PodIdentityAssociationSpec `json:"podIdentityAssociations,omitempty"`
 
-	// Logging configures control-plane log collection (mirrors CAPA EKS
-	// Logging). Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
+	// Logging configures control-plane log collection.
+	// Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
 	// +optional
 	Logging *ControlPlaneLoggingSpec `json:"logging,omitempty"`
 
-	// AccessPolicies declare CCE access policies (the CCE equivalent of EKS
+	// AccessPolicies declare CCE access policies (the CCE equivalent of
 	// access entries). Declarative set: create missing, update drift, remove
 	// those no longer listed.
 	// +optional
 	AccessPolicies []AccessPolicySpec `json:"accessPolicies,omitempty"`
 
-	// EncryptionConfig controls etcd secret encryption (mirrors CAPA EKS
-	// EncryptionConfig). Mode Default leaves etcd unencrypted; KMS enables
+	// EncryptionConfig controls etcd secret encryption.
+	// Mode Default leaves etcd unencrypted; KMS enables
 	// envelope encryption with a KMS key configured at the account level.
 	// Immutable after creation.
 	// +optional
 	EncryptionConfig *EncryptionConfigSpec `json:"encryptionConfig,omitempty"`
 
-	// Authentication controls the API server authentication mode (mirrors
-	// CAPA EKS AccessConfig.AuthenticationMode). Default rbac;
+	// Authentication controls the API server authentication mode.
+	// Default rbac;
 	// authenticating_proxy delegates auth to an external proxy (requires a
 	// CA + client cert + key). Immutable after creation.
 	// +optional
@@ -136,7 +136,7 @@ type CCEManagedControlPlaneSpec struct {
 	// AdditionalTags is an optional set of tags to add to the CCE cluster (maps
 	// to CCE clusterTags / ResourceTag), in addition to the provider owned tag
 	// cluster-api-provider-cce.cluster.<clusterName>=owned that is always added.
-	// The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags.
+	// The owned tag wins on key collision.
 	// Tag updates on an already-created cluster are reconciled via the CCE
 	// BatchCreateClusterTags API (see requirements FR-1.9).
 	// +optional
@@ -315,8 +315,8 @@ type EndpointAccessSpec struct {
 	// Private controls private (VPC-internal) API server access. CCE always
 	// exposes a VPC-internal endpoint and cannot disable it (platform-managed
 	// control plane), so this field defaults to true and false is rejected by
-	// the webhook. It exists for CAPA parity (CAPA EndpointAccess exposes
-	// public/private).
+	// the webhook. It exists for parity (EndpointAccess exposes
+// public/private).
 	// +kubebuilder:default=true
 	// +optional
 	Private bool `json:"private,omitempty"`
@@ -380,7 +380,7 @@ type CCEManagedControlPlaneStatus struct {
 	// ObservedGeneration is the latest generation observed by the controller.
 	// Used to prevent missed spec changes when controller-runtime event coalescing
 	// causes a status patch and an external spec patch to land in the same work
-	// queue window. Matches CAPA v2.13.0 commits 9e9bb6b31 / b5d6d3081.
+	// queue window.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 

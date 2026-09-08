@@ -29,8 +29,7 @@ func TestClusterStaticIdentityValidate(t *testing.T) {
 // TestClusterStaticIdentityValidateUpdateSecretRefImmutable verifies that
 // updating Spec.SecretRef on an existing identity is rejected. Swapping
 // credentials behind the controller's back would silently break live reconciles
-// that hold the old Secret in their cache. Mirrors CAPA's
-// AWSClusterStaticIdentity webhook.
+// that hold the old Secret in their cache.
 func TestClusterStaticIdentityValidateUpdateSecretRefImmutable(t *testing.T) {
 	ctx := context.Background()
 	old := &CCEClusterStaticIdentity{

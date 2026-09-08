@@ -28,9 +28,8 @@ type CCEManagedControlPlaneScopeParams struct {
 }
 
 // CCEManagedControlPlaneScope is the per-reconcile context for the
-// CCEManagedControlPlane controller. Mirrors CAPA's ManagedControlPlaneScope
-// and carries the WithStatusObservedGeneration patch option to write
-// status.observedGeneration atomically (CAPA b5d6d3081).
+// CCEManagedControlPlane controller. Carries the WithStatusObservedGeneration
+// patch option to write status.observedGeneration atomically.
 type CCEManagedControlPlaneScope struct {
 	log                    logr.Logger
 	client                 client.Client
@@ -107,12 +106,12 @@ func (s *CCEManagedControlPlaneScope) ObservedGenerationAtStart() int64 {
 
 // PatchObject persists the CCEManagedControlPlane (spec + status). The
 // status.observedGeneration field is atomically updated to match
-// metadata.generation via patch.WithStatusObservedGeneration (CAPA 9e9bb6b31).
+// metadata.generation via patch.WithStatusObservedGeneration.
 func (s *CCEManagedControlPlaneScope) PatchObject(ctx context.Context) error {
 	return s.patchHelper.Patch(ctx, s.CCEManagedControlPlane, patch.WithStatusObservedGeneration{})
 }
 
-// Close is an alias for PatchObject; mirrors CAPA's scope.Close = PatchObject.
+// Close is an alias for PatchObject.
 func (s *CCEManagedControlPlaneScope) Close(ctx context.Context) error {
 	return s.PatchObject(ctx)
 }

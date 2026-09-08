@@ -8,8 +8,8 @@ Licensed under the MIT No Attribution (MIT-0) License.
 */
 
 // Package e2e contains the Ginkgo spec that drives a real management cluster
-// and a real Huawei Cloud CCE account (mirrors CAPA's suite shape: build tag
-// `e2e`, env-gated, Ginkgo Describe/It).
+// and a real Huawei Cloud CCE account (build tag `e2e`, env-gated, Ginkgo
+// Describe/It).
 //
 // The spec is environment-gated: it skips unless a management cluster
 // kubeconfig and the CCE cloud configuration are provided. When run with a

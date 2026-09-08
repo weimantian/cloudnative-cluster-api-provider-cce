@@ -5,8 +5,8 @@ Licensed under the MIT No Attribution (MIT-0) License.
 */
 
 // Package scope holds the per-object scopes that wrap the CRs, the Kubernetes
-// client and the resolved cloud credentials. Pattern follows CAPA
-// pkg/cloud/scope and CAPHW pkg/scope (patch helper + Close() = PatchObject).
+// client and the resolved cloud credentials. Pattern follows the Cluster API
+// provider scope convention (patch helper + Close() = PatchObject).
 package scope
 
 import (
@@ -120,7 +120,7 @@ func ResolveIdentity(ctx context.Context, c client.Client, namespace string, ide
 }
 
 // checkAllowedNamespace enforces the identity's allowedNamespaces. A nil
-// pointer means "any namespace" (CAPA contract); an empty list + empty
+// pointer means "any namespace"; an empty list + empty
 // selector means "no namespace".
 func checkAllowedNamespace(ctx context.Context, c client.Client, allowed *infrav1beta2.AllowedNamespaces, namespace, identityName string) error {
 	if allowed == nil {

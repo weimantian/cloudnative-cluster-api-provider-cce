@@ -29,7 +29,7 @@ type CCEClusterScopeParams struct {
 }
 
 // CCEClusterScope is the per-reconcile context for the CCECluster controller.
-// Mirrors CAPA's ClusterScope pattern: holds logger + client + patchHelper +
+// Holds logger + client + patchHelper + CR references + ControllerName,
 // CR references + ControllerName, exposes PatchObject()/Close() for the
 // controller's defer to call.
 type CCEClusterScope struct {
@@ -93,14 +93,14 @@ func (s *CCEClusterScope) InfraClusterName() string { return s.Cluster.Name }
 // start of reconcile (so the controller can compare against GenerationAtStart
 
 // PatchObject persists the CCECluster (spec + status). Note: CCECluster
-// does not yet carry a status.observedGeneration field (added in CAPA v2.13
-// only to AWSManagedControlPlane) — controllers that need obs/gen requeue
+// does not yet carry a status.observedGeneration field — controllers that
+// need obs/gen requeue must use CCEManagedControlPlaneScope instead.
 // must use CCEManagedControlPlaneScope instead.
 func (s *CCEClusterScope) PatchObject(ctx context.Context) error {
 	return s.patchHelper.Patch(ctx, s.CCECluster)
 }
 
-// Close is an alias for PatchObject; mirrors CAPA's scope.Close = PatchObject.
+// Close is an alias for PatchObject.
 func (s *CCEClusterScope) Close(ctx context.Context) error {
 	return s.PatchObject(ctx)
 }

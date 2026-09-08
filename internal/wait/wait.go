@@ -5,10 +5,10 @@ Licensed under the MIT No Attribution (MIT-0) License.
 */
 
 // Package wait provides utilities for polling and waiting on cloud resources
-// with exponential backoff. Adapted from CAPA v2.13.0
-// pkg/cloud/services/wait/wait.go (commit history). Stripped of AWS-specific
-// awserrors dependency — uses errors.Cause() + string match so it works
-// against any SDK (CCE's pkg/errors-based error wrapping is compatible).
+// with exponential backoff. Adapted from the Cluster API provider reference
+// implementation. Stripped of the provider-specific awserrors dependency —
+// uses errors.Cause() + string match so it works against any SDK (CCE's
+// pkg/errors-based error wrapping is compatible).
 package wait
 
 import (

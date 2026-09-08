@@ -73,7 +73,7 @@ spec:
   # Billing controls billing mode: 0=on-demand, 1=subscription.
   billing:
     mode: 0               # 0=按需 1=包周期
-  # AdditionalTags is an optional set of tags to add to the CCE cluster (maps to CCE clusterTags / ResourceTag), in addition to the provider owned tag cluster-api-provider-cce.cluster.<clusterName>=owned that is always added. The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags. Cluster tag changes are reconciled automatically (BatchCreateClusterTags + periodic sweep); node-pool tags are stamped at creation (CCE has no pool tag-update API).
+  # AdditionalTags is an optional set of tags to add to the CCE cluster (maps to CCE clusterTags / ResourceTag), in addition to the provider owned tag cluster-api-provider-cce.cluster.<clusterName>=owned that is always added. The owned tag wins on key collision. Tag updates on an already-created cluster are reconciled via the CCE BatchCreateClusterTags API (see requirements FR-1.9).
   additionalTags:         # 写入 CCE 集群 clusterTags（owned/role 保留 key 自动且优先）
     env: prod
     cost-center: cc-42
@@ -86,21 +86,21 @@ spec:
   # customSan: <value>
   # AgencyName used by the cluster (1.27+; empty uses the system agency).
   # agencyName: <value>
-  # AgencyTrustPolicy is the IAM v5 trust-policy JSON document used to auto-create the trust agency (信任委托) referenced by the role identity (identityRef -> CCEClusterRoleIdentity.spec.agencyName) when that agency does not already exist. Mirrors CAPA auto-creating the cluster IAM role: a non-empty policy + a role identity triggers EnsureAgency (List -> Create when absent); an existing agency is adopted (never overwritten). When the identity has no agency (controller/static identity), creation is skipped. The document must declare "Version": "5.0".
+  # AgencyTrustPolicy is the IAM v5 trust-policy JSON document used to auto-create the trust agency (信任委托) referenced by the role identity (identityRef -> CCEClusterRoleIdentity.spec.agencyName) when that agency does not already exist. A non-empty policy + a role identity triggers EnsureAgency (List -> Create when absent); an existing agency is adopted (never overwritten). When the identity has no agency (controller/static identity), creation is skipped. The document must declare "Version": "5.0".
   # agencyTrustPolicy: <value>
   # IdentityRef references a CCECluster*Identity (Controller/Static/Role). Empty means the controller default identity (CLOUD_SDK_AK/SK env).
   # identityRef: <value>
-  # Addons are the CCE addon instances to manage (declarative set; the controller installs missing ones, upgrades version drift, and removes those no longer listed — mirrors CAPA EKS addons).
+  # Addons are the CCE addon instances to manage (declarative set; the controller installs missing ones, upgrades version drift, and removes those no longer listed).
   # addons: <value>
-  # PodIdentityAssociations bind Kubernetes ServiceAccounts to Huawei Cloud agencies (the CCE equivalent of EKS Pod Identity). Declarative set: create missing, delete removed.
+  # PodIdentityAssociations bind Kubernetes ServiceAccounts to Huawei Cloud agencies (the CCE equivalent of Pod Identity). Declarative set: create missing, delete removed.
   # podIdentityAssociations: <value>
-  # Logging configures control-plane log collection (mirrors CAPA EKS Logging). Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
+  # Logging configures control-plane log collection. Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
   # logging: <value>
-  # AccessPolicies declare CCE access policies (the CCE equivalent of EKS access entries). Declarative set: create missing, update drift, remove those no longer listed.
+  # AccessPolicies declare CCE access policies (the CCE equivalent of access entries). Declarative set: create missing, update drift, remove those no longer listed.
   # accessPolicies: <value>
-  # EncryptionConfig controls etcd secret encryption (mirrors CAPA EKS EncryptionConfig). Mode Default leaves etcd unencrypted; KMS enables envelope encryption with a KMS key configured at the account level. Immutable after creation.
+  # EncryptionConfig controls etcd secret encryption. Mode Default leaves etcd unencrypted; KMS enables envelope encryption with a KMS key configured at the account level. Immutable after creation.
   # encryptionConfig: <value>
-  # Authentication controls the API server authentication mode (mirrors CAPA EKS AccessConfig.AuthenticationMode). Default rbac; authenticating_proxy delegates auth to an external proxy (requires a CA + client cert + key). Immutable after creation.
+  # Authentication controls the API server authentication mode. Default rbac; authenticating_proxy delegates auth to an external proxy (requires a CA + client cert + key). Immutable after creation.
   # authentication: <value>
   # ControlPlaneEndpoint is the API server endpoint (host:port) of the managed control plane. It is backfilled by the controller once the CCE cluster is available and is read by CAPI to populate Cluster.spec.controlPlaneEndpoint — the CAPI control-plane contract reads spec.controlPlaneEndpoint, not status.
   # controlPlaneEndpoint: <value>
@@ -156,7 +156,7 @@ spec:
   availabilityZone: cn-north-4a
   # Replicas is the desired node count (maps to the node pool expected count). It is normally driven by the owning MachinePool.spec.replicas.
   replicas: 1
-  # AdditionalTags is an optional set of tags to add to the CCE node pool (maps to CCE userTags / UserTag), in addition to the provider owned tag cluster-api-provider-cce.cluster.<clusterName>=owned that is always added. The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags.
+  # AdditionalTags is an optional set of tags to add to the CCE node pool (maps to CCE userTags / UserTag), in addition to the provider owned tag cluster-api-provider-cce.cluster.<clusterName>=owned that is always added. The owned tag wins on key collision.
   additionalTags:         # 写入 CCE 节点池 userTags
     team: platform
   # ---- all optional fields below (omitted by default; uncomment as needed) ----
@@ -178,9 +178,9 @@ spec:
   # securityGroups: <value>
   # Autoscaling maps to the CCE node pool autoscaling (NodePoolNodeAutoscaling). Only honored when the NodePoolAutoscaling feature gate is enabled (Alpha, off by default); otherwise scaling is driven solely by CAPI MachinePool replicas (questionnaire Q3, FR-2.6).
   # autoscaling: <value>
-  # UpdateConfig controls how spec changes are rolled onto existing nodes (CCE 同步节点池 UpgradeNodePool, the analogue of CAPA's UpdateConfig / rolling update). Node attributes such as securityGroups, taints, labels and OS only apply to newly created nodes, so the controller calls UpgradeNodePool to synchronise them onto running nodes.
+  # UpdateConfig controls how spec changes are rolled onto existing nodes (CCE 同步节点池 UpgradeNodePool, the analogue of UpdateConfig / rolling update). Node attributes such as securityGroups, taints, labels and OS only apply to newly created nodes, so the controller calls UpgradeNodePool to synchronise them onto running nodes.
   # updateConfig: <value>
-  # NodeRepair enables node auto-repair (mirrors CAPA NodeRepairConfig. Enabled). CCE has no EKS-style auto-repair switch, so the provider detects Abnormal/Error nodes and resets them via CCE ResetNode.
+  # NodeRepair enables node auto-repair. CCE has no auto-repair switch, so the provider detects Abnormal/Error nodes and resets them via CCE ResetNode.
   # nodeRepair: <value>
   # EcsGroupId is the ECS server group ID (云服务器组) for the nodes (nodeTemplate.ecsGroupId). Used to place nodes according to the group's affinity/anti-affinity policy.
   # ecsGroupId: <value>

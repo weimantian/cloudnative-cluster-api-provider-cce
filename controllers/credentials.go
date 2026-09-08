@@ -24,8 +24,7 @@ import (
 // so clusters provisioned via identityRef could never be deleted (the
 // missing Secret failed the reconcile forever and the finalizer was never
 // removed). The machine pool controller shares the control plane's identity
-// as well - mirroring CAPA, where machine pools resolve credentials from the
-// cluster scope.
+// as well.
 func resolveControlPlaneCredentials(ctx context.Context, c client.Client, cp *controlplanev1beta2.CCEManagedControlPlane) (*scope.Credentials, string, error) {
 	if cp.Spec.IdentityRef != nil {
 		return scope.ResolveIdentity(ctx, c, cp.Namespace, cp.Spec.IdentityRef)

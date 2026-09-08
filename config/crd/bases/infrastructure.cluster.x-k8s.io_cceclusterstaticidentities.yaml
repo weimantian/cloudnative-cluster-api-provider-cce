@@ -21,9 +21,7 @@ spec:
   - name: v1beta2
     schema:
       openAPIV3Schema:
-        description: |-
-          CCEClusterStaticIdentity is a reference to a static AK/SK Secret (mirrors
-          CAPA AWSClusterStaticIdentity).
+        description: CCEClusterStaticIdentity is a reference to a static AK/SK Secret.
         properties:
           apiVersion:
             description: |-

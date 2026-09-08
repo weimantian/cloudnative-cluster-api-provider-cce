@@ -22,12 +22,11 @@ const (
 	NodePoolAutoscaling featuregate.Feature = "NodePoolAutoscaling"
 
 	// AutoControllerIdentityCreator enables automatic creation of the
-	// CCEClusterControllerIdentity singleton named "default" (mirrors CAPA
-	// AutoControllerIdentityCreator). Off by default.
+	// CCEClusterControllerIdentity singleton named "default". Off by default.
 	AutoControllerIdentityCreator featuregate.Feature = "AutoControllerIdentityCreator"
 
-	// ExternalResourceGC enables the periodic orphaned-cluster sweeper
-	// (mirrors CAPA ExternalResourceGC): CCE clusters carrying the owned tag
+	// ExternalResourceGC enables the periodic orphaned-cluster sweeper: CCE
+	// clusters carrying the owned tag
 	// whose Cluster CR no longer exists are deleted. Off by default; requires
 	// --gc-region.
 	ExternalResourceGC featuregate.Feature = "ExternalResourceGC"

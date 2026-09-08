@@ -253,7 +253,7 @@ spec:
                                 description: |-
                                   Tags attached to the VPC. The provider owned tag
                                   (cluster-api-provider-cce.cluster.<name>=owned) marks an existing VPC
-                                  as ADOPTED (managed, including deletion) - the CAPA three-state model:
+                                  as ADOPTED (managed, including deletion) - a three-state model:
                                   vpc.id empty = create, vpc.id + owned tag = adopt, vpc.id + no tag = BYO.
                                 type: object
                             type: object

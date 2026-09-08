@@ -23,7 +23,7 @@ spec:
       openAPIV3Schema:
         description: |-
           CCEClusterControllerIdentity is the controller's default credential
-          identity (mirrors CAPA AWSClusterControllerIdentity).
+          identity.
         properties:
           apiVersion:
             description: |-

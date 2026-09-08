@@ -140,8 +140,8 @@ func main() {
 		os.Exit(1)
 	}
 
-	// External-resource garbage collector (orphaned-cluster sweeper, mirrors
-	// CAPA ExternalResourceGC). Requires both the gate and a region.
+	// External-resource garbage collector (orphaned-cluster sweeper). Requires
+	// both the gate and a region.
 	if features.Enabled(features.ExternalResourceGC) && gcRegion != "" {
 		if err := mgr.Add(&controllers.GarbageCollector{
 			Client: mgr.GetClient(),

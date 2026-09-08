@@ -32,8 +32,7 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //	CCE_DEPLOY_MGMT_NODES        node count (default 2)
 //	CCE_DEPLOY_MGMT_AZS          comma-separated AZs (default single AZ;
 //	                             first AZ = pool AZ, rest = extension groups)
-//	CCE_DEPLOY_PUBLIC            bind a public EIP after create (default true,
-//	                             mirrors CAPA EKS public+private endpoint)
+//	CCE_DEPLOY_PUBLIC            bind a public EIP after create (default true)
 //	CCE_DEPLOY_PUBLIC_CIDRS      comma-separated source CIDR whitelist for the
 //	                             public endpoint (empty = all sources)
 //	CCE_DEPLOY_PUBLIC_NODES      bind a public EIP to each node (default true;
@@ -163,7 +162,7 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 			HostNetworkVpcID:     vpcID,
 			HostNetworkSubnetID:  subnetID,
 			ServiceCIDR:          envDefault("CCE_DEPLOY_SERVICE_CIDR", "10.247.0.0/16"),
-			// Public access mirrors the CAPA EKS control-plane endpoint (public +
+			// Public access (public +
 			// private). CCE does not allocate a public IP automatically, so we bind
 			// an EIP afterwards when public is enabled (CCE_DEPLOY_PUBLIC, default true).
 			PublicAccess:      public,
@@ -185,7 +184,7 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 		fmt.Printf("  endpoint type=%s url=%s\n", ep.Type, ep.URL)
 	}
 
-	// Bind a public EIP to mirror the CAPA EKS default public+private control-
+	// Bind a public EIP for the default public+private control-
 	// plane endpoint. Reuses hack/bind-eip so the logic lives in one place;
 	// with CCE_DEPLOY_PUBLIC=false the management API stays VPC-private.
 	if public {
@@ -235,7 +234,7 @@ func createPool(ctx context.Context, svc cce.Service, clusterID, kubeconfigPath 
 		}
 		fmt.Printf("multi-AZ node pool: %s + extensions %v", az, azs[1:])
 	}
-	// Node egress: public IP (default, AWS public-subnet parity) or NAT. When
+	// Node egress: public IP (default, public-subnet parity) or NAT. When
 	// CCE_DEPLOY_PUBLIC_NODES=true each node gets a public EIP (direct egress,
 	// no NAT gateway); when false nodes stay private and need hack/nat-egress.
 	publicNodes := envBool("CCE_DEPLOY_PUBLIC_NODES", true)

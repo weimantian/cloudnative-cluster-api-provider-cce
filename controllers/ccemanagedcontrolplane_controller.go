@@ -114,10 +114,9 @@ func (r *CCEManagedControlPlaneReconciler) newIAMService(regionID string, creds 
 
 // Reconcile implements the reconcile loop of CCEManagedControlPlane. Uses
 // the per-reconcile CCEManagedControlPlaneScope to hold the patchHelper,
-// CR references and ControllerName (CAPA pkg/cloud/scope pattern). The
+// CR references and ControllerName. The
 // scope's PatchObject() (called via defer) atomically updates
-// status.observedGeneration via patch.WithStatusObservedGeneration (CAPA
-// commit 9e9bb6b31).
+// status.observedGeneration via patch.WithStatusObservedGeneration.
 func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 	defer func() {
@@ -172,7 +171,7 @@ func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	// CAPA v2.13.0 commit b5d6d3081: requeue when observed generation is behind
+	// Requeue when observed generation is behind
 	// current generation. Catches spec changes coalesced into the in-flight
 	// work queue entry (event coalescing would otherwise silently drop them).
 	if scope.ObservedGenerationAtStart() < scope.GenerationAtStart() {
@@ -330,7 +329,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	conditions.MarkTrue(cp, conditions.CCEClusterReadyCondition, "ClusterAvailable", "CCE cluster is available")
 	recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "ClusterAvailable", "CCE cluster %s is available", clusterID)
 
-	// Tag drift sync (FR-1.9 / CAPA tag Ensure): reconcile spec.additionalTags
+	// Tag drift sync (FR-1.9): reconcile spec.additionalTags
 	// against the cloud cluster tags so declarations stay authoritative even
 	// after creation (add/update drifted tags, remove extras, never the owned
 	// tag). Failures requeue without flipping the readiness condition.
@@ -338,7 +337,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		return ctrl.Result{}, err
 	}
 
-	// Addons reconciliation (declarative set, mirrors CAPA EKS addons): install
+	// Addons reconciliation (declarative set): install
 	// missing, upgrade version drift, remove those no longer listed.
 	if err := r.reconcileAddons(ctx, svc, clusterID, cp); err != nil {
 		conditions.MarkFalse(cp,
@@ -348,7 +347,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	}
 	conditions.MarkTrue(cp, conditions.AddonsConfiguredCondition, "AddonsConfigured", "CCE addons reconciled")
 
-	// Pod-identity associations (declarative set, mirrors EKS Pod Identity).
+	// Pod-identity associations (declarative set, mirrors Pod Identity).
 	if err := r.reconcilePodIdentityAssociations(ctx, svc, clusterID, cp); err != nil {
 		conditions.MarkFalse(cp,
 			conditions.PodIdentityAssociationsConfiguredCondition,
@@ -357,7 +356,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	}
 	conditions.MarkTrue(cp, conditions.PodIdentityAssociationsConfiguredCondition, "PodIdentityAssociationsConfigured", "CCE pod-identity associations reconciled")
 
-	// Control-plane log collection (mirrors CAPA EKS Logging).
+	// Control-plane log collection.
 	if err := r.reconcileLogging(ctx, svc, clusterID, cp); err != nil {
 		conditions.MarkFalse(cp,
 			conditions.LoggingConfiguredCondition,
@@ -366,7 +365,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	}
 	conditions.MarkTrue(cp, conditions.LoggingConfiguredCondition, "LoggingConfigured", "CCE control-plane log config reconciled")
 
-	// CCE access policies (mirrors EKS access entries): declarative set.
+	// CCE access policies (mirrors access entries): declarative set.
 	if err := r.reconcileAccessPolicies(ctx, svc, clusterID, cp); err != nil {
 		conditions.MarkFalse(cp,
 			conditions.AccessPoliciesConfiguredCondition,
@@ -393,10 +392,10 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		conditions.MarkTrue(cp, conditions.UpgradeReadyCondition, "VersionCurrent", "cluster version matches spec")
 	}
 
-	// kubeconfig Secrets (mirrors the ACK provider kubeconfig contract, so
+	// kubeconfig Secrets (so
 	// `clusterctl get kubeconfig` works). The CAPI secret is refreshed before
-	// certificate expiry; a second user secret (mirrors CAPA's
-	// <cluster>-user-kubeconfig, pkg/cloud/services/eks/config.go) gives users
+	// certificate expiry;
+	// a second user secret (<cluster>-user-kubeconfig) gives users
 	// an independent credential. Both are owned by the control plane so they
 	// are cleaned up on delete.
 	if err := r.ensureKubeconfigSecret(ctx, cp, cluster, svc, clusterID, cp.Spec.ClusterName+"-kubeconfig", kubeconfigValidityDays); err != nil {
@@ -921,7 +920,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcilePodIdentityAssociations(ctx 
 }
 
 // reconcileLogging reconciles the declared control-plane log collection config
-// against the cloud (mirrors CAPA EKS Logging). Declarative: TTL + the exact
+// against the cloud. Declarative: TTL + the exact
 // log item set, compared against ShowClusterConfig, applied via
 // UpdateClusterLogConfig on drift.
 func (r *CCEManagedControlPlaneReconciler) reconcileLogging(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta2.CCEManagedControlPlane) error {

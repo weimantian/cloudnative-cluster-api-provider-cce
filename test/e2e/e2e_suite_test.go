@@ -8,8 +8,8 @@ Licensed under the MIT No Attribution (MIT-0) License.
 */
 
 // Package e2e contains the Ginkgo-based end-to-end suite that drives a real
-// management cluster and a real Huawei Cloud CCE account (mirrors the CAPA
-// e2e suite shape: build tag `e2e`, Ginkgo RunSpecs entry, env-gated specs).
+// management cluster and a real Huawei Cloud CCE account (build tag `e2e`,
+// Ginkgo RunSpecs entry, env-gated specs).
 //
 // Run with: go test -tags e2e -timeout 60m ./test/e2e/...
 package e2e
@@ -23,7 +23,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 )
 
-// TestE2E is the Ginkgo suite entry point (mirrors CAPA's TestE2E).
+// TestE2E is the Ginkgo suite entry point.
 func TestE2E(t *testing.T) {
 	ctrl.SetLogger(klog.Background())
 	gomega.RegisterFailHandler(ginkgo.Fail)

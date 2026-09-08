@@ -52,8 +52,8 @@ type Client struct {
 // client is stateless (it only holds an http.Client + endpoint config), so
 // it is safe to share across concurrent reconciles. Credentials are stable
 // per cluster; rotating them requires a controller restart to drop the cache
-// (CAPA rebuilds a session per scope, i.e. per reconcile — this cache avoids
-// even that per-reconcile HTTP-client construction).
+// (rebuilding a session per scope, i.e. per reconcile, is avoided — this
+// cache skips even that per-reconcile HTTP-client construction).
 var clientCache sync.Map
 
 // NewClient builds (or returns a cached) CCE client from the resolved
@@ -864,7 +864,7 @@ func toAccessPolicyModel(in AccessPolicyInput) *model.AccessPolicy {
 
 // GetClusterKubeconfig implements Service. It downloads the cluster certificate
 // via CreateKubernetesClusterCert and assembles a standard kubeconfig
-// (mirrors the ACK provider's controller_kubeconfig.go approach).
+// (controller-side kubeconfig assembly).
 func (s *Client) GetClusterKubeconfig(ctx context.Context, clusterID string, durationDays int32) (string, error) {
 	// Official duration semantics (CreateKubernetesClusterCert.txt): range
 	// [1, 1827] days; -1 means the 5-year maximum (1827). Clamp anything
@@ -997,7 +997,7 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 	}
 	if in.PublicIP {
 		// Bind a public EIP to each node (nodeTemplate.publicIP) so nodes
-		// reach the internet directly — AWS public-subnet parity, avoiding a
+		// reach the internet directly — public-subnet parity, avoiding a
 		// NAT gateway. Bandwidth defaults to PER/bandwidth when unset.
 		bw := &model.NodeBandwidth{
 			Size:      int32Ptr(in.PublicIPBandwidthSize),
@@ -1241,8 +1241,7 @@ func (s *Client) ListNodes(_ context.Context, clusterID, nodePoolID string) ([]s
 			}
 			// ProviderID must match the huaweicloud cloud-provider contract:
 			// `huaweicloud:///<serverId>` where serverId is the underlying ECS
-			// instance ID (mirrors CAPA's aws:///az/instance-id, which uses the
-			// underlying instance ID too). Verified against
+			// instance ID. Verified against
 			// kubernetes-sigs/cloud-provider-huaweicloud instances.go:
 			// ProviderName="huaweicloud" + regexp ^huaweicloud:///([^/]+)$ +
 			// InstanceID() = ecsClient.GetByNodeName().Id.
@@ -1529,26 +1528,26 @@ func (s *Client) DeleteAddonInstance(_ context.Context, _, addonID string) error
 	return nil
 }
 
-// OwnedTagPrefix is the provider ownership tag key prefix, mirroring CAPA's
-// owned-tag model. NOTE: CCE tag keys cannot contain "/" (official ResourceTag
-// key charset is letters/digits/space/_.:=+-@, max 128), unlike AWS, so the
-// key uses "." separators instead of the CAPA slash form. Used for idempotent
-// addressing and future external-resource GC.
+// OwnedTagPrefix is the provider ownership tag key prefix (owned-tag model).
+// NOTE: CCE tag keys cannot contain "/" (official ResourceTag key charset is
+// letters/digits/space/_.:=+-@, max 128), so the key uses "." separators
+// instead of the slash form. Used for idempotent addressing and future
+// external-resource GC.
 const OwnedTagPrefix = "cluster-api-provider-cce.cluster"
 
 // RoleTagKey is the reserved tag key marking a resource's role inside the
-// cluster, mirroring CAPA's sigs.k8s.io/cluster-api-provider-aws/role tag
-// (dots instead of '/' — CCE tag keys reject '/'). The full CAPA value set is
-// declared up front so a future ECS-based (self-managed) mode can reuse it
+// cluster, with dots instead of '/' because CCE tag keys reject '/'. The full
+// role value set is declared up front so a future ECS-based (self-managed)
+// mode can reuse it
 // unchanged; the managed-CCE mode currently sets apiserver on the CCE cluster
 // and node on every node pool. Role is reserved: a user-supplied tag with this
 // key is dropped in favor of the built-in value (same precedence as owned).
 const RoleTagKey = "cluster-api-provider-cce.role"
 
-// CAPA role values (cluster-api-provider-cce.role). apiserver/node are used in
-// the managed-CCE mode today; the rest are reserved for a future ECS-based
-// (self-managed, CAPI KubeadmControlPlane) mode covering the same resource
-// roles CAPA tags.
+// Role values for the cluster-api-provider-cce.role tag key. apiserver/node
+// are used in the managed-CCE mode today; the rest are reserved for a future
+// ECS-based (self-managed, CAPI KubeadmControlPlane) mode covering the same
+// resource roles.
 const (
 	RoleApiserver = "apiserver" // control-plane / API server cost role
 	RoleNode      = "node"      // worker nodes
@@ -1993,8 +1992,8 @@ func logConfigType(t string) *model.ClusterLogConfigLogConfigsType {
 
 	// skipReservedTagKey reports whether a user-supplied tag key is managed
 	// internally (the per-cluster owned key and the reserved role key) and must
-	// be dropped in favor of the built-in value (mirrors CAPA Build write order:
-	// owned and role are written after user tags and therefore win).
+	// be dropped in favor of the built-in value (owned and role are written
+	// after user tags and therefore win).
 	func skipReservedTagKey(userKey, clusterName string) bool {
 		return userKey == ownedTagKey(clusterName) || userKey == RoleTagKey
 	}

@@ -1,10 +1,10 @@
 # clusterctl generate cluster template — default (Turbo, eni) with multi-AZ
-# node pools (EKS multi-node-group parity: one MachinePool per AZ).
+# node pools (multi-node-group layout: one MachinePool per AZ).
 #
 # Consumed by:
 #   clusterctl generate cluster <name> --kubernetes-version v1.35.0 [--worker-machine-count=N]
 #
-# Multi-AZ layout (EKS parity):
+# Multi-AZ layout:
 #   pool-0 -> VERIFY-AZ  (cn-north-4a)
 #   pool-1 -> VERIFY-AZ2 (cn-north-4b)
 #   pool-2 -> VERIFY-AZ7 (cn-north-4g = AZ7, has c7.large.2)

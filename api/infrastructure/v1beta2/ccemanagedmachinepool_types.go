@@ -112,15 +112,15 @@ type CCEManagedMachinePoolSpec struct {
 	Autoscaling AutoscalingSpec `json:"autoscaling,omitempty"`
 
 	// UpdateConfig controls how spec changes are rolled onto existing nodes
-	// (CCE 同步节点池 UpgradeNodePool, the analogue of CAPA's UpdateConfig /
+	// (CCE 同步节点池 UpgradeNodePool, the analogue of UpdateConfig /
 	// rolling update). Node attributes such as securityGroups, taints, labels
 	// and OS only apply to newly created nodes, so the controller calls
 	// UpgradeNodePool to synchronise them onto running nodes.
 	// +optional
 	UpdateConfig UpdateConfigSpec `json:"updateConfig,omitempty"`
 
-	// NodeRepair enables node auto-repair (mirrors CAPA NodeRepairConfig.
-	// Enabled). CCE has no EKS-style auto-repair switch, so the provider
+	// NodeRepair enables node auto-repair.
+	// CCE has no auto-repair switch, so the provider
 	// detects Abnormal/Error nodes and resets them via CCE ResetNode.
 	// +optional
 	NodeRepair *NodeRepairSpec `json:"nodeRepair,omitempty"`
@@ -165,7 +165,7 @@ type CCEManagedMachinePoolSpec struct {
 	// AdditionalTags is an optional set of tags to add to the CCE node pool
 	// (maps to CCE userTags / UserTag), in addition to the provider owned tag
 	// cluster-api-provider-cce.cluster.<clusterName>=owned that is always added.
-	// The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags.
+	// The owned tag wins on key collision.
 	// +optional
 	AdditionalTags common.Tags `json:"additionalTags,omitempty"`
 }
@@ -179,7 +179,7 @@ type UpdateConfigSpec struct {
 	MaxUnavailable int32 `json:"maxUnavailable,omitempty"`
 }
 
-// NodeRepairSpec mirrors CAPA NodeRepairConfig: a declarative enable flag
+// NodeRepairSpec is a declarative enable flag
 // for node auto-repair.
 type NodeRepairSpec struct {
 	// Enabled enables auto-repair: the provider detects Abnormal/Error nodes
@@ -255,9 +255,7 @@ type CCEManagedMachinePoolStatus struct {
 	// ObservedGeneration is the latest generation observed by the controller.
 	// Used to prevent missed spec changes when controller-runtime event coalescing
 	// causes a status patch and an external spec patch to land in the same work
-	// queue window. Matches CAPA v2.13.0 commits 9e9bb6b31 / b5d6d3081 (applied
-	// to CCEManagedControlPlane; same pattern extended to CCEManagedMachinePool
-	// because machine pools can also miss spec changes during long reconciles).
+	// queue window.
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 

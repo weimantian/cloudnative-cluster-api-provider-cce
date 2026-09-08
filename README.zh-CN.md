@@ -400,7 +400,7 @@ clusterctl delete --infrastructure cce
 - [Cluster API](https://cluster-api.sigs.k8s.io/)(`sigs.k8s.io/cluster-api`)——核心合约与控制器。
 - [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime)——Reconciler 框架。
 - [华为云 Go SDK](https://github.com/huaweicloud/huaweicloud-sdk-go-v3)——CCE/ECS/VPC 客户端。
-- 参考实现:[cluster-api-provider-aws](https://github.com/kubernetes-sigs/cluster-api-provider-aws)、[alibabacloud-provider-for-Cluster-API](https://github.com/AliyunContainerService/alibabacloud-provider-for-Cluster-API)、[cluster-api-provider-huawei](https://github.com/huaweicloud-samples/cluster-api-provider-huawei)。
+- 参考实现: [cluster-api-provider-huawei](https://github.com/huaweicloud-samples/cluster-api-provider-huawei)。
 
 ## FAQ / 故障排除
 

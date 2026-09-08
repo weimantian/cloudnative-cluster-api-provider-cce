@@ -14,8 +14,8 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// Client-side throttling for the managed-network clients (VPC/NAT/EIP), mirroring
-// CAPA's token-bucket limiter but split by HTTP method so that status polling
+// Client-side throttling for the managed-network clients (VPC/NAT/EIP), using
+// a token-bucket limiter split by HTTP method so that status polling
 // (GET) is never delayed by the far stricter write limit Huawei Cloud enforces.
 //
 // Rates:

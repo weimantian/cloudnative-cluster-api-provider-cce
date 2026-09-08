@@ -31,7 +31,7 @@ spec:
       openAPIV3Schema:
         description: |-
           CCEClusterControllerIdentity is the controller's default credential
-          identity (mirrors CAPA AWSClusterControllerIdentity).
+          identity.
         properties:
           apiVersion:
             description: |-
@@ -145,9 +145,7 @@ spec:
   - name: v1beta2
     schema:
       openAPIV3Schema:
-        description: |-
-          CCEClusterRoleIdentity is a Huawei Cloud agency identity (mirrors CAPA
-          AWSClusterRoleIdentity, but with an agency instead of an AssumeRole ARN).
+        description: CCEClusterRoleIdentity is a Huawei Cloud agency identity.
         properties:
           apiVersion:
             description: |-
@@ -169,7 +167,7 @@ spec:
           spec:
             description: |-
               CCEClusterRoleIdentitySpec defines a Huawei Cloud agency (委托) based
-              identity — the CCE equivalent of CAPA's assumed-role identity. The agency
+              identity — the CCE equivalent of an assumed-role identity. The agency
               must already exist and grant trust to the calling account.
             properties:
               agencyName:
@@ -492,7 +490,7 @@ spec:
                         description: |-
                           Tags attached to the VPC. The provider owned tag
                           (cluster-api-provider-cce.cluster.<name>=owned) marks an existing VPC
-                          as ADOPTED (managed, including deletion) - the CAPA three-state model:
+                          as ADOPTED (managed, including deletion) - a three-state model:
                           vpc.id empty = create, vpc.id + owned tag = adopt, vpc.id + no tag = BYO.
                         type: object
                     type: object
@@ -623,9 +621,7 @@ spec:
   - name: v1beta2
     schema:
       openAPIV3Schema:
-        description: |-
-          CCEClusterStaticIdentity is a reference to a static AK/SK Secret (mirrors
-          CAPA AWSClusterStaticIdentity).
+        description: CCEClusterStaticIdentity is a reference to a static AK/SK Secret.
         properties:
           apiVersion:
             description: |-
@@ -977,7 +973,7 @@ spec:
                                 description: |-
                                   Tags attached to the VPC. The provider owned tag
                                   (cluster-api-provider-cce.cluster.<name>=owned) marks an existing VPC
-                                  as ADOPTED (managed, including deletion) - the CAPA three-state model:
+                                  as ADOPTED (managed, including deletion) - a three-state model:
                                   vpc.id empty = create, vpc.id + owned tag = adopt, vpc.id + no tag = BYO.
                                 type: object
                             type: object
@@ -1067,7 +1063,7 @@ spec:
             properties:
               accessPolicies:
                 description: |-
-                  AccessPolicies declare CCE access policies (the CCE equivalent of EKS
+                  AccessPolicies declare CCE access policies (the CCE equivalent of
                   access entries). Declarative set: create missing, update drift, remove
                   those no longer listed.
                 items:
@@ -1122,7 +1118,7 @@ spec:
                   AdditionalTags is an optional set of tags to add to the CCE cluster (maps
                   to CCE clusterTags / ResourceTag), in addition to the provider owned tag
                   cluster-api-provider-cce.cluster.<clusterName>=owned that is always added.
-                  The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags.
+                  The owned tag wins on key collision.
                   Tag updates on an already-created cluster are reconciled via the CCE
                   BatchCreateClusterTags API (see requirements FR-1.9).
                 type: object
@@ -1130,7 +1126,7 @@ spec:
                 description: |-
                   Addons are the CCE addon instances to manage (declarative set; the
                   controller installs missing ones, upgrades version drift, and removes
-                  those no longer listed — mirrors CAPA EKS addons).
+                  those no longer listed).
                 items:
                   description: AddonSpec declares a CCE addon to install.
                   properties:
@@ -1156,16 +1152,16 @@ spec:
                   AgencyTrustPolicy is the IAM v5 trust-policy JSON document used to
                   auto-create the trust agency (信任委托) referenced by the role identity
                   (identityRef -> CCEClusterRoleIdentity.spec.agencyName) when that agency
-                  does not already exist. Mirrors CAPA auto-creating the cluster IAM role:
-                  a non-empty policy + a role identity triggers EnsureAgency (List -> Create
+                  does not already exist.
+                  A non-empty policy + a role identity triggers EnsureAgency (List -> Create
                   when absent); an existing agency is adopted (never overwritten). When the
                   identity has no agency (controller/static identity), creation is skipped.
                   The document must declare "Version": "5.0".
                 type: string
               authentication:
                 description: |-
-                  Authentication controls the API server authentication mode (mirrors
-                  CAPA EKS AccessConfig.AuthenticationMode). Default rbac;
+                  Authentication controls the API server authentication mode.
+                  Default rbac;
                   authenticating_proxy delegates auth to an external proxy (requires a
                   CA + client cert + key). Immutable after creation.
                 properties:
@@ -1277,8 +1273,8 @@ spec:
                 type: boolean
               encryptionConfig:
                 description: |-
-                  EncryptionConfig controls etcd secret encryption (mirrors CAPA EKS
-                  EncryptionConfig). Mode Default leaves etcd unencrypted; KMS enables
+                  EncryptionConfig controls etcd secret encryption.
+                  Mode Default leaves etcd unencrypted; KMS enables
                   envelope encryption with a KMS key configured at the account level.
                   Immutable after creation.
                 properties:
@@ -1310,7 +1306,7 @@ spec:
                       Private controls private (VPC-internal) API server access. CCE always
                       exposes a VPC-internal endpoint and cannot disable it (platform-managed
                       control plane), so this field defaults to true and false is rejected by
-                      the webhook. It exists for CAPA parity (CAPA EndpointAccess exposes
+                      the webhook. It exists for parity (EndpointAccess exposes
                       public/private).
                     type: boolean
                   public:
@@ -1374,8 +1370,8 @@ spec:
                 type: boolean
               logging:
                 description: |-
-                  Logging configures control-plane log collection (mirrors CAPA EKS
-                  Logging). Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
+                  Logging configures control-plane log collection.
+                  Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
                 properties:
                   logs:
                     description: Logs lists the components to collect.
@@ -1414,7 +1410,7 @@ spec:
               podIdentityAssociations:
                 description: |-
                   PodIdentityAssociations bind Kubernetes ServiceAccounts to Huawei Cloud
-                  agencies (the CCE equivalent of EKS Pod Identity). Declarative set:
+                  agencies (the CCE equivalent of Pod Identity). Declarative set:
                   create missing, delete removed.
                 items:
                   description: PodIdentityAssociationSpec declares a ServiceAccount
@@ -1561,7 +1557,7 @@ spec:
                   ObservedGeneration is the latest generation observed by the controller.
                   Used to prevent missed spec changes when controller-runtime event coalescing
                   causes a status patch and an external spec patch to land in the same work
-                  queue window. Matches CAPA v2.13.0 commits 9e9bb6b31 / b5d6d3081.
+                  queue window.
                 format: int64
                 type: integer
               ready:
@@ -1649,7 +1645,7 @@ spec:
                     properties:
                       accessPolicies:
                         description: |-
-                          AccessPolicies declare CCE access policies (the CCE equivalent of EKS
+                          AccessPolicies declare CCE access policies (the CCE equivalent of
                           access entries). Declarative set: create missing, update drift, remove
                           those no longer listed.
                         items:
@@ -1706,7 +1702,7 @@ spec:
                           AdditionalTags is an optional set of tags to add to the CCE cluster (maps
                           to CCE clusterTags / ResourceTag), in addition to the provider owned tag
                           cluster-api-provider-cce.cluster.<clusterName>=owned that is always added.
-                          The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags.
+                          The owned tag wins on key collision.
                           Tag updates on an already-created cluster are reconciled via the CCE
                           BatchCreateClusterTags API (see requirements FR-1.9).
                         type: object
@@ -1714,7 +1710,7 @@ spec:
                         description: |-
                           Addons are the CCE addon instances to manage (declarative set; the
                           controller installs missing ones, upgrades version drift, and removes
-                          those no longer listed — mirrors CAPA EKS addons).
+                          those no longer listed).
                         items:
                           description: AddonSpec declares a CCE addon to install.
                           properties:
@@ -1740,16 +1736,16 @@ spec:
                           AgencyTrustPolicy is the IAM v5 trust-policy JSON document used to
                           auto-create the trust agency (信任委托) referenced by the role identity
                           (identityRef -> CCEClusterRoleIdentity.spec.agencyName) when that agency
-                          does not already exist. Mirrors CAPA auto-creating the cluster IAM role:
-                          a non-empty policy + a role identity triggers EnsureAgency (List -> Create
+                          does not already exist.
+                          A non-empty policy + a role identity triggers EnsureAgency (List -> Create
                           when absent); an existing agency is adopted (never overwritten). When the
                           identity has no agency (controller/static identity), creation is skipped.
                           The document must declare "Version": "5.0".
                         type: string
                       authentication:
                         description: |-
-                          Authentication controls the API server authentication mode (mirrors
-                          CAPA EKS AccessConfig.AuthenticationMode). Default rbac;
+                          Authentication controls the API server authentication mode.
+                          Default rbac;
                           authenticating_proxy delegates auth to an external proxy (requires a
                           CA + client cert + key). Immutable after creation.
                         properties:
@@ -1867,8 +1863,8 @@ spec:
                         type: boolean
                       encryptionConfig:
                         description: |-
-                          EncryptionConfig controls etcd secret encryption (mirrors CAPA EKS
-                          EncryptionConfig). Mode Default leaves etcd unencrypted; KMS enables
+                          EncryptionConfig controls etcd secret encryption.
+                          Mode Default leaves etcd unencrypted; KMS enables
                           envelope encryption with a KMS key configured at the account level.
                           Immutable after creation.
                         properties:
@@ -1900,7 +1896,7 @@ spec:
                               Private controls private (VPC-internal) API server access. CCE always
                               exposes a VPC-internal endpoint and cannot disable it (platform-managed
                               control plane), so this field defaults to true and false is rejected by
-                              the webhook. It exists for CAPA parity (CAPA EndpointAccess exposes
+                              the webhook. It exists for parity (EndpointAccess exposes
                               public/private).
                             type: boolean
                           public:
@@ -1964,8 +1960,8 @@ spec:
                         type: boolean
                       logging:
                         description: |-
-                          Logging configures control-plane log collection (mirrors CAPA EKS
-                          Logging). Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
+                          Logging configures control-plane log collection.
+                          Maps to CCE UpdateClusterLogConfig / ShowClusterConfig.
                         properties:
                           logs:
                             description: Logs lists the components to collect.
@@ -2005,7 +2001,7 @@ spec:
                       podIdentityAssociations:
                         description: |-
                           PodIdentityAssociations bind Kubernetes ServiceAccounts to Huawei Cloud
-                          agencies (the CCE equivalent of EKS Pod Identity). Declarative set:
+                          agencies (the CCE equivalent of Pod Identity). Declarative set:
                           create missing, delete removed.
                         items:
                           description: PodIdentityAssociationSpec declares a ServiceAccount
@@ -2130,7 +2126,7 @@ spec:
                   AdditionalTags is an optional set of tags to add to the CCE node pool
                   (maps to CCE userTags / UserTag), in addition to the provider owned tag
                   cluster-api-provider-cce.cluster.<clusterName>=owned that is always added.
-                  The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags.
+                  The owned tag wins on key collision.
                 type: object
               autoscaling:
                 description: |-
@@ -2242,8 +2238,8 @@ spec:
                 type: string
               nodeRepair:
                 description: |-
-                  NodeRepair enables node auto-repair (mirrors CAPA NodeRepairConfig.
-                  Enabled). CCE has no EKS-style auto-repair switch, so the provider
+                  NodeRepair enables node auto-repair.
+                  CCE has no auto-repair switch, so the provider
                   detects Abnormal/Error nodes and resets them via CCE ResetNode.
                 properties:
                   enabled:
@@ -2337,7 +2333,7 @@ spec:
               updateConfig:
                 description: |-
                   UpdateConfig controls how spec changes are rolled onto existing nodes
-                  (CCE 同步节点池 UpgradeNodePool, the analogue of CAPA's UpdateConfig /
+                  (CCE 同步节点池 UpgradeNodePool, the analogue of UpdateConfig /
                   rolling update). Node attributes such as securityGroups, taints, labels
                   and OS only apply to newly created nodes, so the controller calls
                   UpgradeNodePool to synchronise them onto running nodes.
@@ -2464,9 +2460,7 @@ spec:
                   ObservedGeneration is the latest generation observed by the controller.
                   Used to prevent missed spec changes when controller-runtime event coalescing
                   causes a status patch and an external spec patch to land in the same work
-                  queue window. Matches CAPA v2.13.0 commits 9e9bb6b31 / b5d6d3081 (applied
-                  to CCEManagedControlPlane; same pattern extended to CCEManagedMachinePool
-                  because machine pools can also miss spec changes during long reconciles).
+                  queue window.
                 format: int64
                 type: integer
               ready:
@@ -2555,7 +2549,7 @@ spec:
                           AdditionalTags is an optional set of tags to add to the CCE node pool
                           (maps to CCE userTags / UserTag), in addition to the provider owned tag
                           cluster-api-provider-cce.cluster.<clusterName>=owned that is always added.
-                          The owned tag wins on key collision. Mirrors CAPA's spec.additionalTags.
+                          The owned tag wins on key collision.
                         type: object
                       autoscaling:
                         description: |-
@@ -2671,8 +2665,8 @@ spec:
                         type: string
                       nodeRepair:
                         description: |-
-                          NodeRepair enables node auto-repair (mirrors CAPA NodeRepairConfig.
-                          Enabled). CCE has no EKS-style auto-repair switch, so the provider
+                          NodeRepair enables node auto-repair.
+                          CCE has no auto-repair switch, so the provider
                           detects Abnormal/Error nodes and resets them via CCE ResetNode.
                         properties:
                           enabled:
@@ -2767,7 +2761,7 @@ spec:
                       updateConfig:
                         description: |-
                           UpdateConfig controls how spec changes are rolled onto existing nodes
-                          (CCE 同步节点池 UpgradeNodePool, the analogue of CAPA's UpdateConfig /
+                          (CCE 同步节点池 UpgradeNodePool, the analogue of UpdateConfig /
                           rolling update). Node attributes such as securityGroups, taints, labels
                           and OS only apply to newly created nodes, so the controller calls
                           UpgradeNodePool to synchronise them onto running nodes.

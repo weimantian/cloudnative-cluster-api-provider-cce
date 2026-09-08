@@ -9,13 +9,13 @@ package scope
 import "github.com/pkg/errors"
 
 // GlobalScope is the account-wide context for non-cluster-scoped controllers
-// (e.g. the GC orphan sweeper). Mirrors CAPA's GlobalScope but simplified:
-// CCE does not cache a long-lived AWS-style session — SDK clients are
-// per-region+credentials and cached in the reconciler-level sync.Map. The
-// GlobalScope only carries identifying metadata (region, controller name).
+// (e.g. the GC orphan sweeper). A simplified global scope: CCE does not
+// cache a long-lived SDK session — SDK clients are per-region+credentials
+// and cached in the reconciler-level sync.Map. The GlobalScope only carries
+// identifying metadata (region, controller name).
 //
-// CAPA's full GlobalScope (aws.Config, throttle.ServiceLimiters) is not
-// modeled here because CCE's GC operates through the same Reconciler
+// The full provider GlobalScope (SDK config, throttle service limiters) is
+// not modeled here because CCE's GC operates through the same Reconciler
 // factory pattern as the regular controllers.
 type GlobalScope struct {
 	region         string

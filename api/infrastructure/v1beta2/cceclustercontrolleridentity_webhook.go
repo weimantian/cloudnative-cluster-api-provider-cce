@@ -31,8 +31,7 @@ var _ admission.Validator[*CCEClusterControllerIdentity] = &CCEClusterController
 
 // ValidateCreate implements admission.Validator. Enforces singleton
 // semantics: the CCEClusterControllerIdentity must be named "default"
-// because controller-runtime looks it up by that exact name. Mirrors
-// CAPA's AWSClusterControllerIdentity singleton enforcement.
+// because controller-runtime looks it up by that exact name.
 func (c *CCEClusterControllerIdentity) ValidateCreate(_ context.Context, obj *CCEClusterControllerIdentity) (admission.Warnings, error) {
 	if obj.Name != "default" {
 		return nil, apierrors.NewInvalid(
@@ -49,8 +48,7 @@ func (c *CCEClusterControllerIdentity) ValidateCreate(_ context.Context, obj *CC
 // ValidateUpdate implements admission.Validator. Both name and Spec are
 // immutable: the singleton identity must stay at "default", and any change
 // to the spec (e.g. allowedNamespaces selector) would silently rotate the
-// controller's shared credentials. Mirrors CAPA's
-// AWSClusterControllerIdentity immutability.
+// controller's shared credentials.
 func (c *CCEClusterControllerIdentity) ValidateUpdate(_ context.Context, oldObj, newObj *CCEClusterControllerIdentity) (admission.Warnings, error) {
 	if newObj.Name != oldObj.Name {
 		return nil, apierrors.NewInvalid(

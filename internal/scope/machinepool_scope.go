@@ -28,8 +28,8 @@ type CCEManagedMachinePoolScopeParams struct {
 }
 
 // CCEManagedMachinePoolScope is the per-reconcile context for the
-// CCEManagedMachinePool controller. Mirrors CAPA's MachinePoolScope with
-// WithStatusObservedGeneration patch option (CAPA 9e9bb6b31 family).
+// CCEManagedMachinePool controller, carrying the
+// WithStatusObservedGeneration patch option.
 type CCEManagedMachinePoolScope struct {
 	log                       logr.Logger
 	client                    client.Client

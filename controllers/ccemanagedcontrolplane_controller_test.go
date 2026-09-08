@@ -119,7 +119,7 @@ func TestControlPlaneReconcileSuccess(t *testing.T) {
 	if len(secret.Data["value"]) == 0 {
 		t.Error("expected kubeconfig Secret data")
 	}
-	// The user kubeconfig (mirrors CAPA <cluster>-user-kubeconfig) is an
+	// The user kubeconfig is an
 	// independent credential owned by the control plane.
 	userSecret := &corev1.Secret{}
 	if err := k8sClient.Get(ctx, types.NamespacedName{Namespace: ns, Name: "test-cluster-user-kubeconfig"}, userSecret); err != nil {
@@ -786,7 +786,7 @@ func TestControlPlaneReconcileAgencyAutoCreation(t *testing.T) {
 
 // TestControlPlaneReconcileObservedGenerationUpdates verifies that after a
 // successful reconcile, status.observedGeneration matches metadata.generation
-// (CAPA v2.13.0 commit 9e9bb6b31 — patch.WithStatusObservedGeneration writes
+// (patch.WithStatusObservedGeneration writes
 // the field during Patch).
 func TestControlPlaneReconcileObservedGenerationUpdates(t *testing.T) {
 	ctx := context.Background()
@@ -827,7 +827,7 @@ func TestControlPlaneReconcileObservedGenerationUpdates(t *testing.T) {
 // TestControlPlaneReconcileRequeueWhenObservedBehind verifies that when the
 // persisted Status.ObservedGeneration is behind the spec's metadata.generation
 // (a coalesced spec change), Reconcile returns RequeueAfter=defaultRequeue
-// without re-running the heavy create path (CAPA v2.13.0 commit b5d6d3081).
+// without re-running the heavy create path.
 func TestControlPlaneReconcileRequeueWhenObservedBehind(t *testing.T) {
 	ctx := context.Background()
 	ns := "cp-test-obsgen-requeue"
@@ -839,7 +839,7 @@ func TestControlPlaneReconcileRequeueWhenObservedBehind(t *testing.T) {
 
 	// Force the Status.ObservedGeneration to lag behind metadata.generation.
 	// This simulates a coalesced spec change that arrived after our Get and
-	// was not caught by the first reconcile (CAPA v2.13.0 commit b5d6d3081).
+	// was not caught by the first reconcile.
 	cp.Status.ObservedGeneration = 0
 
 	// Default FakeCCEService returns an Available cluster with an Internal

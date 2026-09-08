@@ -6,8 +6,8 @@ Licensed under the MIT No Attribution (MIT-0) License.
 
 // Package cce provides the interface and Huawei Cloud SDK implementation for
 // the CCE service (clusters, node pools, kubeconfig). Controllers depend only
-// on this interface, so tests can inject mocks (pattern: CAPA
-// pkg/cloud/services interfaces).
+// on this interface, so tests can inject mocks (following the services-layer
+// interface pattern).
 package cce
 
 import "context"
@@ -169,7 +169,7 @@ type CreateNodePoolInput struct {
 	// script finishes (nodeTemplate.waitPostInstallFinish).
 	WaitPostInstallFinish *bool
 	// PublicIP binds a public EIP to each node so the node can reach the
-	// internet directly (AWS public-subnet parity), avoiding a NAT gateway.
+	// internet directly (public-subnet parity), avoiding a NAT gateway.
 	PublicIP bool
 	// PublicIPBandwidthSize is the EIP bandwidth in Mbps for PublicIP (and
 	// PublicIPShareType/PublicIPChargeMode are its bandwidth share/charge
@@ -330,7 +330,7 @@ type AddonInput struct {
 
 // PodIdentityAssociationInput declares a CCE pod-identity association
 // (binds a K8s ServiceAccount to a Huawei Cloud agency — the CCE equivalent
-// of EKS Pod Identity).
+// of Pod Identity).
 type PodIdentityAssociationInput struct {
 	ClusterID      string
 	Namespace      string

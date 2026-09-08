@@ -1399,8 +1399,8 @@ func TestSmokeUpgradeWorkflow(t *testing.T) {
 }
 
 // TestSmokeLogging verifies control-plane log collection end-to-end: apply a
-// config via UpdateClusterLogConfig and read it back with ShowClusterConfig.
-// Mirrors CAPA EKS Logging (questionnaire Q-LOG).
+// config via UpdateClusterLogConfig and read it back with ShowClusterConfig
+// (questionnaire Q-LOG).
 func TestSmokeLogging(t *testing.T) {
 	ctx := context.Background()
 	ak := smokeRequired(t, "CCE_SMOKE_AK")

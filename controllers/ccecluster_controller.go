@@ -88,7 +88,7 @@ func (r *CCEClusterReconciler) newNetworkService(regionID string, creds *credent
 // +kubebuilder:rbac:groups=core,resources=events,verbs=create;patch
 
 // Reconcile implements the reconcile loop of CCECluster using the
-// per-reconcile CCEClusterScope (CAPA pkg/cloud/scope pattern).
+// per-reconcile CCEClusterScope.
 func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 	defer func() {
@@ -192,8 +192,7 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 				return ctrl.Result{RequeueAfter: requeueAfterForError(key, serr)}, nil
 			}
 			// Stamp cluster-level additionalTags on the provider-managed network
-			// resources (mirrors CAPA applying AdditionalTags to managed
-			// networking). Sourced from the owning control plane, if present.
+			// resources. Sourced from the owning control plane, if present.
 			var cpTags map[string]string
 			if cluster.Spec.ControlPlaneRef.Name != "" {
 				cp := &controlplanev1beta2.CCEManagedControlPlane{}
@@ -385,7 +384,7 @@ func (r *CCEClusterReconciler) resolveClusterCredentials(ctx context.Context, cl
 }
 
 // reconcileManagedNetwork drives the managed-network lifecycle step by step,
-// marking a dedicated condition per step (mirrors CAPA VpcReady/SubnetsReady/
+// marking a dedicated condition per step (VpcReady/SubnetsReady/
 // NatGatewaysReady) so operators see intermediate progress.
 func (r *CCEClusterReconciler) reconcileManagedNetwork(ctx context.Context, cceCluster *infrav1beta2.CCECluster, clusterName string, svc network.ManagerInterface) error {
 	spec := &cceCluster.Spec.Network

@@ -29,7 +29,7 @@ import (
 // no reconcile loop is left to delete it, so the cluster (and its EIP/EVS/ELB/
 // ECS nodes) would leak and keep billing.
 //
-// It mirrors CAPA's ExternalResourceGC (owned-tag orphan detection + aggregated
+// It mirrors ExternalResourceGC (owned-tag orphan detection + aggregated
 // delete), scoped to the CCE cluster resource — DeleteCluster's cascade options
 // then clean the whole sub-tree (EIP/EVS/ELB/ECS/node pools).
 type GarbageCollector struct {
@@ -40,8 +40,8 @@ type GarbageCollector struct {
 	// than a per-cluster Secret/identity. Overridden in tests with a fake.
 	ServiceFactory func(regionID string, creds *credentials.Credentials) (cceService.Service, error)
 
-	// GlobalScope is the account-wide analog of the per-object scope
-	// (CAPA pkg/cloud/scope). Holds region + controller name, built once at
+	// GlobalScope is the account-wide analog of the per-object scope.
+	// Holds region + controller name, built once at
 	// manager-start by main.go. The legacy Region field below is kept for
 	// backward compatibility; prefer scope.Region() when both are set.
 	GlobalScope *scope.GlobalScope
@@ -65,7 +65,7 @@ type GarbageCollector struct {
 func (g *GarbageCollector) NeedLeaderElection() bool { return true }
 
 // region returns the GC's region from GlobalScope if set, else the legacy
-// Region field. Lets the GC migrate to the CAPA-style GlobalScope without
+// Region field. Lets the GC migrate to the GlobalScope without
 // breaking existing setup.
 func (g *GarbageCollector) region() string {
 	if g.GlobalScope != nil {
@@ -169,8 +169,7 @@ func (g *GarbageCollector) sweep(ctx context.Context) {
 	// NAT). These are NOT covered by DeleteCluster's cascade options - e.g. a
 	// managed NAT EIP whose Cluster CR was force-deleted - and would keep
 	// billing. Only resources carrying the provider owned tag whose Cluster
-	// CR is gone (and not opted-out) are removed (whitelist-by-tag; mirrors
-	// CAPA ExternalResourceGC).
+	// CR is gone (and not opted-out) are removed (whitelist-by-tag).
 	g.sweepEips(ctx, svc, wanted)
 	g.sweepVolumes(ctx, svc, wanted)
 	g.sweepVpcs(ctx, svc, wanted)
@@ -183,7 +182,7 @@ func (g *GarbageCollector) sweep(ctx context.Context) {
 // being preserved for forensic analysis). The annotation is honored only
 // when the cluster CR still exists but the cloud resource is orphaned.
 //
-// Mirrors CAPA's ExternalResourceGCAnnotation opt-out (any truthy value
+// Mirrors ExternalResourceGCAnnotation opt-out (any truthy value
 // means opt-out: true/yes/1/on, case-insensitive).
 const skipGCAnnotationKey = "capi-cce/skip-gc"
 
@@ -207,14 +206,13 @@ func skipGCAnnotation(c *clusterv1.Cluster) bool {
 // NAT). These are NOT covered by DeleteCluster's cascade options - e.g. a
 // managed NAT EIP whose Cluster CR was force-deleted - and would keep
 // billing. Only resources carrying the provider owned tag whose Cluster
-// CR is gone are removed (whitelist-by-tag; mirrors CAPA
-// ExternalResourceGC).
+	// CR is gone are removed (whitelist-by-tag).
 //
 // Tracked clusters (CR present) skip phase-2 GC: the cloud resource is
 // considered managed by the tracked cluster, not orphan. opt-out
 // annotation (skipGCAnnotationKey) is consulted in the cluster-phase
 // sweep above; for phase-2 resources we keep the simple tracked-skips
-// semantics - matches CAPA's ExternalResourceGCAnnotation which gates only
+// semantics - matches ExternalResourceGCAnnotation which gates only
 // the delete-path collection, not the tag-driven orphan scan.
 
 // sweepEips enumerates owned-tagged EIPs whose Cluster CR is gone and

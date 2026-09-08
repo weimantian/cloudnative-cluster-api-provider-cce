@@ -245,7 +245,7 @@ func TestUpdateClusterLogConfigBounds(t *testing.T) {
 func TestOwnedTagKeyCCEConstraints(t *testing.T) {
 	// The owned tag key must satisfy the CCE ResourceTag key constraints
 	// (official: no "/", charset [a-zA-Z0-9_.:=+-@ and space], max 128, not
-	// starting with "_sys_"). The original CAPA-style slash key is invalid for
+	// starting with "_sys_"). The original slash-form key is invalid for
 	// CCE (verified live: CCE_CM.0004 "Tag's parameters is invalid").
 	for _, name := range []string{"cce-e2e-demo", "my-cluster", "a_very_long_cluster_name_with-many_chars1234567890"} {
 		key := ownedTagKey(name)

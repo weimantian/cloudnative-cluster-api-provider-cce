@@ -20,8 +20,7 @@ import (
 )
 
 // CCEClusterControllerIdentityReconciler ensures the "default"
-// CCEClusterControllerIdentity singleton exists, mirroring CAPA's
-// AutoControllerIdentityCreator (registered only when the
+// CCEClusterControllerIdentity singleton exists (registered only when the
 // AutoControllerIdentityCreator feature gate is on).
 type CCEClusterControllerIdentityReconciler struct {
 	client.Client

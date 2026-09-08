@@ -22,18 +22,16 @@ const (
 	// NetworkReadyCondition reports whether the referenced VPC/subnets are
 	// validated (BYO mode) or the managed network is reconciled (managed mode).
 	NetworkReadyCondition = "NetworkReady"
-	// VpcReadyCondition reports successful reconciliation of the managed VPC
-	// (mirrors CAPA VpcReadyCondition).
+	// VpcReadyCondition reports successful reconciliation of the managed VPC.
 	VpcReadyCondition = "VpcReady"
 	// SubnetsReadyCondition reports successful reconciliation of managed
-	// subnets (mirrors CAPA SubnetsReadyCondition).
+	// subnets.
 	SubnetsReadyCondition = "SubnetsReady"
 	// NatGatewaysReadyCondition reports successful reconciliation of the
-	// managed NAT gateway + SNAT rules (mirrors CAPA NatGatewaysReadyCondition).
+	// managed NAT gateway + SNAT rules.
 	NatGatewaysReadyCondition = "NatGatewaysReady"
 	// SecurityGroupsReadyCondition reports successful reconciliation of the
-	// managed node security group + its ingress/egress rules (mirrors CAPA
-	// SecurityGroupsReadyCondition).
+	// managed node security group + its ingress/egress rules.
 	SecurityGroupsReadyCondition = "SecurityGroupsReady"
 )
 
@@ -52,11 +50,10 @@ const (
 	// pod-identity associations are created/removed as specified.
 	PodIdentityAssociationsConfiguredCondition = "PodIdentityAssociationsConfigured"
 	// LoggingConfiguredCondition reports whether the declared control-plane log
-	// collection config is applied (mirrors CAPA EKS Logging).
+	// collection config is applied.
 	LoggingConfiguredCondition = "LoggingConfigured"
 	// AccessPoliciesConfiguredCondition reports whether the declared CCE access
-	// policies are created/updated/removed as specified (mirrors EKS access
-	// entries).
+	// policies are created/updated/removed as specified.
 	AccessPoliciesConfiguredCondition = "AccessPoliciesConfigured"
 	// UpgradeReadyCondition reports the cluster upgrade state (FR-1.7,
 	// questionnaire Q11). True when spec.version matches the running version.
@@ -89,7 +86,7 @@ const (
 	UpgradeTargetUnavailableReason = "UpgradeTargetUnavailable"
 )
 
-// Per-condition reason constants. Mirrors the CAPA v2.13.0 pattern of one
+// Per-condition reason constants. One
 // dedicated reason per condition so downstream tooling (kubectl describe,
 // status dashboards) can disambiguate failure modes without parsing the
 // free-form Message field. The shared Reconciliation{Failed,InProgress}

@@ -153,7 +153,7 @@ func TestCCEClusterReconcileManagedNetwork(t *testing.T) {
 	if len(got.Spec.Network.Subnets) != 1 || got.Spec.Network.Subnets[0].ResourceID == "" {
 		t.Error("expected subnet resourceID to be backfilled and persisted")
 	}
-	// Each managed step carries a dedicated condition (mirrors CAPA).
+	// Each managed step carries a dedicated condition.
 	for _, cType := range []string{conditions.VpcReadyCondition, conditions.SubnetsReadyCondition, conditions.NatGatewaysReadyCondition} {
 		if c := capiconditions.Get(got, cType); c == nil || c.Status != metav1.ConditionTrue {
 			t.Errorf("expected condition %s=True, got %v", cType, c)
@@ -163,7 +163,7 @@ func TestCCEClusterReconcileManagedNetwork(t *testing.T) {
 
 // TestCCEClusterReconcileManagedSecurityGroup verifies the managed security
 // group step: when spec.network.securityGroup is set, the manager creates it
-// and the SecurityGroupsReady condition is reported (mirrors CAPA).
+	// and the SecurityGroupsReady condition is reported.
 func TestCCEClusterReconcileManagedSecurityGroup(t *testing.T) {
 	ctx := context.Background()
 	ns := "ccecluster-test-managed-sg"
