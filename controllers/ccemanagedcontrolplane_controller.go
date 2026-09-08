@@ -7,6 +7,7 @@ Licensed under the MIT No Attribution (MIT-0) License.
 package controllers
 
 import (
+	"time"
 	"context"
 	"net/url"
 	"slices"
@@ -47,6 +48,13 @@ const ControlPlaneFinalizer = "ccemanagedcontrolplane.controlplane.cluster.x-k8s
 // kubeconfigValidityDays is the requested certificate validity (questionnaire
 // Q2: -1 or [1,1827]; 365 = one year).
 const kubeconfigValidityDays = 365
+
+// reconciliationPeriod is the steady-state requeue interval: it turns the
+// drift-sync (ReconcileClusterTags) and other reconciliation into a periodic
+// sweep so external changes on the cloud side (e.g. a tag edited in the
+// console) are detected and pulled back to the declared spec without
+// requiring a CR event.
+const reconciliationPeriod = 10 * time.Minute
 
 // credentialsSecretSuffix is the suffix of the per-cluster credentials Secret
 // (<clusterName>-credentials) that carries the AK/SK used by the provider to
@@ -411,7 +419,9 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	cp.Status.Initialized = true
 	cp.Status.Initialization.ControlPlaneInitialized = true
 	log.Info("CCE control plane is ready", "clusterID", clusterID)
-	return ctrl.Result{}, nil
+	// Periodic requeue: sweep cloud drift (tags, kubeconfig expiry, ...) even
+	// when nothing changed on the CR side.
+	return ctrl.Result{RequeueAfter: reconciliationPeriod}, nil
 }
 
 // pollUpgradeTask polls an in-flight upgrade task. Returns (result, true) when
