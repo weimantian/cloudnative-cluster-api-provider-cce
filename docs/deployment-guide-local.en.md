@@ -356,9 +356,8 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # wait for CURRENT/AVAILAB
 
 > ⚠️ Tags are written **once, at CCE resource creation** (CCE `ClusterTags`/`UserTags`); incremental tag sync on already-created resources (`BatchCreateClusterTags`, FR-1.9) is **not implemented yet** — to exercise tags you must add `additionalTags` to the yaml **before** applying cluster B.
 
-**Way 1 (recommended): verify at creation** — Step 6's **sub-step 4** already tags `my-cluster.yaml` (env/cost-center on the control plane, team on pool-0) **before** `kubectl apply`. After cluster B is Provisioned, verify:
+**Way 1 (recommended): verify at creation** — Step 6's **sub-step 4** already tags `my-cluster.yaml` (env/cost-center on the control plane, team on pool-0) **before** `kubectl apply`.
 
-After cluster B is Provisioned, verify:
 
 ```bash
 # 1. Spec is committed
@@ -374,61 +373,8 @@ kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -o jsonpath='{.spec.addi
 #    → not visible in the console/API (overridden by the built-in value)
 ```
 
-**Way 2: validation-layer only (no cluster needed)** — the webhook rejects illegal tags:
-
-```bash
-# Applying any CR with an illegal tag is rejected (dry-run is enough to see it):
-#   · key containing /           → "tag key may only contain ... (no '/')"
-#   · key starting with _sys_    → "cannot start with \"_sys_\""
-#   · key with leading/trailing spaces, or > 128 chars
-#   · value > 255 chars
-#   · more than 19 user tags    → "Too many: must have at most 19 items"
-kubectl create -f - --dry-run=client <<'EOF'
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-kind: CCEManagedMachinePool
-metadata:
-  name: bad-tags-pool
-spec:
-  clusterName: x
-  additionalTags:
-    "a/b": v
-EOF
-# → rejected (additionalTags validation)
-```
-
-**Way 3: cost-allocation chain (Huawei Cloud side — the end goal of tagging)**
-
-```text
-① ~24h after the resource is created and billed → the tag keys appear under
-   Billing → Cost Center → "Cost tags"
-② Recommended: first create same-key predefined tags in the TMS console (shown
-   instantly) and activate them as cost tags
-③ Export the cost detail report: the CSV "resource tags" column carries all tags
-   (not gated by activation — historical rows can be filtered offline)
-④ Filter by role: after activating cluster-api-provider-cce.role you can split
-   control-plane cost (apiserver) from node cost (node) — CAPA-style role split
-```
----
-
 ## 6. Troubleshooting / Pitfall Log
-
-| # | Symptom | Root cause | Fix | Status |
-|---|---|---|---|---|
-| 1 | Nodes stuck at `Installing` forever | Subnet DNS changed to non-in-cloud DNS (creating a subnet via API without `primary_dns` leaves it empty) | Keep the default when creating in the console; API/scripts (`deploy-network`) explicitly set the in-cloud DNS `100.125.1.250,100.125.129.250` (cn-north-4) | ✅ |
-| 2 | Cluster has no public endpoint | CCE does not auto-assign a public IP | Bind an EIP in the cluster details | ✅ |
-| 3 | Local connection to cluster A fails | The kubeconfig server is an intranet address | `kubectl config set-cluster --server=<public-IP>:5443` | ✅ |
-| 4 | Repeated 429 throttling (`APIGW.0308`) | CCE write throttling is 10 req/min and 429 retries also count | Provider has a built-in 3-min back-off; keep operations ≥60s apart | ✅ |
-| 5 | `clusterctl init` stuck at `Fetching providers` | Pulling CAPI components from GitHub | Download components locally + point images at SWR + local repository | ✅ |
-| 6 | `CCE_CM.0004 type and network mode not match` | Webhook defaulted category=Turbo while mode=vpc-router | category follows the network mode + validation | ✅ |
-| 7 | All nodes land in the `default` group | CCE extended groups are not AZ-aware at creation | Multiple MachinePools (one per AZ) | ✅ |
-| 8 | A flavor is sold out / no sub-ENI in some AZ | Tight resources (e.g. no 2C4G in 4c) | Switch flavor (`at7.large.1`) or AZ | ✅ |
-| 9 | Cluster B kubeconfig unreachable locally | Cluster B defaults to a private endpoint | Enable cluster B's public endpoint (`spec.endpointAccess.public=true`) | ✅ |
-| 10 | Cluster deletion stuck on a finalizer | Deletion path for clusters that never became Available | Remove the finalizer manually | ✅ |
-| 11 | Provider pods stuck Pending (`Too many pods`) | Management cluster nodes too small (2C4G×2, 16 pods/node cap filled by CCE's own monitoring) | Use 4U8G (c7.xlarge.2) ×3 for cluster A; Pending pods schedule automatically | ✅ |
-| 12 | Node pool AZ wrong (immutable after creation) | CCE node pool AZ cannot be changed after creation; patch does not rebuild | Delete the pool and recreate (delete machinepool → edit yaml → apply) | ✅ |
-| 13 | Cluster B creation fails `Az [VERIFY-AZ] is not in available az list` | `VERIFY-AZ\b` does not work on macOS sed (BSD lacks `\b`), the primary AZ was left unreplaced | Replace AZ2/AZ7 first, then AZ (no `\b`); confirm with `grep VERIFY` afterwards | ✅ |
-| 14 | `clusterctl get kubeconfig` outputs nothing | The kubeconfig Secret has not been created yet (provider still working) | `kubectl get secret my-cce-cluster-kubeconfig -n default`; wait 1-2 min or check provider logs | ✅ |
-
+> The pitfall log now lives in the local file [`docs/pitfalls.md`](pitfalls.md) (Chinese; **not pushed** with the repo — read it directly).
 ---
 
 ## 7. Clean Up Resources

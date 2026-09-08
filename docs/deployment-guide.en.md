@@ -333,24 +333,7 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # wait for CURRENT/AVAILAB
 ---
 
 ## 6. Troubleshooting / Pitfall Log
-
-| # | Symptom | Root cause | Fix | Status |
-|---|---|---|---|---|
-| 1 | Nodes stuck at `Installing` forever | Subnet DNS changed to non-in-cloud DNS (creating a subnet via API without `primary_dns` leaves it empty) | Keep the default when creating in the console; API/scripts (`deploy-network`) explicitly set the in-cloud DNS `100.125.1.250,100.125.129.250` (cn-north-4) | ✅ |
-| 2 | Cluster has no public endpoint | CCE does not auto-assign a public IP | Bind an EIP in the cluster details | ✅ |
-| 3 | Repeated 429 throttling (`APIGW.0308`) | CCE write throttling is 10 req/min and 429 retries also count | Provider has a built-in 3-min back-off; keep operations ≥60s apart | ✅ |
-| 4 | Downloading tools on the bastion is extremely slow | Huawei Cloud international egress is slow | SWR tools image `capi-cce-tools` / ghfast accelerator | ✅ |
-| 5 | `clusterctl init` stuck at `Fetching providers` | Pulling CAPI components from GitHub | Download components locally + point images at SWR + local repository | ✅ |
-| 6 | `CCE_CM.0004 type and network mode not match` | Webhook defaulted category=Turbo while mode=vpc-router | category follows the network mode + validation | ✅ |
-| 7 | All nodes land in the `default` group | CCE extended groups are not AZ-aware at creation | Multiple MachinePools (one per AZ) | ✅ |
-| 8 | A flavor is sold out / no sub-ENI in some AZ | Tight resources (e.g. no 2C4G in 4c) | Switch flavor (`at7.large.1`) or AZ | ✅ |
-| 9 | kubeconfig server address is stale | The CCE cert API returns an old address | Provider overrides with the current Internal endpoint | ✅ |
-| 10 | Cluster deletion stuck on a finalizer | Deletion path for clusters that never became Available | Remove the finalizer manually | ✅ |
-| 11 | Provider pods stuck Pending (`Too many pods`) | Management cluster nodes too small (2C4G×2, 16 pods/node cap filled by CCE's own monitoring) | Use 4U8G (c7.xlarge.2) ×3 for cluster A; Pending pods schedule automatically | ✅ |
-| 12 | Node pool AZ wrong (immutable after creation) | CCE node pool AZ cannot be changed after creation; patch does not rebuild | Delete the pool and recreate (delete machinepool → edit yaml → apply) | ✅ |
-| 13 | Cluster B creation fails `Az [VERIFY-AZ] is not in available az list` | `VERIFY-AZ\b` does not work on macOS sed (BSD lacks `\b`), the primary AZ was left unreplaced | Replace AZ2/AZ7 first, then AZ (no `\b`); confirm with `grep VERIFY` afterwards | ✅ |
-| 14 | `clusterctl get kubeconfig` outputs nothing | The kubeconfig Secret has not been created yet (provider still working) | `kubectl get secret my-cce-cluster-kubeconfig -n default`; wait 1-2 min or check provider logs | ✅ |
-
+> The pitfall log now lives in the local file [`docs/pitfalls.md`](pitfalls.md) (Chinese; **not pushed** with the repo — read it directly).
 ---
 
 ## 7. Clean Up Resources

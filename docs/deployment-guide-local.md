@@ -361,10 +361,9 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # 等 CURRENT/AVAILABLE=1�
 
 > ⚠️ 标签在 CCE 资源**创建时**一次性写入（对应 CCE `ClusterTags`/`UserTags`）；已创建资源的标签**增量同步（`BatchCreateClusterTags`，FR-1.9）尚未实现**——要验证标签，必须在 apply 集群 B **之前**把 `additionalTags` 加进 yaml。
 
-**方式一（推荐）：随创建验证**——步骤 6 的**第 4 步**已在 `kubectl apply` 前给 `my-cluster.yaml` 打了标签（控制面 env/cost-center、pool-0 team）。Provisioned 后验证：
+**方式一（推荐）：随创建验证**——步骤 6 的**第 4 步**已在 `kubectl apply` 前给 `my-cluster.yaml` 打了标签（控制面 env/cost-center、pool-0 team）。
 
 
-集群 B Provisioned 后验证：
 
 ```bash
 # 1. CR spec 已提交
@@ -380,59 +379,8 @@ kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -o jsonpath='{.spec.addi
 #    控制台/API 里看不到（被内置值覆盖）
 ```
 
-**方式二：仅校验层测试（无需建集群）**——webhook 会拒绝非法标签：
-
-```bash
-# 任意含非法标签的 CR apply 即被拒（可用 --dry-run=client 验证）：
-#   · key 含 /            → "tag key may only contain ... (no '/')"
-#   · key 以 _sys_ 开头    → "cannot start with \"_sys_\""
-#   · key 首尾空格 / 超 128 字符
-#   · value 超 255 字符
-#   · 用户标签 > 19 个     → "Too many: must have at most 19 items"
-kubectl create -f - --dry-run=client <<'EOF'
-apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
-kind: CCEManagedMachinePool
-metadata:
-  name: bad-tags-pool
-spec:
-  clusterName: x
-  additionalTags:
-    "a/b": v
-EOF
-# → 报错（additionalTags 校验）
-```
-
-**方式三：成本分账链路（华为云侧，标签的最终价值）**
-
-```text
-① 资源创建并计费 ~24h 后 → 费用中心「成本标签」页可见 additionalTags 的 key
-② 建议先在 TMS 控制台创建同 key 预定义标签（实时可见）+ 激活成本标签
-③ 导出成本明细：CSV 的「资源标签」列含全部标签（不受激活限制，可离线过滤全部历史）
-④ 按 role 过滤：激活 cluster-api-provider-cce.role 后，可区分控制面成本(apiserver)与
-   节点成本(node)——对标 CAPA 的成本按角色拆分
-```
-
----
-
 ## 6. 踩坑问题记录
-
-| # | 问题现象 | 根因 | 修正 | 状态 |
-|---|---|---|---|---|
-| 1 | 节点永久卡 `Installing` | 子网 DNS 被改成非云内 DNS（API 创建子网不填 `primary_dns` 默认为空） | 控制台创建保持默认；API/脚本（`deploy-network`）显式填云内 DNS `100.125.1.250,100.125.129.250`（cn-north-4） | ✅ |
-| 2 | 集群无公网 endpoint | CCE 不自动分配公网 IP | 集群详情绑定 EIP | ✅ |
-| 3 | 本地连集群 A 失败 | kubeconfig server 是内网地址 | `kubectl config set-cluster --server=<公网IP>:5443` | ✅ |
-| 4 | 连续 429 限流（`APIGW.0308`） | CCE 写限流 10 次/分钟，429 重试也计数 | provider 内置 3min 退避；操作间隔 ≥60s | ✅ |
-| 5 | `clusterctl init` 卡 `Fetching providers` | 从 GitHub 拉 CAPI 组件 | 本地下载组件 + 镜像改 SWR + 本地 repository | ✅ |
-| 6 | `CCE_CM.0004 type and network mode not match` | webhook 默认 category=Turbo 而 mode=vpc-router | category 跟随网络模式 + 校验 | ✅ |
-| 7 | 节点全在 default 组 | CCE 扩展组创建时不分节点 | 多 MachinePool（每 AZ 一个） | ✅ |
-| 8 | 某 AZ flavor 售罄/无 sub-ENI | 资源紧张（如 4c 无 2C4G） | 换 flavor（`at7.large.1`）或换 AZ | ✅ |
-| 9 | 集群 B kubeconfig 本地连不上 | 集群 B 默认私有 endpoint | 开集群 B 公网 endpoint（`spec.endpointAccess.public=true`） | ✅ |
-| 10 | 删除集群卡 finalizer | 未成功创建的集群删除路径 | 手动移除 finalizer | ✅ |
-| 11 | provider 等 pod 卡 Pending（`Too many pods`） | 管理集群节点规格小（2C4G×2，pod 上限 16/节点，被 CCE 自带监控占满） | 集群 A 用 4U8G（c7.xlarge.2）×3；Pending pod 自动调度 | ✅ |
-| 12 | 节点池 AZ 填错（创建后不可变） | CCE 节点池 AZ 创建后不可改，patch 不重建 | 删池重建（delete machinepool → 改 yaml → apply） | ✅ |
-| 13 | 集群 B 创建失败 `Az [VERIFY-AZ] is not in available az list` | `VERIFY-AZ\b` 在 macOS sed 不生效（BSD 不支持 \b），主 AZ 漏替换 | sed 先替换 AZ2/AZ3 再 AZ（不用 \b）；替换后 `grep VERIFY` 确认 | ✅ |
-| 14 | `clusterctl get kubeconfig` 无输出 | kubeconfig Secret 未生成（provider 等待中） | `kubectl get secret my-cce-cluster-kubeconfig -n default`；等 1-2 分钟或查 provider 日志 | ✅ |
-
+> 踩坑记录已移至本地文件 [`docs/pitfalls.md`](pitfalls.md)（**不随仓库推送**，含本地/跳板机两场景，请直接查看该文件）。
 ---
 
 ## 7. 清理资源

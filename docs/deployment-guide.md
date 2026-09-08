@@ -341,24 +341,7 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # 等 CURRENT/AVAILABLE=1�
 ---
 
 ## 6. 踩坑问题记录
-
-| # | 问题现象 | 根因 | 修正 | 状态 |
-|---|---|---|---|---|
-| 1 | 节点永久卡 `Installing` | 子网 DNS 被改成非云内 DNS（API 创建子网不填 `primary_dns` 默认为空） | 控制台创建保持默认；API/脚本（`deploy-network`）显式填云内 DNS `100.125.1.250,100.125.129.250`（cn-north-4） | ✅ |
-| 2 | 集群无公网 endpoint | CCE 不自动分配公网 IP | 集群详情绑定 EIP | ✅ |
-| 3 | 连续 429 限流（`APIGW.0308`） | CCE 写限流 10 次/分钟，429 重试也计数 | provider 内置 3min 退避；操作间隔 ≥60s | ✅ |
-| 4 | 跳板机下载工具极慢 | 华为云国际出口慢 | SWR 工具镜像 `capi-cce-tools` 提取 / ghfast 加速 | ✅ |
-| 5 | `clusterctl init` 卡 `Fetching providers` | 从 GitHub 拉 CAPI 组件 | 本地下载组件 + 镜像改 SWR + 本地 repository | ✅ |
-| 6 | `CCE_CM.0004 type and network mode not match` | webhook 默认 category=Turbo 而 mode=vpc-router | category 跟随网络模式 + 校验 | ✅ |
-| 7 | 节点全在 default 组 | CCE 扩展组创建时不分节点 | 多 MachinePool（每 AZ 一个） | ✅ |
-| 8 | 某 AZ flavor 售罄/无 sub-ENI | 资源紧张（如 4c 无 2C4G） | 换 flavor（`at7.large.1`）或换 AZ | ✅ |
-| 9 | kubeconfig server 地址过期 | CCE cert API 返回旧地址 | provider 用当前 Internal endpoint 覆盖 | ✅ |
-| 10 | 删除集群卡 finalizer | 未成功创建的集群删除路径 | 手动移除 finalizer | ✅ |
-| 11 | provider 等 pod 卡 Pending（`Too many pods`） | 管理集群节点规格小（2C4G×2，pod 上限 16/节点，被 CCE 自带监控占满） | 集群 A 用 4U8G（c7.xlarge.2）×3；Pending pod 自动调度 | ✅ |
-| 12 | 节点池 AZ 填错（创建后不可变） | CCE 节点池 AZ 创建后不可改，patch 不重建 | 删池重建（delete machinepool → 改 yaml → apply） | ✅ |
-| 13 | 集群 B 创建失败 `Az [VERIFY-AZ] is not in available az list` | `VERIFY-AZ\b` 在 macOS sed 不生效（BSD 不支持 \b），主 AZ 漏替换 | sed 先替换 AZ2/AZ3 再 AZ（不用 \b）；替换后 `grep VERIFY` 确认 | ✅ |
-| 14 | `clusterctl get kubeconfig` 无输出 | kubeconfig Secret 未生成（provider 等待中） | `kubectl get secret my-cce-cluster-kubeconfig -n default`；等 1-2 分钟或查 provider 日志 | ✅ |
-
+> 踩坑记录已移至本地文件 [`docs/pitfalls.md`](pitfalls.md)（**不随仓库推送**，含本地/跳板机两场景，请直接查看该文件）。
 ---
 
 ## 7. 清理资源
