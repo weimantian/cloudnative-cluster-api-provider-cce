@@ -325,6 +325,85 @@ kubectl scale machinepool my-cce-cluster-pool-0 --replicas=1
 kubectl get machinepool my-cce-cluster-pool-0 -w      # 等 CURRENT/AVAILABLE=1（约 3-5 分钟）
 ```
 
+### 标签：additionalTags + role 的使用与验证
+
+**标签体系**（创建 CCE 集群/节点池时由 Provider 写入 clusterTags / userTags）：
+
+| 标签 | key | 值 | 来源 |
+|---|---|---|---|
+| owned（归属标记） | `cluster-api-provider-cce.cluster.<clusterName>` | `owned` | 自动，不可覆盖 |
+| role（CCE 集群） | `cluster-api-provider-cce.role` | `apiserver` | 自动（托管控制面成本角色） |
+| role（节点池） | `cluster-api-provider-cce.role` | `node` | 自动 |
+| 用户自定义 | `spec.additionalTags`（控制面 / 节点池各一个） | 任意 | 用户填，随资源创建写入 |
+
+**规则**：`owned` / `role` 是保留 key——用户 `additionalTags` 写同 key 会被忽略（内置值优先）；单资源用户标签 ≤ 19（+2 内置 = 官方 20 上限）；key ≤128 字符、无 `/`、不以 `_sys_` 开头、无首尾空格；value ≤255 字符（可空，但条目必须存在）。
+
+> ⚠️ 标签在 CCE 资源**创建时**一次性写入（对应 CCE `ClusterTags`/`UserTags`）；已创建资源的标签**增量同步（`BatchCreateClusterTags`，FR-1.9）尚未实现**——要验证标签，必须在 apply 集群 B **之前**把 `additionalTags` 加进 yaml。
+
+**方式一（推荐）：随创建验证**——步骤 6 里 `clusterctl generate` 与 `sed 替换 VERIFY-*` 之后、`kubectl apply` 之前，编辑 `my-cluster.yaml`：
+
+```yaml
+# ① 控制面：在 kind: CCEManagedControlPlane 的 spec 下加
+  spec:
+    additionalTags:
+      env: prod
+      cost-center: cc-42
+# ② 节点池（任选一个 kind: CCEManagedMachinePool，如 pool-0）：同样在 spec 下加
+  spec:
+    additionalTags:
+      team: platform
+```
+
+用文本编辑器定位上述 `kind:` 段手动插入即可（`my-cluster.yaml` 中控制面只有一个、节点池有三个）。然后正常 `kubectl apply -f my-cluster.yaml`。
+
+集群 B Provisioned 后验证：
+
+```bash
+# 1. CR spec 已提交
+kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -o jsonpath='{.spec.additionalTags}'
+kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -o jsonpath='{.spec.additionalTags}'
+
+# 2. CCE 侧标签（控制台或 API）：CCE → 集群 B → 标签 / 节点池标签
+#    集群  应含：cluster-api-provider-cce.cluster.my-cce-cluster=owned、
+#               cluster-api-provider-cce.role=apiserver、env=prod、cost-center=cc-42
+#    节点池 应含：owned、role=node、team=platform
+
+# 3. 保留 key 阴性用例：若 additionalTags 里写了 role / 本集群 owned key，
+#    控制台/API 里看不到（被内置值覆盖）
+```
+
+**方式二：仅校验层测试（无需建集群）**——webhook 会拒绝非法标签：
+
+```bash
+# 任意含非法标签的 CR apply 即被拒（可用 --dry-run=client 验证）：
+#   · key 含 /            → "tag key may only contain ... (no '/')"
+#   · key 以 _sys_ 开头    → "cannot start with \"_sys_\""
+#   · key 首尾空格 / 超 128 字符
+#   · value 超 255 字符
+#   · 用户标签 > 19 个     → "Too many: must have at most 19 items"
+kubectl create -f - --dry-run=client <<'EOF'
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCEManagedMachinePool
+metadata:
+  name: bad-tags-pool
+spec:
+  clusterName: x
+  additionalTags:
+    "a/b": v
+EOF
+# → 报错（additionalTags 校验）
+```
+
+**方式三：成本分账链路（华为云侧，标签的最终价值）**
+
+```text
+① 资源创建并计费 ~24h 后 → 费用中心「成本标签」页可见 additionalTags 的 key
+② 建议先在 TMS 控制台创建同 key 预定义标签（实时可见）+ 激活成本标签
+③ 导出成本明细：CSV 的「资源标签」列含全部标签（不受激活限制，可离线过滤全部历史）
+④ 按 role 过滤：激活 cluster-api-provider-cce.role 后，可区分控制面成本(apiserver)与
+   节点成本(node)——对标 CAPA 的成本按角色拆分
+```
+
 ---
 
 ## 6. 踩坑问题记录

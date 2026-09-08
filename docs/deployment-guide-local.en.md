@@ -320,6 +320,87 @@ kubectl scale machinepool my-cce-cluster-pool-0 --replicas=1
 kubectl get machinepool my-cce-cluster-pool-0 -w      # wait for CURRENT/AVAILABLE=1 (about 3-5 min)
 ```
 
+### Tags: additionalTags + role — usage and verification
+
+**Tag scheme** (written by the provider into CCE `clusterTags`/`userTags` when the CCE cluster / node pool is created):
+
+| Tag | key | value | Source |
+|---|---|---|---|
+| owned (ownership) | `cluster-api-provider-cce.cluster.<clusterName>` | `owned` | automatic, not overridable |
+| role (CCE cluster) | `cluster-api-provider-cce.role` | `apiserver` | automatic (managed control-plane cost role) |
+| role (node pool) | `cluster-api-provider-cce.role` | `node` | automatic |
+| user-defined | `spec.additionalTags` (control plane / node pool, one each) | any | user-set, written at resource creation |
+
+**Rules**: `owned` and `role` are reserved keys — a user `additionalTags` entry with the same key is dropped (the built-in value wins); at most 19 user tags per resource (+2 built-in = the official cap of 20); key ≤ 128 chars, no `/`, must not start with `_sys_`, no leading/trailing spaces; value ≤ 255 chars (may be empty but the entry must exist).
+
+> ⚠️ Tags are written **once, at CCE resource creation** (CCE `ClusterTags`/`UserTags`); incremental tag sync on already-created resources (`BatchCreateClusterTags`, FR-1.9) is **not implemented yet** — to exercise tags you must add `additionalTags` to the yaml **before** applying cluster B.
+
+**Way 1 (recommended): verify at creation** — in Step 6, after `clusterctl generate` and the `VERIFY-*` sed, but **before** `kubectl apply`, edit `my-cluster.yaml`: 
+
+```yaml
+# ① control plane: add under the spec of kind: CCEManagedControlPlane
+  spec:
+    additionalTags:
+      env: prod
+      cost-center: cc-42
+# ② node pool (any kind: CCEManagedMachinePool, e.g. pool-0): same, under its spec
+  spec:
+    additionalTags:
+      team: platform
+```
+
+Locate the `kind:` sections in a text editor and insert by hand (`my-cluster.yaml` has one control plane and three node pools). Then `kubectl apply -f my-cluster.yaml` as usual.
+
+After cluster B is Provisioned, verify:
+
+```bash
+# 1. Spec is committed
+kubectl get ccemanagedcontrolplane my-cce-cluster-control-plane -o jsonpath='{.spec.additionalTags}'
+kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -o jsonpath='{.spec.additionalTags}'
+
+# 2. Tags on the CCE side (console or API): CCE → cluster B → Tags / node-pool Tags
+#    cluster  should show: cluster-api-provider-cce.cluster.my-cce-cluster=owned,
+#                          cluster-api-provider-cce.role=apiserver, env=prod, cost-center=cc-42
+#    pool     should show: owned, role=node, team=platform
+
+# 3. Reserved-key negative case: put role / this cluster's owned key in additionalTags
+#    → not visible in the console/API (overridden by the built-in value)
+```
+
+**Way 2: validation-layer only (no cluster needed)** — the webhook rejects illegal tags:
+
+```bash
+# Applying any CR with an illegal tag is rejected (dry-run is enough to see it):
+#   · key containing /           → "tag key may only contain ... (no '/')"
+#   · key starting with _sys_    → "cannot start with \"_sys_\""
+#   · key with leading/trailing spaces, or > 128 chars
+#   · value > 255 chars
+#   · more than 19 user tags    → "Too many: must have at most 19 items"
+kubectl create -f - --dry-run=client <<'EOF'
+apiVersion: infrastructure.cluster.x-k8s.io/v1beta2
+kind: CCEManagedMachinePool
+metadata:
+  name: bad-tags-pool
+spec:
+  clusterName: x
+  additionalTags:
+    "a/b": v
+EOF
+# → rejected (additionalTags validation)
+```
+
+**Way 3: cost-allocation chain (Huawei Cloud side — the end goal of tagging)**
+
+```text
+① ~24h after the resource is created and billed → the tag keys appear under
+   Billing → Cost Center → "Cost tags"
+② Recommended: first create same-key predefined tags in the TMS console (shown
+   instantly) and activate them as cost tags
+③ Export the cost detail report: the CSV "resource tags" column carries all tags
+   (not gated by activation — historical rows can be filtered offline)
+④ Filter by role: after activating cluster-api-provider-cce.role you can split
+   control-plane cost (apiserver) from node cost (node) — CAPA-style role split
+```
 ---
 
 ## 6. Troubleshooting / Pitfall Log
