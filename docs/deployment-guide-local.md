@@ -278,25 +278,29 @@ sed -i '' \
   -e 's|VERIFY-AZ|cn-north-4a|g' -e 's|VERIFY-KEYPAIR-NAME|capi-bastion-key|g' \
   -e 's|VERIFY-FLAVOR|c7.large.2|g' \
   my-cluster.yaml
+```
 
-# 4.（可选）打自定义标签：控制面加 env/cost-center、pool-0 加 team
-#    （创建集群 B 时随 clusterTags/userTags 一次写入 CCE；值可自行修改；
-#    跳过本步 = 不打自定义标签，仅自动打 owned/role）
-python3 - <<'PY'
-import re
-p = 'my-cluster.yaml'; s = open(p).read(); docs = s.split('\n---')
-cp = pool = False
-for i, d in enumerate(docs):
-    if not cp and re.search(r'(?m)^kind: CCEManagedControlPlane$', d):
-        docs[i] = re.sub(r'(?m)^(spec:)$', r'\1\n  additionalTags:\n    env: prod\n    cost-center: cc-42', d, count=1); cp = True
-    elif not pool and re.search(r'(?m)^kind: CCEManagedMachinePool$', d):
-        docs[i] = re.sub(r'(?m)^(spec:)$', r'\1\n  additionalTags:\n    team: platform', d, count=1); pool = True
-open(p, 'w').write('\n---'.join(docs))
-PY
-grep -c additionalTags my-cluster.yaml   # 应为 2（控制面 + pool-0）
+4. **（可选）打自定义标签**：手动编辑 `my-cluster.yaml`，在**控制面**与 **pool-0** 的 `spec:` 下各加 `additionalTags`（`spec:` 是 0 缩进顶层字段；`additionalTags` 与其下的 `clusterName:` 等字段同级 = 2 空格缩进，标签条目再缩进 4 空格；插在 `spec:` 后任意位置即可，yaml 字段顺序无关）：
 
+```yaml
+# ① 找 kind: CCEManagedControlPlane 的 spec:，在其下加（集群级标签）：
+spec:
+  additionalTags:
+    env: prod
+    cost-center: cc-42
+  clusterName: my-cce-cluster   # 已存在，仅示意 additionalTags 的同级缩进
 
-# 创建凭据 Secret + bootstrap Secret
+# ② 找 kind: CCEManagedMachinePool（pool-0）的 spec:，在其下加（池级标签）：
+spec:
+  additionalTags:
+    team: platform
+  clusterName: my-cce-cluster   # 已存在，仅示意
+```
+
+值可自行修改；可只打控制面 / 任一 pool / 全部 pool。跳过本步 = 不打自定义标签（仅自动打 owned/role）。加完自检：`grep -c additionalTags my-cluster.yaml` 应等于你要打标签的 kind 数。改好后再执行下面的第 5-7 步。
+
+```bash
+# 5. 创建凭据 Secret + bootstrap Secret（继续执行）
 export CLOUD_SDK_AK='<你的AK>' CLOUD_SDK_SK='<你的SK>'
 kubectl create secret generic my-cce-cluster-credentials \
   --namespace default --from-literal=accessKey="$CLOUD_SDK_AK" --from-literal=secretKey="$CLOUD_SDK_SK"

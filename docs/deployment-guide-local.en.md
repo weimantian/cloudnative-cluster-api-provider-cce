@@ -273,26 +273,29 @@ sed -i '' \
   -e 's|VERIFY-AZ|cn-north-4a|g' -e 's|VERIFY-KEYPAIR-NAME|capi-bastion-key|g' \
   -e 's|VERIFY-FLAVOR|c7.large.2|g' \
   my-cluster.yaml
+```
 
-# 4. (optional) custom tags: env/cost-center on the control plane, team on pool-0
-#    (written once into the CCE clusterTags/userTags at cluster creation; edit
-#    the values as you like; skip this step to create without custom tags —
-#    owned/role are always added automatically)
-python3 - <<'PY'
-import re
-p = 'my-cluster.yaml'; s = open(p).read(); docs = s.split('\n---')
-cp = pool = False
-for i, d in enumerate(docs):
-    if not cp and re.search(r'(?m)^kind: CCEManagedControlPlane$', d):
-        docs[i] = re.sub(r'(?m)^(spec:)$', r'\1\n  additionalTags:\n    env: prod\n    cost-center: cc-42', d, count=1); cp = True
-    elif not pool and re.search(r'(?m)^kind: CCEManagedMachinePool$', d):
-        docs[i] = re.sub(r'(?m)^(spec:)$', r'\1\n  additionalTags:\n    team: platform', d, count=1); pool = True
-open(p, 'w').write('\n---'.join(docs))
-PY
-grep -c additionalTags my-cluster.yaml   # expect 2 (control plane + pool-0)
+4. **(optional) custom tags**: edit `my-cluster.yaml` by hand — add `additionalTags` under the `spec:` of the **control plane** and of **pool-0** (`spec:` is a top-level field at column 0; `additionalTags` sits at the same 2-space indent as `clusterName:` and its entries at 4 spaces; it can go anywhere under `spec:`, field order does not matter):
 
+```yaml
+# ① under the spec: of kind: CCEManagedControlPlane (cluster-level tags)
+spec:
+  additionalTags:
+    env: prod
+    cost-center: cc-42
+  clusterName: my-cce-cluster   # already present — shows the indent of additionalTags
 
-# Create the credentials Secret + bootstrap Secret
+# ② under the spec: of kind: CCEManagedMachinePool (pool-0) (pool-level tags)
+spec:
+  additionalTags:
+    team: platform
+  clusterName: my-cce-cluster   # already present — shows the indent
+```
+
+Change the values freely; tag only the control plane / any pool / all pools. Skipping this step creates the cluster without custom tags (owned/role are still added automatically). Self-check after editing: `grep -c additionalTags my-cluster.yaml` should equal the number of kinds you tagged. Then run steps 5-7 below.
+
+```bash
+# 5. Create the credentials Secret + bootstrap Secret (continue)
 export CLOUD_SDK_AK='<your-AK>' CLOUD_SDK_SK='<your-SK>'
 kubectl create secret generic my-cce-cluster-credentials \
   --namespace default --from-literal=accessKey="$CLOUD_SDK_AK" --from-literal=secretKey="$CLOUD_SDK_SK"
