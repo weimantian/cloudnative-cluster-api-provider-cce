@@ -152,24 +152,24 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 	var id string
 	if err := retryThrottled("CreateCluster", 5, func() error {
 		var e error
-			svc.CreateCluster(ctx, cce.CreateClusterInput{
-				Name:                 name,
-				Category:             categoryName(category), // turbo->Turbo, standard->CCE
-				Flavor:               "cce.s1.small",
-				Version:              envOr("CCE_DEPLOY_K8S_VERSION", ""),
-				ContainerNetworkMode: networkMode,
-				ContainerNetworkCIDR: containerCIDR,
-				ENISubnets:           eniSubnets,
-				HostNetworkVpcID:     vpcID,
-				HostNetworkSubnetID:  subnetID,
-				ServiceCIDR:          envDefault("CCE_DEPLOY_SERVICE_CIDR", "10.247.0.0/16"),
-				// Public access mirrors the CAPA EKS control-plane endpoint (public +
-				// private). CCE does not allocate a public IP automatically, so we bind
-				// an EIP afterwards when public is enabled (CCE_DEPLOY_PUBLIC, default true).
-				PublicAccess:      public,
-				PublicAccessCIDRs: publicCIDRs,
-				BillingMode:       0,
-			})
+		id, e = svc.CreateCluster(ctx, cce.CreateClusterInput{
+			Name:                 name,
+			Category:             categoryName(category), // turbo->Turbo, standard->CCE
+			Flavor:               "cce.s1.small",
+			Version:              envOr("CCE_DEPLOY_K8S_VERSION", ""),
+			ContainerNetworkMode: networkMode,
+			ContainerNetworkCIDR: containerCIDR,
+			ENISubnets:           eniSubnets,
+			HostNetworkVpcID:     vpcID,
+			HostNetworkSubnetID:  subnetID,
+			ServiceCIDR:          envDefault("CCE_DEPLOY_SERVICE_CIDR", "10.247.0.0/16"),
+			// Public access mirrors the CAPA EKS control-plane endpoint (public +
+			// private). CCE does not allocate a public IP automatically, so we bind
+			// an EIP afterwards when public is enabled (CCE_DEPLOY_PUBLIC, default true).
+			PublicAccess:      public,
+			PublicAccessCIDRs: publicCIDRs,
+			BillingMode:       0,
+		})
 		return e
 	}); err != nil {
 		fatalf("CreateCluster: %v", err)
