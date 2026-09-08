@@ -7,9 +7,9 @@
 
 > 中文版 / Chinese: [README.zh-CN.md](README.zh-CN.md)
 
-A Cluster API (CAPI) Infrastructure Provider that manages **Huawei Cloud CCE (Cloud Container Engine) managed clusters** declaratively — create, scale and delete CCE clusters and node pools through standard Cluster API resources, aligned with the `CAPI + AWS EKS managed mode` experience.
+A Cluster API (CAPI) Infrastructure Provider that manages **Huawei Cloud CCE (Cloud Container Engine) managed clusters** declaratively — create, scale and delete CCE clusters and node pools through standard Cluster API resources, following the Cluster API managed-cluster model.
 
-This provider is for platform engineers and SRE teams who want to manage Huawei Cloud CCE clusters with Kubernetes-native, GitOps-friendly tooling (`kubectl`/`clusterctl`/ArgoCD/Flux), the same way they manage AWS EKS clusters today.
+This provider is for platform engineers and SRE teams who want to manage Huawei Cloud CCE clusters with Kubernetes-native, GitOps-friendly tooling (`kubectl`/`clusterctl`/ArgoCD/Flux).
 
 > **Status: incubating (PoC verified).** Architecture and requirements design
 > documents are complete; a compilable PoC (CRDs, controllers, services,
@@ -17,9 +17,9 @@ This provider is for platform engineers and SRE teams who want to manage Huawei 
 > against a real Huawei Cloud CCE account (create empty cluster → Available,
 > absolute-scale node pools, kubeconfig rotation, delete with cleanup, public
 > EIP binding, throttling behavior — see
-> [docs/cce-verification-findings.md](docs/cce-verification-findings.md)).
+> docs/cce-verification-findings.md).
 > Unit + envtest controller tests pass. See [docs/](docs/) and
-> [docs/requirements-design.md](docs/requirements-design.md).
+> docs/requirements-design.md.
 
 ## Table of Contents
 
@@ -84,7 +84,7 @@ cloudnative-cluster-api-provider-cce/
 │   ├── default/               #   default overlay (manager + webhook)
 │   ├── manager/ rbac/ webhook/#   deployment / RBAC / webhook fragments
 │   └── samples/               #   examples: cluster-template.yaml (Standard/Turbo)
-├── hack/                      # Go dev/deploy tools (see docs/e2e-deployment-guide.md)
+├── hack/                      # Go dev/deploy tools (see docs/deployment-guide.md)
 │   ├── deploy-network/        #   VPC / subnets / keypair (deploy guide stage 1, step 1)
 │   ├── deploy-bastion/        #   bastion ECS (deploy guide stage 1, step 2)
 │   ├── deploy-mgmt-cluster/   #   create/list/delete management cluster (stage 1, step 3)
@@ -110,7 +110,7 @@ cloudnative-cluster-api-provider-cce/
 Key flows:
 
 - **API → reconciler**: `api/*` types are reconciled by `controllers/*`; each reconcile reads the Huawei Cloud state through `internal/services/*` (SDK wrappers) and persists results via `internal/scope` (patchHelper).
-- **Deployment**: `hack/deploy-*` provisions the real cloud (VPC, bastion, management cluster); `scripts/deploy-kind.sh` runs everything locally; the full deployment guide is in [docs/deployment-guide.md](docs/deployment-guide.md) (console + CloudShell) with detailed zero-public/public variants in [docs/e2e-deployment-guide.md](docs/e2e-deployment-guide.md) and [docs/public-access-deployment-guide.md](docs/public-access-deployment-guide.md).
+- **Deployment**: `hack/deploy-*` provisions the real cloud (VPC, bastion, management cluster); `scripts/deploy-kind.sh` runs everything locally; the full deployment guide is in [docs/deployment-guide.md](docs/deployment-guide.md) (console + CloudShell).
 - **Smoke test**: `scripts/smoke-cce.sh` + `hack/cleanup-smoke-clusters` drive the real-cloud smoke test, independent of the deploy flow.
 
 ## Architecture
@@ -162,18 +162,18 @@ flowchart TB
     APISERVER --> POOLS
 ```
 
-Design details: see [docs/architecture-design.md](docs/architecture-design.md) (Chinese) and [docs/research-sources.md](docs/research-sources.md) for the verified facts behind every design decision.
+Design details: see docs/architecture-design.md (Chinese) and docs/research-sources.md for the verified facts behind every design decision.
 
 ## Highlights
 
 - **Declarative managed clusters** — CCE control plane is fully managed by Huawei Cloud; the provider only translates and reconciles.
-- **CCE Standard + CCE Turbo** — both supported (Turbo recommended by default, aligned with the EKS-managed positioning).
+- **CCE Standard + CCE Turbo** — both supported (Turbo recommended by default for the managed-cluster model).
 - **MachinePool ↔ node pool** — scale via `MachinePool.spec.replicas`; no bootstrap provider required for managed node pools.
 - **`clusterctl` compatible** — `metadata.yaml` + `infrastructure-components.yaml` published as [GitHub Release v0.1.0](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.0); `clusterctl describe cluster` / `get kubeconfig` support.
 - **GitOps ready** — drive everything from Git via ArgoCD/Flux.
-- **CCE access policies (EKS access-entries parity)** — declarative `spec.accessPolicies[]` on the control plane maps IAM users/groups/agencies to CCE permission roles (`CCEClusterAdminPolicy` / `CCEAdminPolicy` / `CCEEditPolicy` / `CCEViewPolicy`) scoped to namespaces.
-- **Identity management** — per-cluster `CCEClusterIdentity` (AK/SK Secret or `SecretKey` object reference) and controller-default identity, mirroring CAPA's three identities.
-- **Orphaned-resource garbage collection** — opt-in periodic sweeper deletes CCE clusters whose `Cluster` CR no longer exists (mirrors CAPA `ExternalResourceGC`).
+- **CCE access policies** — declarative `spec.accessPolicies[]` on the control plane maps IAM users/groups/agencies to CCE permission roles (`CCEClusterAdminPolicy` / `CCEAdminPolicy` / `CCEEditPolicy` / `CCEViewPolicy`) scoped to namespaces.
+- **Identity management** — per-cluster `CCEClusterIdentity` (AK/SK Secret or `SecretKey` object reference) and a controller-default identity.
+- **Orphaned-resource garbage collection** — opt-in periodic sweeper deletes CCE clusters whose `Cluster` CR no longer exists.
 
 ## Involved Cloud Services & Costs
 
@@ -201,7 +201,7 @@ clusterctl version   # should print v1.14.0
 
 Cloud-side prerequisites (all in the Huawei Cloud console):
 
-- An IAM user Access Key/Secret Key (AK/SK) with the CCE permissions listed in [docs/smoke-test-checklist.md](docs/smoke-test-checklist.md) §2. **The account must have sufficient balance** — CCE clusters and nodes are billed; an empty balance makes creation fail with `CCE.01429004`.
+- An IAM user Access Key/Secret Key (AK/SK) with the CCE permissions listed in docs/smoke-test-checklist.md §2. **The account must have sufficient balance** — CCE clusters and nodes are billed; an empty balance makes creation fail with `CCE.01429004`.
 - An existing VPC and subnet in your region (CCE requires a VPC *before* cluster creation).
 - An SSH keypair (ECS → Key Pairs) for the node pool's `sshKey` field.
 
@@ -209,7 +209,7 @@ Cloud-side prerequisites (all in the Huawei Cloud console):
 
 ## Quick Start
 
-> This flow was verified end-to-end with `clusterctl v1.14.0` on `kind` against a real CCE account (see [docs/clusterctl-deployment-validation.md](docs/clusterctl-deployment-validation.md)). Credentials are provided **only** via a Secret / environment variables — never hardcode them.
+> This flow was verified end-to-end with `clusterctl v1.14.0` on `kind` against a real CCE account (see docs/clusterctl-deployment-validation.md). Credentials are provided **only** via a Secret / environment variables — never hardcode them.
 
 **Step A — install the provider on a local kind management cluster** (one command):
 
@@ -351,7 +351,7 @@ Expected result: `kubectl get nodes` shows the number of nodes equal to `Machine
 
 ### Conditions (planning-doc naming → provider)
 
-The provider reports finer-grained, CAPA-style conditions than the planning
+The provider reports fine-grained conditions
 doc's four aggregate conditions. Mapping:
 
 | Planning doc | Provider condition(s) | Where |
@@ -396,7 +396,7 @@ pattern; an optional allowlist can be enforced per deployment (region-specific):
 manager --valid-flavors=c6.large.2,c7.large.2
 ```
 
-### Access policies (EKS access-entries parity)
+### Access policies
 
 `CCEManagedControlPlane.spec.accessPolicies` maps IAM principals to CCE roles:
 
@@ -415,7 +415,7 @@ Reported by the `AccessPoliciesConfigured` condition.
 ### Cluster identity (feature gate)
 
 `AutoControllerIdentityCreator` creates the `CCEClusterControllerIdentity`
-singleton named `default` (mirrors CAPA `AutoControllerIdentityCreator`). Off
+singleton named `default`. Off
 by default:
 
 ```bash
@@ -426,7 +426,7 @@ manager --feature-gates=AutoControllerIdentityCreator=true
 
 `ExternalResourceGC` enables the periodic orphaned-cluster sweeper: CCE clusters
 carrying the owned tag whose `Cluster` CR no longer exists are deleted
-(mirrors CAPA `ExternalResourceGC`). Off by default; requires a region:
+Off by default; requires a region:
 
 ```bash
 manager --feature-gates=ExternalResourceGC=true --gc-region=cn-north-4 [--gc-interval=1h]
@@ -446,24 +446,18 @@ clusterctl delete --infrastructure cce
 
 ## Detailed Documentation
 
-- **[部署指导（控制台 + CloudShell，推荐）](docs/deployment-guide.md)** — 统一精简版：SWR 公共镜像清单 + 三阶段部署 + 踩坑记录
-- [端到端部署文档（零公网详细版）](docs/e2e-deployment-guide.md) · [公网访问部署指导（详细版）](docs/public-access-deployment-guide.md)
-- [Architecture design (Chinese)](docs/architecture-design.md)
-- [Requirements design (Chinese)](docs/requirements-design.md)
-- [Research sources & verification checklist (Chinese)](docs/research-sources.md)
-- [Huawei Cloud CCE alignment questionnaire](docs/archive/cce-verification-questionnaire.md) · [verification findings](docs/cce-verification-findings.md)
-- [clusterctl deployment validation (kind + real CCE)](docs/clusterctl-deployment-validation.md)
-- [Official API reference review findings](docs/archive/api-review-findings.md)
-- [Full code audit findings](docs/archive/code-audit-findings.md)
-- [CAPA parity gap analysis (against CAPA v2.13.0 / CAPI v1.14.0)](docs/capa-alignment-final-summary.md)
-- [CAPA code analysis](docs/archive/CAPA架构分析报告.md) · [Alibaba ACK provider code analysis](docs/archive/ACKProvider架构分析报告.md) · [CAPHW code analysis](docs/archive/CAPHW架构分析报告.md)
-
+- [Deployment guide (console + CloudShell, recommended)](docs/deployment-guide.md) — Chinese
+- [Deployment guide (EN)](docs/deployment-guide.en.md) — bastion edition, English
+- [Deployment guide · no-bastion / local](docs/deployment-guide-local.md) — Chinese
+- [Deployment guide · no-bastion / local (EN)](docs/deployment-guide-local.en.md)
+- [my-cluster.yaml parameter reference](docs/crd-parameters.md) — Chinese
+- [my-cluster.yaml parameter reference (EN)](docs/crd-parameters.en.md)
 ## Dependencies & Acknowledgements
 
 - [Cluster API](https://cluster-api.sigs.k8s.io/) (`sigs.k8s.io/cluster-api`) — core contracts and controllers.
 - [controller-runtime](https://github.com/kubernetes-sigs/controller-runtime) — reconciler framework.
 - [Huawei Cloud Go SDK](https://github.com/huaweicloud/huaweicloud-sdk-go-v3) — CCE/ECS/VPC clients.
-- Reference implementations studied: [cluster-api-provider-aws](https://github.com/kubernetes-sigs/cluster-api-provider-aws), [alibabacloud-provider-for-Cluster-API](https://github.com/AliyunContainerService/alibabacloud-provider-for-Cluster-API), [cluster-api-provider-huawei](https://github.com/huaweicloud-samples/cluster-api-provider-huawei).
+- Reference implementation studied: [cluster-api-provider-huawei](https://github.com/huaweicloud-samples/cluster-api-provider-huawei).
 
 ## FAQ / Troubleshooting
 
@@ -476,11 +470,11 @@ clusterctl delete --infrastructure cce
 - **`kubectl --kubeconfig ...` reports "unable to parse bytes as PEM block"** — older provider builds double-encoded the kubeconfig CA; rebuild/upgrade to a fixed version.
 - **`MachinePool` rejected: "spec.template.spec.bootstrap: Required value"** — CAPI v1.14 requires a bootstrap reference on every MachinePool. Add `bootstrap.dataSecretName: <cluster>-bootstrap` (an empty Secret is fine for managed node pools).
 - **Node pool creation fails with `OS: should not be empty`** — in practice CCE requires an explicit `os` even though the API doc says it auto-selects. It is **not a single value**: valid images for current cluster versions include `Huawei Cloud EulerOS 2.0`, `EulerOS release 2.9`, `Ubuntu 22.04`, `Huawei Cloud EulerOS 1.1` (exact string matters; see the official [node OS list](https://support.huaweicloud.com/usermanual-cce/cce_10_0476.html) and the commented list in `config/samples/cluster-template.yaml`).
-- **Cluster creation fails with a network error** — CCE requires an existing VPC and non-overlapping container/service CIDRs; verify `spec.network` and the CIDR plan (see [docs/architecture-design.md](docs/architecture-design.md) §6). Container CIDRs must be unique *per VPC*.
+- **Cluster creation fails with a network error** — CCE requires an existing VPC and non-overlapping container/service CIDRs; verify `spec.network` and the CIDR plan (see docs/architecture-design.md §6). Container CIDRs must be unique *per VPC*.
 - **Node pool does not scale** — confirm the control plane is `Ready` (node pools are only created after the cluster is `Available`) and that the IAM user has `cce:nodepool:scale`.
 - **`clusterctl get kubeconfig` returns an unreachable server** — for private clusters (`endpointAccess.public: false`) the kubeconfig server is an internal VPC IP; reach it from a host inside the VPC.
 - **Where is `region` configured?** — on `CCECluster.spec.region` (the infrastructure cluster), **not** on `CCEManagedControlPlane`. The control plane resolves the region through the owning `Cluster`; see `config/samples/cluster-template.yaml`.
-- More: [docs/requirements-design.md](docs/requirements-design.md) §8 (cautions) and the [verification checklist](docs/research-sources.md) §4.
+- More: docs/requirements-design.md §8 (cautions) and the verification checklist §4.
 
 ## Contributing
 

@@ -7,11 +7,11 @@
 
 > 英文版 / English: [README.md](README.md)
 
-一个用于管理**华为云 CCE(云容器引擎)托管集群**的 Cluster API(CAPI)基础设施 Provider——通过标准的 Cluster API 资源以声明式方式创建、扩缩容和删除 CCE 集群与节点池,对标 `CAPI + AWS EKS 托管模式` 的使用体验。
+一个用于管理**华为云 CCE(云容器引擎)托管集群**的 Cluster API(CAPI)基础设施 Provider——通过标准的 Cluster API 资源以声明式方式创建、扩缩容和删除 CCE 集群与节点池,遵循 Cluster API 托管集群模型。
 
-本项目面向平台工程师与 SRE 团队,帮助他们用 Kubernetes 原生、适合 GitOps 的工具链(`kubectl` / `clusterctl` / ArgoCD / Flux)管理华为云 CCE 集群,就像今天管理 AWS EKS 集群一样。
+本项目面向平台工程师与 SRE 团队,帮助他们用 Kubernetes 原生、适合 GitOps 的工具链(`kubectl` / `clusterctl` / ArgoCD / Flux)管理华为云 CCE 集群,。
 
-> **状态:incubating(PoC 已验证)。** 架构设计与需求设计文档已完成;可编译的 PoC(CRD、控制器、服务层、webhook、部署清单)已就位。云侧行为已在真实华为云 CCE 账号上验证通过(空集群创建→Available、节点池绝对值扩缩容、kubeconfig 轮换、带清理的删除、公网 EIP 绑定、限流行为——详见 [docs/cce-verification-findings.md](docs/cce-verification-findings.md))。单元测试与 envtest 控制器测试全部通过。参见 [docs/](docs/) 与[需求文档](docs/requirements-design.md)中的路线图。
+> **状态:incubating(PoC 已验证)。** 架构设计与需求设计文档已完成;可编译的 PoC(CRD、控制器、服务层、webhook、部署清单)已就位。云侧行为已在真实华为云 CCE 账号上验证通过(空集群创建→Available、节点池绝对值扩缩容、kubeconfig 轮换、带清理的删除、公网 EIP 绑定、限流行为——详见 docs/cce-verification-findings.md)。单元测试与 envtest 控制器测试全部通过。参见 [docs/](docs/) 与需求文档中的路线图。
 
 ## 目录
 
@@ -76,7 +76,7 @@ cloudnative-cluster-api-provider-cce/
 │   ├── default/               #   默认 overlay(manager + webhook)
 │   ├── manager/ rbac/ webhook/#   deployment / RBAC / webhook 片段
 │   └── samples/               #   示例:cluster-template.yaml(Standard/Turbo)
-├── hack/                      # Go 开发/部署工具(见 docs/e2e-deployment-guide.md)
+├── hack/                      # Go 开发/部署工具(见 docs/deployment-guide.md)
 │   ├── deploy-network/        #   VPC / 子网 / 密钥对(部署指南阶段一步骤 1)
 │   ├── deploy-bastion/        #   跳板机 ECS(部署指南阶段一步骤 2)
 │   ├── deploy-mgmt-cluster/   #   创建/列出/删除管理集群(阶段一步骤 3)
@@ -102,7 +102,7 @@ cloudnative-cluster-api-provider-cce/
 关键流程:
 
 - **API → 控制器**:`api/*` 类型由 `controllers/*` 协调;每次 reconcile 通过 `internal/services/*`(SDK 封装)读取华为云状态,并经 `internal/scope`(patchHelper)持久化结果。
-- **部署**:`hack/deploy-*` 预置真实云(VPC、跳板机、管理集群);`scripts/deploy-kind.sh` 在本地完成;完整部署指南见 [docs/deployment-guide.md](docs/deployment-guide.md)(控制台 + CloudShell),零公网/公网详细版见 [docs/e2e-deployment-guide.md](docs/e2e-deployment-guide.md) 和 [docs/public-access-deployment-guide.md](docs/public-access-deployment-guide.md)。
+- **部署**:`hack/deploy-*` 预置真实云(VPC、跳板机、管理集群);`scripts/deploy-kind.sh` 在本地完成;完整部署指南见 [docs/deployment-guide.md](docs/deployment-guide.md)(控制台 + CloudShell)。
 - **冒烟测试**:`scripts/smoke-cce.sh` + `hack/cleanup-smoke-clusters` 驱动真实云冒烟测试,与部署流程相互独立。
 
 ## 架构
@@ -154,18 +154,18 @@ flowchart TB
     APISERVER --> POOLS
 ```
 
-设计细节:参见 [docs/architecture-design.md](docs/architecture-design.md) 与 [docs/research-sources.md](docs/research-sources.md)(每个设计决策背后的事实依据)。
+设计细节:参见 docs/architecture-design.md 与 docs/research-sources.md(每个设计决策背后的事实依据)。
 
 ## 方案亮点
 
 - **声明式管理托管集群**——CCE 控制面完全由华为云托管,Provider 只负责翻译与调谐。
-- **CCE Standard + CCE Turbo 双支持**——两者都支持(默认推荐 Turbo,与 EKS 托管定位对齐)。
+- **CCE Standard + CCE Turbo 双支持**——两者都支持(默认推荐 Turbo 的托管集群模型)。
 - **MachinePool ↔ 节点池**——通过 `MachinePool.spec.replicas` 扩缩容;托管节点池无需 bootstrap provider。
 - **兼容 `clusterctl`**——`metadata.yaml` + `infrastructure-components.yaml` 已发布为 [GitHub Release v0.1.0](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.0),支持 `clusterctl describe cluster` / `get kubeconfig`。
 - **GitOps 就绪**——通过 ArgoCD/Flux 从 Git 全流程驱动。
-- **CCE 访问策略(对标 EKS access entries)**——在控制面用声明式 `spec.accessPolicies[]` 将 IAM 用户/组/委托映射到 CCE 权限角色(`CCEClusterAdminPolicy` / `CCEAdminPolicy` / `CCEEditPolicy` / `CCEViewPolicy`),并可限定到命名空间。
-- **身份管理**——按集群 `CCEClusterIdentity`(AK/SK Secret 或 `SecretKey` 对象引用)与控制器默认身份,对标 CAPA 的三身份模型。
-- **孤儿资源 GC**——可选的定期清扫器删除 `Cluster` CR 已不存在的 CCE 集群(对标 CAPA `ExternalResourceGC`)。
+- **CCE 访问策略**——在控制面用声明式 `spec.accessPolicies[]` 将 IAM 用户/组/委托映射到 CCE 权限角色(`CCEClusterAdminPolicy` / `CCEAdminPolicy` / `CCEEditPolicy` / `CCEViewPolicy`),并可限定到命名空间。
+- **身份管理**——按集群 `CCEClusterIdentity`(AK/SK Secret 或 `SecretKey` 对象引用)与控制器默认身份,支持三种身份模式。
+- **孤儿资源 GC**——可选的定期清扫器删除 `Cluster` CR 已不存在的 CCE 集群。
 
 ## 涉及云服务与费用
 
@@ -192,7 +192,7 @@ clusterctl version   # 应显示 v1.14.0
 
 云侧前置条件(均在华为云控制台完成):
 
-- 一个 IAM 用户的访问密钥对(AK/SK),具备 [docs/smoke-test-checklist.md](docs/smoke-test-checklist.md) §2 所列的 CCE 权限。**账户必须有足够余额**——CCE 集群与节点按需计费,余额不足时创建会报 `CCE.01429004`。
+- 一个 IAM 用户的访问密钥对(AK/SK),具备 docs/smoke-test-checklist.md §2 所列的 CCE 权限。**账户必须有足够余额**——CCE 集群与节点按需计费,余额不足时创建会报 `CCE.01429004`。
 - 目标区域已有 VPC 和子网(CCE 创建集群前必须存在 VPC)。
 - 一个 SSH 密钥对(ECS → 密钥对),用于节点池的 `sshKey` 字段。
 
@@ -200,7 +200,7 @@ clusterctl version   # 应显示 v1.14.0
 
 ## 快速开始
 
-> 以下完整流程已用 `clusterctl v1.14.0` + `kind` + 真实华为云 CCE 账号端到端验证通过(详见 [docs/clusterctl-deployment-validation.md](docs/clusterctl-deployment-validation.md))。凭证**只能**通过 Secret / 环境变量提供——切勿硬编码。
+> 以下完整流程已用 `clusterctl v1.14.0` + `kind` + 真实华为云 CCE 账号端到端验证通过(详见 docs/clusterctl-deployment-validation.md)。凭证**只能**通过 Secret / 环境变量提供——切勿硬编码。
 
 **步骤 A — 在本地 kind 管理集群安装 Provider**(一条命令):
 
@@ -341,7 +341,7 @@ manager --feature-gates=NodePoolAutoscaling=true
 manager --valid-flavors=c6.large.2,c7.large.2
 ```
 
-### 访问策略(对标 EKS access entries)
+### 访问策略
 
 `CCEManagedControlPlane.spec.accessPolicies` 将 IAM 主体映射到 CCE 角色:
 
@@ -360,7 +360,7 @@ spec:
 ### 集群身份(功能开关)
 
 `AutoControllerIdentityCreator` 自动创建名为 `default` 的 `CCEClusterControllerIdentity`
-单例(对标 CAPA `AutoControllerIdentityCreator`)。默认关闭:
+单例。默认关闭:
 
 ```bash
 manager --feature-gates=AutoControllerIdentityCreator=true
@@ -369,7 +369,7 @@ manager --feature-gates=AutoControllerIdentityCreator=true
 ### 外部资源 GC(功能开关)
 
 `ExternalResourceGC` 启用定期孤儿集群清扫器:删除携带 owned 标签且其 `Cluster` CR
-已不存在的 CCE 集群(对标 CAPA `ExternalResourceGC`)。默认关闭;需指定 region:
+已不存在的 CCE 集群。默认关闭;需指定 region:
 
 ```bash
 manager --feature-gates=ExternalResourceGC=true --gc-region=cn-north-4 [--gc-interval=1h]
@@ -389,18 +389,12 @@ clusterctl delete --infrastructure cce
 
 ## 详细文档
 
-- **[部署指导（控制台 + CloudShell，推荐）](docs/deployment-guide.md)** — 统一精简版：SWR 公共镜像清单 + 三阶段部署 + 踩坑记录
-- [端到端部署文档（零公网详细版）](docs/e2e-deployment-guide.md) · [公网访问部署指导（详细版）](docs/public-access-deployment-guide.md)
-- [架构设计文档](docs/architecture-design.md)
-- [需求设计文档](docs/requirements-design.md)
-- [调研依据与事实清单(含验证清单)](docs/research-sources.md)
-- [华为云 CCE 对齐问卷](docs/archive/cce-verification-questionnaire.md) · [验证结论记录](docs/cce-verification-findings.md)
-- [clusterctl 部署演练记录(kind + 真实 CCE)](docs/clusterctl-deployment-validation.md)
-- [官方 API 参考文档审查记录](docs/archive/api-review-findings.md)
-- [全量代码审计记录](docs/archive/code-audit-findings.md)
-- [CAPA 能力对标差距分析（对标 CAPA v2.13.0 / CAPI v1.14.0）](docs/capa-alignment-final-summary.md)
-- [CAPA 源码分析报告](docs/archive/CAPA架构分析报告.md) · [阿里云 ACK Provider 源码分析报告](docs/archive/ACKProvider架构分析报告.md) · [CAPHW 源码分析报告](docs/archive/CAPHW架构分析报告.md)
-
+- [部署指导（控制台 + CloudShell，推荐）](docs/deployment-guide.md)
+- [部署指导（EN）](docs/deployment-guide.en.md)
+- [部署指导 · 无跳板机 / 本地直连](docs/deployment-guide-local.md)
+- [部署指导 · 无跳板机 / 本地直连（EN）](docs/deployment-guide-local.en.md)
+- [my-cluster.yaml 参数参考](docs/crd-parameters.md)
+- [my-cluster.yaml 参数参考（EN）](docs/crd-parameters.en.md)
 ## 依赖与致谢
 
 - [Cluster API](https://cluster-api.sigs.k8s.io/)(`sigs.k8s.io/cluster-api`)——核心合约与控制器。
@@ -419,10 +413,10 @@ clusterctl delete --infrastructure cce
 - **`kubectl --kubeconfig ...` 报 "unable to parse bytes as PEM block"** —— 旧版本 Provider 对 kubeconfig CA 做了双重 base64 编码;请升级到修复后的版本。
 - **`MachinePool` 被拒:"spec.template.spec.bootstrap: Required value"** —— CAPI v1.14 要求每个 MachinePool 都有 bootstrap 引用。添加 `bootstrap.dataSecretName: <cluster>-bootstrap`(托管节点池用空 Secret 即可)。
 - **节点池创建报 `OS: should not be empty`** —— 实测 CCE 要求显式指定 `os`(尽管 API 文档称会自动选择)。它**不是唯一值**:当前集群版本支持的镜像包括 `Huawei Cloud EulerOS 2.0`、`EulerOS release 2.9`、`Ubuntu 22.04`、`Huawei Cloud EulerOS 1.1` 等(需精确匹配字符串;见官方[节点操作系统说明](https://support.huaweicloud.com/usermanual-cce/cce_10_0476.html)以及 `config/samples/cluster-template.yaml` 中的注释清单)。
-- **集群创建报网络错误** —— CCE 要求先有 VPC,且容器/服务网段不能冲突;请检查 `spec.network` 与网段规划(见 [docs/architecture-design.md](docs/architecture-design.md) §6)。容器网段在同一 VPC 内必须唯一。
+- **集群创建报网络错误** —— CCE 要求先有 VPC,且容器/服务网段不能冲突;请检查 `spec.network` 与网段规划(见 docs/architecture-design.md §6)。容器网段在同一 VPC 内必须唯一。
 - **节点池不扩缩容** —— 确认控制面已 `Ready`(节点池只有在集群 `Available` 后才能创建),且 IAM 用户具备 `cce:nodepool:scale` 权限。
 - **`clusterctl get kubeconfig` 返回的 server 不可达** —— 私网集群(`endpointAccess.public: false`)的 kubeconfig server 是内网 VPC IP,需从 VPC 内主机访问。
-- 更多:[docs/requirements-design.md](docs/requirements-design.md) §8(注意事项)与[验证清单](docs/research-sources.md) §4。
+- 更多:docs/requirements-design.md §8(注意事项)与验证清单 §4。
 
 ## 贡献指南
 
