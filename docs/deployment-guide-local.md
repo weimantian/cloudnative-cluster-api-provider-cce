@@ -253,9 +253,9 @@ kubectl get certificate -n capi-cce-system serving-cert   # Ready=True
 ```bash
 # 1. 下载集群 B 模板（已发布到 GitHub）
 mkdir -p /tmp/templates
-curl -L -O https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template.yaml
-curl -L -O https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template-standard.yaml
-curl -L -O https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template-turbo.yaml
+curl -L -o /tmp/templates/cluster-template.yaml          https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template.yaml
+curl -L -o /tmp/templates/cluster-template-standard.yaml https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template-standard.yaml
+curl -L -o /tmp/templates/cluster-template-turbo.yaml    https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template-turbo.yaml
 
 # 2. 安装模板到 clusterctl overrides
 mkdir -p ~/.cluster-api/overrides/infrastructure-cce/v0.1.0
