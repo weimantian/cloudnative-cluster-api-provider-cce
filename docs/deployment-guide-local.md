@@ -279,6 +279,23 @@ sed -i '' \
   -e 's|VERIFY-FLAVOR|c7.large.2|g' \
   my-cluster.yaml
 
+# 4.（可选）打自定义标签：控制面加 env/cost-center、pool-0 加 team
+#    （创建集群 B 时随 clusterTags/userTags 一次写入 CCE；值可自行修改；
+#    跳过本步 = 不打自定义标签，仅自动打 owned/role）
+python3 - <<'PY'
+import re
+p = 'my-cluster.yaml'; s = open(p).read(); docs = s.split('\n---')
+cp = pool = False
+for i, d in enumerate(docs):
+    if not cp and re.search(r'(?m)^kind: CCEManagedControlPlane$', d):
+        docs[i] = re.sub(r'(?m)^(spec:)$', r'\1\n  additionalTags:\n    env: prod\n    cost-center: cc-42', d, count=1); cp = True
+    elif not pool and re.search(r'(?m)^kind: CCEManagedMachinePool$', d):
+        docs[i] = re.sub(r'(?m)^(spec:)$', r'\1\n  additionalTags:\n    team: platform', d, count=1); pool = True
+open(p, 'w').write('\n---'.join(docs))
+PY
+grep -c additionalTags my-cluster.yaml   # 应为 2（控制面 + pool-0）
+
+
 # 创建凭据 Secret + bootstrap Secret
 export CLOUD_SDK_AK='<你的AK>' CLOUD_SDK_SK='<你的SK>'
 kubectl create secret generic my-cce-cluster-credentials \
@@ -340,21 +357,8 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # 等 CURRENT/AVAILABLE=1�
 
 > ⚠️ 标签在 CCE 资源**创建时**一次性写入（对应 CCE `ClusterTags`/`UserTags`）；已创建资源的标签**增量同步（`BatchCreateClusterTags`，FR-1.9）尚未实现**——要验证标签，必须在 apply 集群 B **之前**把 `additionalTags` 加进 yaml。
 
-**方式一（推荐）：随创建验证**——步骤 6 里 `clusterctl generate` 与 `sed 替换 VERIFY-*` 之后、`kubectl apply` 之前，编辑 `my-cluster.yaml`：
+**方式一（推荐）：随创建验证**——步骤 6 的**第 4 步**已在 `kubectl apply` 前给 `my-cluster.yaml` 打了标签（控制面 env/cost-center、pool-0 team）。Provisioned 后验证：
 
-```yaml
-# ① 控制面：在 kind: CCEManagedControlPlane 的 spec 下加
-  spec:
-    additionalTags:
-      env: prod
-      cost-center: cc-42
-# ② 节点池（任选一个 kind: CCEManagedMachinePool，如 pool-0）：同样在 spec 下加
-  spec:
-    additionalTags:
-      team: platform
-```
-
-用文本编辑器定位上述 `kind:` 段手动插入即可（`my-cluster.yaml` 中控制面只有一个、节点池有三个）。然后正常 `kubectl apply -f my-cluster.yaml`。
 
 集群 B Provisioned 后验证：
 

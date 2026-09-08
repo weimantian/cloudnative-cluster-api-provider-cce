@@ -274,6 +274,24 @@ sed -i '' \
   -e 's|VERIFY-FLAVOR|c7.large.2|g' \
   my-cluster.yaml
 
+# 4. (optional) custom tags: env/cost-center on the control plane, team on pool-0
+#    (written once into the CCE clusterTags/userTags at cluster creation; edit
+#    the values as you like; skip this step to create without custom tags —
+#    owned/role are always added automatically)
+python3 - <<'PY'
+import re
+p = 'my-cluster.yaml'; s = open(p).read(); docs = s.split('\n---')
+cp = pool = False
+for i, d in enumerate(docs):
+    if not cp and re.search(r'(?m)^kind: CCEManagedControlPlane$', d):
+        docs[i] = re.sub(r'(?m)^(spec:)$', r'\1\n  additionalTags:\n    env: prod\n    cost-center: cc-42', d, count=1); cp = True
+    elif not pool and re.search(r'(?m)^kind: CCEManagedMachinePool$', d):
+        docs[i] = re.sub(r'(?m)^(spec:)$', r'\1\n  additionalTags:\n    team: platform', d, count=1); pool = True
+open(p, 'w').write('\n---'.join(docs))
+PY
+grep -c additionalTags my-cluster.yaml   # expect 2 (control plane + pool-0)
+
+
 # Create the credentials Secret + bootstrap Secret
 export CLOUD_SDK_AK='<your-AK>' CLOUD_SDK_SK='<your-SK>'
 kubectl create secret generic my-cce-cluster-credentials \
@@ -335,21 +353,7 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # wait for CURRENT/AVAILAB
 
 > ⚠️ Tags are written **once, at CCE resource creation** (CCE `ClusterTags`/`UserTags`); incremental tag sync on already-created resources (`BatchCreateClusterTags`, FR-1.9) is **not implemented yet** — to exercise tags you must add `additionalTags` to the yaml **before** applying cluster B.
 
-**Way 1 (recommended): verify at creation** — in Step 6, after `clusterctl generate` and the `VERIFY-*` sed, but **before** `kubectl apply`, edit `my-cluster.yaml`: 
-
-```yaml
-# ① control plane: add under the spec of kind: CCEManagedControlPlane
-  spec:
-    additionalTags:
-      env: prod
-      cost-center: cc-42
-# ② node pool (any kind: CCEManagedMachinePool, e.g. pool-0): same, under its spec
-  spec:
-    additionalTags:
-      team: platform
-```
-
-Locate the `kind:` sections in a text editor and insert by hand (`my-cluster.yaml` has one control plane and three node pools). Then `kubectl apply -f my-cluster.yaml` as usual.
+**Way 1 (recommended): verify at creation** — Step 6's **sub-step 4** already tags `my-cluster.yaml` (env/cost-center on the control plane, team on pool-0) **before** `kubectl apply`. After cluster B is Provisioned, verify:
 
 After cluster B is Provisioned, verify:
 
