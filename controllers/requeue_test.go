@@ -106,6 +106,24 @@ func TestResultAfterError(t *testing.T) {
 	}
 }
 
+// TestResultAfterErrorPermissionParked covers B12: a permission error on the
+// post-Available path must park on the fixed long permissionBackoff instead of
+// being surfaced as a fast-retried reconcile error.
+func TestResultAfterErrorPermissionParked(t *testing.T) {
+	key := types.NamespacedName{Namespace: "default", Name: "permission-parked"}
+	resetBackoff(key)
+	defer resetBackoff(key)
+
+	permission := &sdkerr.ServiceResponseError{StatusCode: 403, ErrorCode: "CCE.01403001"}
+	res, err := resultAfterError(key, permission)
+	if err != nil {
+		t.Fatalf("permission error must be parked, not surfaced: %v", err)
+	}
+	if res.RequeueAfter != permissionBackoff {
+		t.Fatalf("permission: RequeueAfter = %v, want %v", res.RequeueAfter, permissionBackoff)
+	}
+}
+
 func TestResultAfterErrorForDelete(t *testing.T) {
 	key := types.NamespacedName{Namespace: "default", Name: "delete-target"}
 	resetBackoff(key)

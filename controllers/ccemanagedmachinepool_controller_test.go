@@ -8,6 +8,7 @@ package controllers
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -551,6 +552,15 @@ func TestMachinePoolReconcileWaitsForControlPlane(t *testing.T) {
 func int32Ptr(i int32) *int32 { return &i }
 
 func stringPtr(s string) *string { return &s }
+
+// tagSet builds n valid, distinct user tags with the given key prefix.
+func tagSet(prefix string, n int) common.Tags {
+	tags := common.Tags{}
+	for i := 0; i < n; i++ {
+		tags[prefix+string(rune('a'+i))] = "v"
+	}
+	return tags
+}
 
 // TestMachinePoolReconcileDelete exercises the full deletion path: keeps
 // requesting deletion while the pool still exists, then clears the ID and
@@ -1341,5 +1351,104 @@ func TestMachinePoolReconcileObservedGenerationUpdates(t *testing.T) {
 	if got.Status.ObservedGeneration != got.Generation {
 		t.Errorf("expected Status.ObservedGeneration == Generation (%d), got %d",
 			got.Generation, got.Status.ObservedGeneration)
+	}
+}
+
+// TestMachinePoolReconcileMergedTagCap locks the post-merge tag cap: the
+// effective node-pool tags are the control plane's additionalTags merged with
+// the pool's additionalTags. Each side is admission-validated against
+// common.MaxAdditionalTags, but the merge can exceed it; the controller must
+// refuse before calling CCE.
+func TestMachinePoolReconcileMergedTagCap(t *testing.T) {
+	ctx := context.Background()
+
+	setup := func(ns string, cpTags, poolTags common.Tags) (*fakes.FakeCCEService, *CCEManagedMachinePoolReconciler, *infrav1beta2.CCEManagedMachinePool) {
+		cluster, _, cp := newTestCluster(t, ns)
+		createCredentialsSecret(t, ns, "test-cluster")
+		markInfrastructureProvisioned(t, cluster)
+		cp.Spec.AdditionalTags = cpTags
+		if err := k8sClient.Update(ctx, cp); err != nil {
+			t.Fatalf("failed to set control plane tags: %v", err)
+		}
+		cp.Status.ClusterID = "cluster-1"
+		cp.Status.Ready = true
+		if err := k8sClient.Status().Update(ctx, cp); err != nil {
+			t.Fatalf("failed to set control plane status: %v", err)
+		}
+		mp := &clusterv1.MachinePool{
+			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
+			Spec: clusterv1.MachinePoolSpec{
+				ClusterName: "test-cluster",
+				Replicas:    int32Ptr(3),
+				Template: clusterv1.MachineTemplateSpec{
+					Spec: clusterv1.MachineSpec{
+						ClusterName: "test-cluster",
+						Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+						InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+							APIGroup: infrav1beta2.GroupVersion.Group,
+							Kind:     "CCEManagedMachinePool",
+							Name:     "test-cluster-pool-0",
+						},
+					},
+				},
+			},
+		}
+		if err := k8sClient.Create(ctx, mp); err != nil {
+			t.Fatalf("failed to create MachinePool: %v", err)
+		}
+		pool := &infrav1beta2.CCEManagedMachinePool{
+			ObjectMeta: metav1.ObjectMeta{
+				Name:      "test-cluster-pool-0",
+				Namespace: ns,
+				Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+			},
+			Spec: infrav1beta2.CCEManagedMachinePoolSpec{
+				ClusterName:    "test-cluster",
+				NodePoolName:   "pool-0",
+				Flavor:         "c7.large.2",
+				Replicas:       3,
+				AdditionalTags: poolTags,
+			},
+		}
+		if err := k8sClient.Create(ctx, pool); err != nil {
+			t.Fatalf("failed to create CCEManagedMachinePool: %v", err)
+		}
+		fakeSvc := fakes.NewFakeCCEService()
+		r := &CCEManagedMachinePoolReconciler{
+			Client: k8sClient,
+			ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+				return fakeSvc, nil
+			},
+		}
+		return fakeSvc, r, pool
+	}
+
+	// Over the cap: 18 control-plane tags + 18 pool tags merge to 36 > 18.
+	overNS := "mp-test-tagmerge-over"
+	createNamespace(t, overNS)
+	overSvc, overR, overPool := setup(overNS, tagSet("cp-", common.MaxAdditionalTags), tagSet("pool-", common.MaxAdditionalTags))
+	_, err := overR.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(overPool)})
+	if err == nil {
+		t.Fatal("expected Reconcile to reject a merged tag set over the cap")
+	}
+	if !strings.Contains(err.Error(), "at most") {
+		t.Errorf("expected the error to name the limit, got %v", err)
+	}
+	if len(overSvc.CreatedNodePools) != 0 {
+		t.Errorf("expected no CCE node-pool create, got %d", len(overSvc.CreatedNodePools))
+	}
+
+	// Exactly at the cap: 9 + 9 = 18 is accepted.
+	edgeNS := "mp-test-tagmerge-edge"
+	createNamespace(t, edgeNS)
+	edgeSvc, edgeR, edgePool := setup(edgeNS, tagSet("cp-", common.MaxAdditionalTags/2), tagSet("pool-", common.MaxAdditionalTags/2))
+	if _, err := edgeR.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(edgePool)}); err != nil {
+		t.Fatalf("Reconcile at the cap returned error: %v", err)
+	}
+	if len(edgeSvc.CreatedNodePools) != 1 {
+		t.Fatalf("expected 1 created node pool at the cap, got %d", len(edgeSvc.CreatedNodePools))
+	}
+	if got := len(edgeSvc.CreatedNodePools[0].Tags); got != common.MaxAdditionalTags {
+		t.Errorf("expected %d merged tags sent to CCE, got %d", common.MaxAdditionalTags, got)
 	}
 }

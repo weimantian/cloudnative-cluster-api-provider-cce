@@ -76,6 +76,17 @@ func (b *backoffTracker) reset(key types.NamespacedName) {
 	delete(b.state, key)
 }
 
+// failures returns the current consecutive-failure count for key (0 when no
+// failure was recorded).
+func (b *backoffTracker) failures(key types.NamespacedName) int {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	if st := b.state[key]; st != nil {
+		return st.failures
+	}
+	return 0
+}
+
 // errorBackoff is the shared tracker used by all controllers.
 var errorBackoff = newBackoffTracker()
 
@@ -99,12 +110,14 @@ func requeueAfterForError(key types.NamespacedName, err error) time.Duration {
 }
 
 // resultAfterError converts a classified CCE API error into a reconcile
-// result. Rate-limit and quota errors are transient platform conditions
-// (questionnaire Q14): return an exponential delayed requeue with no error so
-// the controller-runtime backoff does not override the delay and the error is
-// not surfaced as a reconcile failure. All other errors pass through.
+// result. Rate-limit, quota and permission errors are platform conditions
+// (questionnaire Q14): return a delayed requeue with no error so
+// controller-runtime's own (millisecond-start, ~1000s-cap) backoff does not
+// override the tuned delay. Throttled/quota errors use the exponential
+// tracker; permission errors park on the fixed long permissionBackoff. All
+// other errors pass through as reconcile failures.
 func resultAfterError(key types.NamespacedName, err error) (ctrl.Result, error) {
-	if clouderrors.IsThrottled(err) || clouderrors.IsQuotaExceeded(err) {
+	if clouderrors.IsThrottled(err) || clouderrors.IsQuotaExceeded(err) || clouderrors.IsPermissionDenied(err) {
 		return ctrl.Result{RequeueAfter: requeueAfterForError(key, err)}, nil
 	}
 	return ctrl.Result{}, err

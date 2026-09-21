@@ -63,6 +63,14 @@ const reconciliationPeriod = 10 * time.Minute
 // effect without restarting the provider.
 const credentialsSecretSuffix = "-credentials"
 
+// controlPlaneDeletePollAnnotation is stamped (minute granularity) while a CCE
+// cluster deletion is in flight. It doubles as (1) the record that DeleteCluster
+// was already requested — so the call is not re-issued on every poll — and (2) a
+// keep-alive that makes the informer watch re-drive the reconcile even when the
+// workqueue dedup coalesces the delayed requeue away while the object is
+// terminating (observed live on the node-pool delete path).
+const controlPlaneDeletePollAnnotation = "controlplane.cluster.x-k8s.io/last-cluster-delete-poll"
+
 // CCEManagedControlPlaneReconciler reconciles CCEManagedControlPlane objects
 // (ControlPlane). It drives the CCE cluster lifecycle and kubeconfig Secret.
 type CCEManagedControlPlaneReconciler struct {
@@ -120,8 +128,17 @@ func (r *CCEManagedControlPlaneReconciler) newIAMService(regionID string, creds 
 // status.observedGeneration via patch.WithStatusObservedGeneration.
 func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
+	// A tuned backoff result (throttle/quota/permission) is deliberately returned
+	// with a nil error so controller-runtime does not override the delay, and it
+	// increments the failure counter below — that must not be mistaken for a clean
+	// reconcile. Any reconcile that completes without an error and without such a
+	// backoff resets the counter, so a stale capped counter from an earlier burst
+	// does not make the next genuine transient failure wait the full backoffMax.
+	// (The steady-state success returns RequeueAfter: reconciliationPeriod, so
+	// gating the reset on RequeueAfter==0 never fired.)
+	failuresBefore := errorBackoff.failures(req.NamespacedName)
 	defer func() {
-		if reterr == nil && res.RequeueAfter == 0 {
+		if reterr == nil && errorBackoff.failures(req.NamespacedName) == failuresBefore {
 			resetBackoff(req.NamespacedName)
 		}
 	}()
@@ -362,7 +379,9 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	// after creation (add/update drifted tags, remove extras, never the owned
 	// tag). Failures requeue without flipping the readiness condition.
 	if err := svc.ReconcileClusterTags(ctx, clusterID, cp.Spec.ClusterName, cp.Spec.AdditionalTags); err != nil {
-		return ctrl.Result{}, err
+		// Post-Available write: use the tuned backoff instead of letting
+		// controller-runtime's fast exponential backoff hammer the write API.
+		return resultAfterError(client.ObjectKeyFromObject(cp), err)
 	}
 
 	// Addons reconciliation (declarative set): install
@@ -371,7 +390,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		conditions.MarkFalse(cp,
 			conditions.AddonsConfiguredCondition,
 			conditions.AddonInstallFailedReason, err.Error())
-		return ctrl.Result{}, err
+		return resultAfterError(client.ObjectKeyFromObject(cp), err)
 	}
 	conditions.MarkTrue(cp, conditions.AddonsConfiguredCondition, "AddonsConfigured", "CCE addons reconciled")
 
@@ -380,7 +399,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		conditions.MarkFalse(cp,
 			conditions.PodIdentityAssociationsConfiguredCondition,
 			conditions.PodIdentityCreationFailedReason, err.Error())
-		return ctrl.Result{}, err
+		return resultAfterError(client.ObjectKeyFromObject(cp), err)
 	}
 	conditions.MarkTrue(cp, conditions.PodIdentityAssociationsConfiguredCondition, "PodIdentityAssociationsConfigured", "CCE pod-identity associations reconciled")
 
@@ -389,7 +408,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		conditions.MarkFalse(cp,
 			conditions.LoggingConfiguredCondition,
 			conditions.LogConfigUpdateFailedReason, err.Error())
-		return ctrl.Result{}, err
+		return resultAfterError(client.ObjectKeyFromObject(cp), err)
 	}
 	conditions.MarkTrue(cp, conditions.LoggingConfiguredCondition, "LoggingConfigured", "CCE control-plane log config reconciled")
 
@@ -398,7 +417,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 		conditions.MarkFalse(cp,
 			conditions.AccessPoliciesConfiguredCondition,
 			conditions.AccessPolicyCreateFailedReason, err.Error())
-		return ctrl.Result{}, err
+		return resultAfterError(client.ObjectKeyFromObject(cp), err)
 	}
 	conditions.MarkTrue(cp, conditions.AccessPoliciesConfiguredCondition, "AccessPoliciesConfigured", "CCE access policies reconciled")
 
@@ -588,20 +607,32 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 				return resultAfterErrorForDelete(client.ObjectKeyFromObject(cp), errors.Wrap(err, "failed to check CCE cluster before deletion"))
 			}
 		} else {
-			// Delete with explicit options to avoid leftovers (official
-			// defaults leave EVS/storage behind — questionnaire Q8).
-			if err := svc.DeleteCluster(ctx, cceService.DeleteClusterInput{
-				ClusterID:          cp.Status.ClusterID,
-				DeleteEVS:          true,
-				DeleteENI:          true,
-				DeleteELB:          true,
-				OnDemandNodePolicy: "delete",
-				PeriodicNodePolicy: "reset",
-			}); err != nil && !clouderrors.IsNotFound(err) {
-				return resultAfterErrorForDelete(client.ObjectKeyFromObject(cp), errors.Wrap(err, "failed to delete CCE cluster"))
+			// Request deletion once; afterwards only poll ShowCluster. Re-issuing
+			// DeleteCluster on every 30s poll added redundant writes per minute
+			// while the cluster was still deleting.
+			if _, requested := cp.Annotations[controlPlaneDeletePollAnnotation]; !requested {
+				// Delete with explicit options to avoid leftovers (official
+				// defaults leave EVS/storage behind — questionnaire Q8).
+				if err := svc.DeleteCluster(ctx, cceService.DeleteClusterInput{
+					ClusterID:          cp.Status.ClusterID,
+					DeleteEVS:          true,
+					DeleteENI:          true,
+					DeleteELB:          true,
+					OnDemandNodePolicy: "delete",
+					PeriodicNodePolicy: "reset",
+				}); err != nil && !clouderrors.IsNotFound(err) {
+					return resultAfterErrorForDelete(client.ObjectKeyFromObject(cp), errors.Wrap(err, "failed to delete CCE cluster"))
+				}
+				log.Info("CCE cluster deletion requested, waiting", "clusterID", cp.Status.ClusterID)
+				recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "ClusterDeletionRequested", "deletion requested for CCE cluster %s", cp.Status.ClusterID)
 			}
-			log.Info("CCE cluster deletion requested, waiting", "clusterID", cp.Status.ClusterID)
-			recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "ClusterDeletionRequested", "deletion requested for CCE cluster %s", cp.Status.ClusterID)
+			// Keep-alive: bump the poll annotation (minute granularity) so the
+			// informer watch re-drives this reconcile even if the workqueue
+			// dedup coalesces the delayed requeue away while the object is
+			// terminating (observed live on the node-pool delete path).
+			if err := r.bumpDeletePollAnnotation(ctx, cp); err != nil {
+				return ctrl.Result{}, err
+			}
 			return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 		}
 	}
@@ -630,6 +661,22 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 		return ctrl.Result{}, err
 	}
 	return ctrl.Result{}, nil
+}
+
+// bumpDeletePollAnnotation stamps the minute-granularity keep-alive annotation
+// on the control plane while a CCE cluster deletion is in flight. Its presence
+// also records that DeleteCluster was already requested, so the delete call is
+// not re-issued on every poll.
+func (r *CCEManagedControlPlaneReconciler) bumpDeletePollAnnotation(ctx context.Context, cp *controlplanev1beta2.CCEManagedControlPlane) error {
+	if cp.Annotations == nil {
+		cp.Annotations = map[string]string{}
+	}
+	orig := cp.DeepCopy()
+	cp.Annotations[controlPlaneDeletePollAnnotation] = strconv.FormatInt(time.Now().Unix()/60, 10)
+	if err := r.Patch(ctx, cp, client.MergeFrom(orig)); err != nil {
+		return errors.Wrap(err, "failed to bump control-plane delete poll annotation")
+	}
+	return nil
 }
 
 // SetupWithManager registers the controller with the manager.

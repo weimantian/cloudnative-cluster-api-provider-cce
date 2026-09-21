@@ -86,3 +86,45 @@ func (t Tags) Validate(fldPath *field.Path) field.ErrorList {
 	}
 	return errs
 }
+
+// nodePoolReservedKeyPrefixes lists tag-key prefixes the CCE node-pool UserTag
+// model forbids on top of the shared resource-tag rules: an SDK UserTag key
+// must not start with "CCE-" or "__type_baremetal". The cluster ResourceTag
+// model has no such restriction, so these are enforced ONLY by ValidateNodePool
+// (the CCEManagedMachinePool path) and never by Validate (the cluster path).
+var nodePoolReservedKeyPrefixes = []string{"CCE-", "__type_baremetal"}
+
+// ValidateNodePool checks that t satisfies the constraints for a node pool's
+// user tags (CCE UserTag model): the shared resource-tag rules plus the
+// node-pool-only reserved key prefixes. Cluster additionalTags (the ResourceTag
+// model) must keep using Validate, which allows those prefixes.
+func (t Tags) ValidateNodePool(fldPath *field.Path) field.ErrorList {
+	errs := t.Validate(fldPath)
+
+	for _, prefix := range nodePoolReservedKeyPrefixes {
+		for k := range t {
+			if strings.HasPrefix(k, prefix) {
+				errs = append(errs, field.Invalid(fldPath.Key(k), k,
+					"tag key cannot start with \""+prefix+"\" (reserved by CCE for node pools)"))
+			}
+		}
+	}
+	return errs
+}
+
+// ValidateMergedTags checks the effective tag set a node pool will carry: the
+// control plane's additionalTags merged with the pool's additionalTags (the same
+// order the node-pool controller merges them). Each side is admitted
+// independently, but their union can exceed MaxAdditionalTags, and a
+// control-plane key may carry a prefix the node-pool UserTag model forbids; the
+// platform rejects the node-pool create in both cases. The effective set is
+// therefore validated with the node-pool rules at the merge site before the
+// create/update (MaxAdditionalTags reserves the two tags the service always
+// adds: ownership and role).
+//
+// The node-pool admission webhook cannot run this check: it has no client and
+// cannot read the control plane's additionalTags, so enforcement lives in the
+// controller.
+func ValidateMergedTags(merged Tags, fldPath *field.Path) field.ErrorList {
+	return merged.ValidateNodePool(fldPath)
+}

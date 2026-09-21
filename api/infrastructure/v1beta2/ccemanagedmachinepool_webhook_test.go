@@ -232,3 +232,18 @@ func TestMachinePoolAdditionalTagsValidation(t *testing.T) {
 		t.Error("expected validation error for too many tags")
 	}
 }
+
+// TestMachinePoolAdditionalTagsNodePoolPrefixes locks the node-pool UserTag
+// restriction: keys starting with "CCE-" or "__type_baremetal" are reserved by
+// the platform for node pools and must be rejected at admission.
+func TestMachinePoolAdditionalTagsNodePoolPrefixes(t *testing.T) {
+	for _, key := range []string{"CCE-owner", "__type_baremetal_x"} {
+		t.Run(key, func(t *testing.T) {
+			m := validPool()
+			m.Spec.AdditionalTags = common.Tags{key: "v"}
+			if err := m.validate(); err == nil {
+				t.Errorf("expected node-pool additionalTags key %q to be rejected", key)
+			}
+		})
+	}
+}

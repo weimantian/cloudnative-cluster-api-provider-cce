@@ -728,3 +728,131 @@ func TestToAccessPolicyInfoClusters(t *testing.T) {
 		t.Errorf("nil clusters should map to nil scope, got %v", got.ClusterIDs)
 	}
 }
+
+// TestPlanClusterTagsOrder pins the delete-before-create ordering (B9): a
+// resource already at the platform tag limit rejects a create, so stale tags
+// must be freed first or reconciliation never converges. Also covers
+// add/remove/unchanged and the protected internal keys.
+func TestPlanClusterTagsOrder(t *testing.T) {
+	owned := ownedTagKey("demo")
+	cur := map[string]string{
+		owned:      "owned",
+		RoleTagKey: "apiserver",
+		"keep":     "same", // unchanged -> no write
+		"stale":    "gone", // removed  -> delete
+	}
+	want := map[string]string{
+		owned:      "owned",
+		RoleTagKey: "apiserver",
+		"keep":     "same",
+		"new":      "v", // added -> create
+	}
+	writes := planClusterTags(cur, want, owned)
+	if len(writes) != 2 {
+		t.Fatalf("expected 1 delete + 1 create, got %d writes: %+v", len(writes), writes)
+	}
+
+	// (a) every delete precedes every create.
+	seenCreate := false
+	for i, w := range writes {
+		if w.Create != nil {
+			seenCreate = true
+		}
+		if w.Delete != nil && seenCreate {
+			t.Fatalf("delete at index %d must come before any create: %+v", i, writes)
+		}
+	}
+
+	// (b) a removed user tag -> delete; an added user tag -> create.
+	if writes[0].Delete == nil || writes[0].Delete.Key == nil || *writes[0].Delete.Key != "stale" {
+		t.Errorf("first write should delete \"stale\", got %+v", writes[0])
+	}
+	if writes[1].Create == nil || writes[1].Create.Key == nil || *writes[1].Create.Key != "new" {
+		t.Errorf("second write should create \"new\", got %+v", writes[1])
+	}
+
+	// (d) an unchanged tag produces neither.
+	for _, w := range writes {
+		if w.Delete != nil && w.Delete.Key != nil && *w.Delete.Key == "keep" {
+			t.Errorf("unchanged tag \"keep\" must not be deleted")
+		}
+		if w.Create != nil && w.Create.Key != nil && *w.Create.Key == "keep" {
+			t.Errorf("unchanged tag \"keep\" must not be created")
+		}
+	}
+
+	// (c) the owned and role tags are never deleted even when absent from the
+	// desired set (the realistic caller always includes them via
+	// toClusterTags, but the decision helper must not depend on that). Other
+	// stale user tags are still deleted.
+	cur2 := map[string]string{owned: "owned", RoleTagKey: "apiserver", "stale": "x", "gone": "y"}
+	want2 := map[string]string{"stale": "x"}
+	writes2 := planClusterTags(cur2, want2, owned)
+	if len(writes2) != 1 || writes2[0].Delete == nil || writes2[0].Delete.Key == nil || *writes2[0].Delete.Key != "gone" {
+		t.Fatalf("expected only the user tag \"gone\" deleted, got %+v", writes2)
+	}
+	for _, w := range writes2 {
+		if w.Delete != nil && w.Delete.Key != nil && (*w.Delete.Key == owned || *w.Delete.Key == RoleTagKey) {
+			t.Errorf("protected tag %q must never be deleted", *w.Delete.Key)
+		}
+	}
+}
+
+// TestBuildCreateClusterRequestDataPlaneV2 locks the DPv2 assembly at the
+// service layer: the override is emitted only when EnableDataPlaneV2 is true.
+func TestBuildCreateClusterRequestDataPlaneV2(t *testing.T) {
+	base := CreateClusterInput{
+		Name:                 "demo",
+		ContainerNetworkMode: "eni",
+		HostNetworkVpcID:     "vpc-1",
+		HostNetworkSubnetID:  "subnet-1",
+	}
+
+	on := base
+	on.EnableDataPlaneV2 = true
+	req, err := buildCreateClusterRequest(on)
+	if err != nil {
+		t.Fatalf("buildCreateClusterRequest(on): %v", err)
+	}
+	if req.Body == nil || req.Body.Spec == nil {
+		t.Fatal("request body/spec must be set")
+	}
+	ov := req.Body.Spec.ConfigurationsOverride
+	if ov == nil || len(*ov) != 1 {
+		t.Fatalf("ConfigurationsOverride = %+v, want one package", ov)
+	}
+	pkg := (*ov)[0]
+	if pkg.Name == nil || *pkg.Name != "eni" {
+		t.Errorf("package name = %v, want eni", pkg.Name)
+	}
+	if pkg.Configurations == nil || len(*pkg.Configurations) != 1 {
+		t.Fatalf("configurations = %+v, want one item", pkg.Configurations)
+	}
+	item := (*pkg.Configurations)[0]
+	if item.Name == nil || *item.Name != "dataplane-v2" {
+		t.Errorf("item name = %v, want dataplane-v2", item.Name)
+	}
+	if item.Value == nil {
+		t.Fatal("item value must be set")
+	}
+	if v, ok := (*item.Value).(bool); !ok || !v {
+		t.Errorf("item value = %#v, want bool(true)", *item.Value)
+	}
+
+	off := base
+	offReq, err := buildCreateClusterRequest(off)
+	if err != nil {
+		t.Fatalf("buildCreateClusterRequest(off): %v", err)
+	}
+	if offReq.Body.Spec.ConfigurationsOverride != nil {
+		t.Errorf("ConfigurationsOverride must be nil when DPv2 is disabled, got %+v", offReq.Body.Spec.ConfigurationsOverride)
+	}
+}
+
+// TestBuildCreateClusterRequestRequiresHostNetwork locks the fail-fast
+// validation moved into the pure builder.
+func TestBuildCreateClusterRequestRequiresHostNetwork(t *testing.T) {
+	if _, err := buildCreateClusterRequest(CreateClusterInput{Name: "demo"}); err == nil {
+		t.Fatal("expected an error when hostNetwork vpc/subnet are empty")
+	}
+}

@@ -16,6 +16,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/apimachinery/pkg/util/validation/field"
 	"k8s.io/client-go/tools/record"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
@@ -230,6 +231,17 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		// Cluster-level tags propagate to every node pool (control plane's
 		// additionalTags), the pool's own tags win on collision.
 		in.Tags = mergedTags(cp.Spec.AdditionalTags, pool.Spec.AdditionalTags)
+		// Each side was admission-validated against MaxAdditionalTags, but the
+		// merge can still exceed it and the platform then rejects the node-pool
+		// create. The webhook cannot read the control plane's tags, so enforce
+		// the post-merge cap here (MaxAdditionalTags reserves the 2 provider
+		// owned tags).
+		if errs := common.ValidateMergedTags(common.Tags(in.Tags), field.NewPath("spec", "additionalTags")); len(errs) > 0 {
+			err := errors.New(errs.ToAggregate().Error())
+			conditions.MarkFalse(pool, conditions.NodePoolReadyCondition,
+				conditions.NodePoolCreationFailedReason, err.Error())
+			return ctrl.Result{}, err
+		}
 		id, err := svc.CreateNodePool(ctx, in)
 		if err != nil {
 			conditions.MarkFalse(pool,

@@ -505,10 +505,15 @@ func (m *Manager) ensureNatGateway(ctx context.Context, spec *common.NetworkSpec
 		}
 		if ng.EIPResourceID == "" {
 			id, err := m.createEip(ctx, clusterName+"-nat-eip", clusterName)
+			if id != "" {
+				// Record the id even on error: createEip only returns one when
+				// the EIP was created but cleanup failed, and losing it would
+				// make the next reconcile allocate a second, orphaned EIP.
+				ng.EIPResourceID = id
+			}
 			if err != nil {
 				return err
 			}
-			ng.EIPResourceID = id
 		}
 		gwID, err := m.createNatGateway(ctx, clusterName+"-nat", spec.VPC.ResourceID, subnetID, ng.Spec, clusterName)
 		if err != nil {
@@ -799,7 +804,15 @@ func (m *Manager) createEip(ctx context.Context, name, clusterName string) (stri
 			PublicipId: eipID,
 			Body:       &eipmodel.CreatePublicipTagRequestBody{Tag: &tag},
 		}); err != nil {
-			return "", errors.Wrapf(err, "CreatePublicipTag(%s) on %s failed", tag.Key, eipID)
+			// The EIP now exists but is untagged, so the owned-tag GC sweep
+			// can never find it if this state is lost. Delete it rather than
+			// leak it; the next reconcile creates a fresh EIP and retries
+			// tagging. If that cleanup also fails, return the id so the
+			// caller persists it and the deletion path can still remove it.
+			if derr := m.deleteEip(ctx, eipID); derr != nil {
+				return eipID, errors.Wrapf(err, "CreatePublicipTag(%s) on %s failed; deleting the untagged EIP also failed (id returned for cleanup)", tag.Key, eipID)
+			}
+			return "", errors.Wrapf(err, "CreatePublicipTag(%s) on %s failed; untagged EIP deleted to avoid a leak", tag.Key, eipID)
 		}
 	}
 	return eipID, nil

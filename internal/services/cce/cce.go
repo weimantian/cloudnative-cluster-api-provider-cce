@@ -213,10 +213,42 @@ func clusterTagsDiff(cur, want map[string]string, ownedKey string) (d struct {
 	return d
 }
 
+// clusterTagWrite is one tag mutation in execution order. Exactly one of
+// Delete/Create is set. Deletions must precede creations: the platform caps
+// tags per resource (20), so stale tags have to be freed before new ones are
+// added, otherwise a create on a resource already at the cap fails and the
+// reconcile never converges.
+type clusterTagWrite struct {
+	Delete *model.ResourceDeleteTag
+	Create *model.ResourceTag
+}
+
+// planClusterTags returns the ordered writes that converge cur to want: every
+// deletion first, then every creation (see clusterTagWrite for why the order
+// matters). It is pure so the ordering can be pinned by unit tests without a
+// cloud client. Reserved internal keys are never deleted: the owned key is
+// excluded by clusterTagsDiff and the role key is filtered here.
+func planClusterTags(cur, want map[string]string, ownedKey string) []clusterTagWrite {
+	d := clusterTagsDiff(cur, want, ownedKey)
+	writes := make([]clusterTagWrite, 0, len(d.del)+len(d.add))
+	for i := range d.del {
+		if k := d.del[i].Key; k != nil && *k == RoleTagKey {
+			continue // reserved internal tag: never deleted
+		}
+		writes = append(writes, clusterTagWrite{Delete: &d.del[i]})
+	}
+	for i := range d.add {
+		writes = append(writes, clusterTagWrite{Create: &d.add[i]})
+	}
+	return writes
+}
+
 // ReconcileClusterTags implements Service. The desired set is owned + role +
-// user tags (toClusterTags): missing/drifted tags are created/updated via
-// BatchCreateClusterTags, tags no longer desired are deleted (the owned tag is
-// never deleted). Idempotent — a no-op when the cluster is already in sync.
+// user tags (toClusterTags): tags no longer desired are deleted first (reserved
+// internal tags are never deleted), then missing/drifted tags are
+// created/updated via BatchCreateClusterTags. Deleting before creating frees
+// tag slots on a resource already at the platform limit so it can still
+// converge. Idempotent - a no-op when the cluster is already in sync.
 func (s *Client) ReconcileClusterTags(ctx context.Context, clusterID, clusterName string, userTags map[string]string) error {
 	info, err := s.ShowCluster(ctx, clusterID)
 	if err != nil {
@@ -233,16 +265,19 @@ func (s *Client) ReconcileClusterTags(ctx context.Context, clusterID, clusterNam
 		}
 	}
 
-	d := clusterTagsDiff(cur, want, ownedTagKey(clusterName))
-	toCreate, toDelete := d.add, d.del
-
-	if len(toCreate) > 0 {
-		req := &model.BatchCreateClusterTagsRequest{ClusterId: clusterID,
-			Body: &model.BatchCreateClusterTagsRequestBody{Tags: toCreate}}
-		if _, err := s.cce.BatchCreateClusterTags(req); err != nil {
-			return errors.Wrapf(err, "BatchCreateClusterTags %s failed", clusterID)
+	var toDelete []model.ResourceDeleteTag
+	var toCreate []model.ResourceTag
+	for _, w := range planClusterTags(cur, want, ownedTagKey(clusterName)) {
+		if w.Delete != nil {
+			toDelete = append(toDelete, *w.Delete)
+		}
+		if w.Create != nil {
+			toCreate = append(toCreate, *w.Create)
 		}
 	}
+
+	// Deletions run before creations: see planClusterTags. On a resource at the
+	// platform tag limit this is the only order that converges.
 	if len(toDelete) > 0 {
 		req := &model.BatchDeleteClusterTagsRequest{ClusterId: clusterID,
 			Body: &model.BatchDeleteClusterTagsRequestBody{Tags: toDelete}}
@@ -250,16 +285,25 @@ func (s *Client) ReconcileClusterTags(ctx context.Context, clusterID, clusterNam
 			return errors.Wrapf(err, "BatchDeleteClusterTags %s failed", clusterID)
 		}
 	}
+	if len(toCreate) > 0 {
+		req := &model.BatchCreateClusterTagsRequest{ClusterId: clusterID,
+			Body: &model.BatchCreateClusterTagsRequestBody{Tags: toCreate}}
+		if _, err := s.cce.BatchCreateClusterTags(req); err != nil {
+			return errors.Wrapf(err, "BatchCreateClusterTags %s failed", clusterID)
+		}
+	}
 	return nil
 }
 
-// CreateCluster implements Service.
-func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (string, error) {
+// buildCreateClusterRequest assembles the SDK CreateCluster request from the
+// service input. It is pure so the assembled request (including the DataPlane
+// V2 configurationsOverride) can be unit-tested without a cloud client.
+func buildCreateClusterRequest(in CreateClusterInput) (*model.CreateClusterRequest, error) {
 	// hostNetwork (VPC + node subnet) is REQUIRED by the official API
 	// (CreateCluster.txt: "VPC是集群内节点之间的通信依赖,所以是必选的参数集").
 	// Fail fast here instead of sending a request the platform will reject.
 	if in.HostNetworkVpcID == "" || in.HostNetworkSubnetID == "" {
-		return "", errors.New("CreateCluster: hostNetwork vpc and subnet are required")
+		return nil, errors.New("CreateCluster: hostNetwork vpc and subnet are required")
 	}
 	spec := &model.ClusterSpec{
 		// category: empty is derived from the network mode per official docs
@@ -370,7 +414,7 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		// Subscription clusters require periodType/periodNum (official
 		// ClusterExtendParam: "billingMode为1(包周期)时生效,且为必选").
 		if in.PeriodType == "" {
-			return "", errors.New("CreateCluster: periodType is required when billingMode=1 (subscription)")
+			return nil, errors.New("CreateCluster: periodType is required when billingMode=1 (subscription)")
 		}
 		spec.ExtendParam = &model.ClusterExtendParam{
 			PeriodType:  &in.PeriodType,
@@ -386,7 +430,16 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		Metadata:   &model.ClusterMetadata{Name: in.Name},
 		Spec:       spec,
 	}
-	resp, err := s.cce.CreateCluster(&model.CreateClusterRequest{Body: cluster})
+	return &model.CreateClusterRequest{Body: cluster}, nil
+}
+
+// CreateCluster implements Service.
+func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (string, error) {
+	req, err := buildCreateClusterRequest(in)
+	if err != nil {
+		return "", err
+	}
+	resp, err := s.cce.CreateCluster(req)
 	if err != nil {
 		// Idempotent create: if the cluster already exists — e.g. a previous
 		// create succeeded but the response was lost to throttling (verified
@@ -1256,34 +1309,57 @@ func (s *Client) ListNodePools(_ context.Context, clusterID string) ([]NodePoolI
 	return out, nil
 }
 
+// listAllNodes returns every node of a cluster. The SDK list defaults to a
+// 2000-node page and silently truncates larger clusters, so follow
+// PageInfo.NextMarker until it is exhausted (mirrors paginateAll's other
+// users). Page order is preserved, keeping the result ordering stable.
+func (s *Client) listAllNodes(clusterID string) ([]model.Node, error) {
+	return paginateAll(2000, func(marker *string) ([]model.Node, *string, error) {
+		resp, err := s.cce.ListNodes(&model.ListNodesRequest{
+			ClusterId: clusterID,
+			Limit:     int32Ptr(2000),
+			Marker:    marker,
+		})
+		if err != nil {
+			return nil, nil, errors.Wrap(err, "ListNodes failed")
+		}
+		if resp.Items == nil {
+			return nil, nil, nil
+		}
+		var next *string
+		if resp.PageInfo != nil {
+			next = resp.PageInfo.NextMarker
+		}
+		return *resp.Items, next, nil
+	})
+}
+
 // ListNodes implements Service. It returns the provider IDs of all nodes in
 // the cluster. Each entry has the form huaweicloud:///<serverId>, matching
 // the spec.providerID of the corresponding workload node, which Cluster API
 // uses to fill MachinePool.status.nodeRefs.
 func (s *Client) ListNodes(_ context.Context, clusterID, nodePoolID string) ([]string, error) {
-	resp, err := s.cce.ListNodes(&model.ListNodesRequest{ClusterId: clusterID})
+	nodes, err := s.listAllNodes(clusterID)
 	if err != nil {
-		return nil, errors.Wrap(err, "ListNodes failed")
+		return nil, err
 	}
 	var out []string
-	if resp.Items != nil {
-		for _, n := range *resp.Items {
-			// Only nodes owned by the requested node pool (metadata.ownerReferences.
-			// nodepoolID); a cluster-wide listing would assign every pool's nodes
-			// to every MachinePool.
-			if n.Metadata == nil || n.Metadata.OwnerReferences == nil ||
-				n.Metadata.OwnerReferences.NodepoolID == nil || *n.Metadata.OwnerReferences.NodepoolID != nodePoolID {
-				continue
-			}
-			// ProviderID must match the huaweicloud cloud-provider contract:
-			// `huaweicloud:///<serverId>` where serverId is the underlying ECS
-			// instance ID. Verified against
-			// kubernetes-sigs/cloud-provider-huaweicloud instances.go:
-			// ProviderName="huaweicloud" + regexp ^huaweicloud:///([^/]+)$ +
-			// InstanceID() = ecsClient.GetByNodeName().Id.
-			if n.Status != nil && n.Status.ServerId != nil {
-				out = append(out, "huaweicloud:///"+*n.Status.ServerId)
-			}
+	for _, n := range nodes {
+		// Only nodes owned by the requested node pool (metadata.ownerReferences.
+		// nodepoolID); a cluster-wide listing would assign every pool's nodes
+		// to every MachinePool.
+		if n.Metadata == nil || n.Metadata.OwnerReferences == nil ||
+			n.Metadata.OwnerReferences.NodepoolID == nil || *n.Metadata.OwnerReferences.NodepoolID != nodePoolID {
+			continue
+		}
+		// ProviderID must match the huaweicloud cloud-provider contract:
+		// `huaweicloud:///<serverId>` where serverId is the underlying ECS
+		// instance ID. Verified against
+		// kubernetes-sigs/cloud-provider-huaweicloud instances.go:
+		// ProviderName="huaweicloud" + regexp ^huaweicloud:///([^/]+)$ +
+		// InstanceID() = ecsClient.GetByNodeName().Id.
+		if n.Status != nil && n.Status.ServerId != nil {
+			out = append(out, "huaweicloud:///"+*n.Status.ServerId)
 		}
 	}
 	return out, nil
@@ -1291,25 +1367,23 @@ func (s *Client) ListNodes(_ context.Context, clusterID, nodePoolID string) ([]s
 
 // ListNodesWithStatus implements Service.
 func (s *Client) ListNodesWithStatus(_ context.Context, clusterID string) ([]NodeInfo, error) {
-	resp, err := s.cce.ListNodes(&model.ListNodesRequest{ClusterId: clusterID})
+	nodes, err := s.listAllNodes(clusterID)
 	if err != nil {
-		return nil, errors.Wrap(err, "ListNodes failed")
+		return nil, err
 	}
 	var out []NodeInfo
-	if resp.Items != nil {
-		for _, n := range *resp.Items {
-			info := NodeInfo{}
-			if n.Metadata != nil && n.Metadata.Uid != nil {
-				info.UID = *n.Metadata.Uid
-			}
-			if n.Metadata != nil && n.Metadata.OwnerReferences != nil && n.Metadata.OwnerReferences.NodepoolID != nil {
-				info.NodePoolID = *n.Metadata.OwnerReferences.NodepoolID
-			}
-			if n.Status != nil && n.Status.Phase != nil {
-				info.Phase = n.Status.Phase.Value()
-			}
-			out = append(out, info)
+	for _, n := range nodes {
+		info := NodeInfo{}
+		if n.Metadata != nil && n.Metadata.Uid != nil {
+			info.UID = *n.Metadata.Uid
 		}
+		if n.Metadata != nil && n.Metadata.OwnerReferences != nil && n.Metadata.OwnerReferences.NodepoolID != nil {
+			info.NodePoolID = *n.Metadata.OwnerReferences.NodepoolID
+		}
+		if n.Status != nil && n.Status.Phase != nil {
+			info.Phase = n.Status.Phase.Value()
+		}
+		out = append(out, info)
 	}
 	return out, nil
 }

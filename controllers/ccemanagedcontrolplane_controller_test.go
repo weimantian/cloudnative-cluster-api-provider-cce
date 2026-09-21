@@ -10,6 +10,7 @@ import (
 	"context"
 	"testing"
 
+	sdkerr "github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
@@ -1286,5 +1287,182 @@ func TestControlPlaneReconcileRejectsClusterNameMismatch(t *testing.T) {
 	if c == nil || c.Status != metav1.ConditionFalse || c.Reason != conditions.CCEClusterNameMismatchReason {
 		t.Errorf("expected %s=False reason %s, got %v",
 			conditions.CCEClusterReadyCondition, conditions.CCEClusterNameMismatchReason, c)
+	}
+}
+
+// TestToCreateClusterInputDataPlaneV2 covers T2b: the controller-side mapping
+// of spec.enableDataPlaneV2 into the CreateCluster input (nil -> false, true ->
+// true, false -> false). Only the webhook immutability was covered before.
+func TestToCreateClusterInputDataPlaneV2(t *testing.T) {
+	cases := []struct {
+		name string
+		spec *bool
+		want bool
+	}{
+		{"nil defaults to false", nil, false},
+		{"true maps to true", boolPtr(true), true},
+		{"explicit false maps to false", boolPtr(false), false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			cp := &controlplanev1beta2.CCEManagedControlPlane{
+				Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{EnableDataPlaneV2: tc.spec},
+			}
+			in := toCreateClusterInput(cp, "vpc-1", "subnet-1", "", nil)
+			if in.EnableDataPlaneV2 != tc.want {
+				t.Errorf("EnableDataPlaneV2 = %v, want %v", in.EnableDataPlaneV2, tc.want)
+			}
+		})
+	}
+}
+
+// TestControlPlaneReconcileDeleteReissuesOnce covers B11: the delete path issues
+// DeleteCluster exactly once, then polls ShowCluster only, while bumping the
+// keep-alive annotation so the next reconcile is driven by the watch even if the
+// delayed requeue is coalesced away.
+func TestControlPlaneReconcileDeleteReissuesOnce(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-delete-once"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	// Provision: sets Status.ClusterID and the finalizer.
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("initial reconcile failed: %v", err)
+	}
+
+	latest := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), latest); err != nil {
+		t.Fatalf("failed to re-get control plane: %v", err)
+	}
+	if err := k8sClient.Delete(ctx, latest); err != nil {
+		t.Fatalf("failed to delete control plane: %v", err)
+	}
+
+	// First delete reconcile: DeleteCluster once + keep-alive annotation.
+	res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)})
+	if err != nil {
+		t.Fatalf("first delete reconcile failed: %v", err)
+	}
+	if len(fakeSvc.DeletedClusters) != 1 {
+		t.Fatalf("expected 1 DeleteCluster call, got %d", len(fakeSvc.DeletedClusters))
+	}
+	if res.RequeueAfter <= 0 {
+		t.Errorf("expected a positive requeue while the cluster is deleting, got %+v", res)
+	}
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	if got.Annotations[controlPlaneDeletePollAnnotation] == "" {
+		t.Fatal("expected the keep-alive delete poll annotation to be stamped")
+	}
+
+	// Second delete reconcile (cluster still Available -> still deleting): the
+	// delete request must not be re-issued.
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("second delete reconcile failed: %v", err)
+	}
+	if len(fakeSvc.DeletedClusters) != 1 {
+		t.Errorf("DeleteCluster must not be re-issued while deleting, got %d calls", len(fakeSvc.DeletedClusters))
+	}
+}
+
+// TestControlPlaneReconcilePostAvailableThrottleBacksOff covers B12: a throttled
+// post-Available write (ReconcileClusterTags) must be converted into a tuned
+// requeue with no error, instead of a raw error that lets controller-runtime's
+// fast exponential backoff hammer the API.
+func TestControlPlaneReconcilePostAvailableThrottleBacksOff(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-postavailable-throttle"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	key := client.ObjectKeyFromObject(cp)
+	resetBackoff(key)
+	defer resetBackoff(key)
+
+	// Pre-seed an already-provisioned, steady-state status so this reconcile
+	// exercises the post-Available path: no create, and the observed-generation
+	// requeue does not override the tuned backoff.
+	seed := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, key, seed); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	seed.Status.ClusterID = "cluster-1"
+	seed.Status.ControlPlaneEndpoint = &clusterv1.APIEndpoint{Host: "10.0.0.10", Port: 5443}
+	seed.Status.ObservedGeneration = seed.Generation
+	if err := k8sClient.Status().Update(ctx, seed); err != nil {
+		t.Fatalf("failed to seed control plane status: %v", err)
+	}
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeSvc.ReconcileClusterTagsFn = func(_ context.Context, _, _ string, _ map[string]string) error {
+		return &sdkerr.ServiceResponseError{StatusCode: 429}
+	}
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key})
+	if err != nil {
+		t.Fatalf("throttled post-Available write must not surface as an error: %v", err)
+	}
+	if res.RequeueAfter != throttledBackoffBase {
+		t.Errorf("throttled post-Available write: RequeueAfter = %v, want %v", res.RequeueAfter, throttledBackoffBase)
+	}
+}
+
+// TestControlPlaneReconcileResetsBackoffOnSuccess covers B14: the steady-state
+// success returns RequeueAfter: reconciliationPeriod (not 0), so the old
+// RequeueAfter==0 gate never reset the failure counter. A clean reconcile must
+// clear a stale capped counter left by an earlier throttle burst.
+func TestControlPlaneReconcileResetsBackoffOnSuccess(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-backoff-reset"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	key := client.ObjectKeyFromObject(cp)
+	resetBackoff(key)
+	defer resetBackoff(key)
+	// Simulate a burst of create-time throttles (counter climbs to the cap).
+	for i := 0; i < 6; i++ {
+		requeueAfterForError(key, &sdkerr.ServiceResponseError{StatusCode: 429})
+	}
+	if got := errorBackoff.failures(key); got == 0 {
+		t.Fatal("expected the primed failure counter to be non-zero")
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("clean reconcile failed: %v", err)
+	}
+	if got := errorBackoff.failures(key); got != 0 {
+		t.Errorf("clean reconcile must reset the backoff counter, got %d", got)
 	}
 }
