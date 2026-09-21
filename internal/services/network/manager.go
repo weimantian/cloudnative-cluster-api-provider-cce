@@ -854,7 +854,7 @@ func (m *Manager) waitNatGatewayActive(ctx context.Context, gatewayID string) er
 func (m *Manager) deleteSnatRules(ctx context.Context, gatewayID string) error {
 	// A rule-list failure is ignored here (teardown is best-effort); a rule
 	// deletion failure is returned for the caller to aggregate.
-	_, ruleErr, _ := hwsdk.DeleteSnatRules(m.nat, gatewayID)
+	_, _, ruleErr := hwsdk.DeleteSnatRules(m.nat, gatewayID)
 	return ruleErr
 }
 

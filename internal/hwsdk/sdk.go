@@ -64,20 +64,22 @@ func DeleteSnatRule(nat *natv2.NatClient, gatewayID, ruleID string) error {
 // rule-deletion failure (with its rule ID) are reported separately so each
 // caller keeps its policy: the CCE GC fails on a listing error, while
 // managed-network teardown ignores listing errors.
-func DeleteSnatRules(nat *natv2.NatClient, gatewayID string) (listErr, ruleErr error, ruleID string) {
+// The rule ID (empty unless a rule deletion failed) comes first; both errors
+// are returned last.
+func DeleteSnatRules(nat *natv2.NatClient, gatewayID string) (ruleID string, listErr, ruleErr error) {
 	rules, err := ListSnatRules(nat, gatewayID)
 	if err != nil {
 		if clouderrors.IsNotFound(err) {
-			return nil, nil, ""
+			return "", nil, nil
 		}
-		return err, nil, ""
+		return "", err, nil
 	}
 	for _, r := range rules {
 		if derr := DeleteSnatRule(nat, gatewayID, r.ID); derr != nil && !clouderrors.IsNotFound(derr) {
-			return nil, derr, r.ID
+			return r.ID, nil, derr
 		}
 	}
-	return nil, nil, ""
+	return "", nil, nil
 }
 
 // DeleteNatGateway deletes a NAT gateway.

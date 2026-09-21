@@ -199,10 +199,15 @@ func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ct
 		return ctrl.Result{}, err
 	}
 
-	// Requeue when observed generation is behind
-	// current generation. Catches spec changes coalesced into the in-flight
-	// work queue entry (event coalescing would otherwise silently drop them).
-	if scope.ObservedGenerationAtStart() < scope.GenerationAtStart() {
+	// Requeue when observed generation is behind current generation.
+	// Catches spec changes coalesced into the in-flight work queue entry
+	// (event coalescing would otherwise silently drop them). Do NOT override a
+	// tuned backoff (throttle/quota via the failure counter, permission via its
+	// fixed delay): shortening it to defaultRequeue would put the next attempt
+	// straight back into the rate-limit window the backoff exists to escape.
+	classifiedBackoff := errorBackoff.failures(req.NamespacedName) != failuresBefore ||
+		res.RequeueAfter == permissionBackoff
+	if !classifiedBackoff && scope.ObservedGenerationAtStart() < scope.GenerationAtStart() {
 		log.Info("Observed generation behind current generation, requeueing",
 			"observedGeneration", scope.ObservedGenerationAtStart(),
 			"generation", scope.GenerationAtStart())
@@ -599,7 +604,8 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 	}
 
 	if cp.Status.ClusterID != "" {
-		if _, err := svc.ShowCluster(ctx, cp.Status.ClusterID); err != nil {
+		info, err := svc.ShowCluster(ctx, cp.Status.ClusterID)
+		if err != nil {
 			// Only a 404 means the cluster is already gone. Any transient error
 			// (throttle/network) must NOT fall through to removing the
 			// finalizer — that would leak the CCE cluster forever.
@@ -607,10 +613,14 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 				return resultAfterErrorForDelete(client.ObjectKeyFromObject(cp), errors.Wrap(err, "failed to check CCE cluster before deletion"))
 			}
 		} else {
-			// Request deletion once; afterwards only poll ShowCluster. Re-issuing
-			// DeleteCluster on every 30s poll added redundant writes per minute
-			// while the cluster was still deleting.
-			if _, requested := cp.Annotations[controlPlaneDeletePollAnnotation]; !requested {
+			// Request deletion once per deletion attempt: the poll annotation
+			// only suppresses re-issuing while the cluster is genuinely in the
+			// Deleting phase. If the async delete failed, or the cluster fell back
+			// to a non-deleting phase, an annotation-only gate would suppress the
+			// retry forever — stranding the finalizer and keeping the CCE cluster
+			// (and its nodes) billed with no self-healing path.
+			requested := info.Phase == "Deleting" && cp.Annotations[controlPlaneDeletePollAnnotation] != ""
+			if !requested {
 				// Delete with explicit options to avoid leftovers (official
 				// defaults leave EVS/storage behind — questionnaire Q8).
 				if err := svc.DeleteCluster(ctx, cceService.DeleteClusterInput{

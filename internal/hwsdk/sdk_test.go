@@ -99,7 +99,7 @@ func TestDeleteNatGatewayOrderedDeletesSnatRulesFirst(t *testing.T) {
 
 	rulesErr, gatewayErr := DeleteNatGatewayOrdered(
 		func() error {
-			_, ruleErr, _ := DeleteSnatRules(nat, "gw-1")
+			_, _, ruleErr := DeleteSnatRules(nat, "gw-1")
 			return ruleErr
 		},
 		func() error { return DeleteNatGateway(nat, "gw-1") },

@@ -786,7 +786,7 @@ func (s *Client) ListNatGateways(ctx context.Context) ([]NatGatewayRef, error) {
 func (s *Client) DeleteNatGateway(ctx context.Context, gatewayID string) error {
 	rulesErr, gatewayErr := hwsdk.DeleteNatGatewayOrdered(
 		func() error {
-			listErr, ruleErr, ruleID := hwsdk.DeleteSnatRules(s.nat, gatewayID)
+			ruleID, listErr, ruleErr := hwsdk.DeleteSnatRules(s.nat, gatewayID)
 			if listErr != nil {
 				return errors.Wrap(listErr, "ListNatGatewaySnatRules failed")
 			}
@@ -1251,7 +1251,8 @@ func (s *Client) updateNodePoolTags(_ context.Context, clusterID, nodePoolID, cl
 // the pool actually drifted. The desired set is declarative — a tag removed
 // from the spec is dropped from the pool (and, with the refresh policy, from
 // existing nodes), matching what the upstream reference provider does for its
-// managed node groups. Returns true when an update was issued.
+// managed node groups. Returns true when an update was issued, and
+// (false, nil) when the pool is absent — absence is the caller's concern.
 func (s *Client) ReconcileNodePoolTags(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string) (bool, error) {
 	pools, err := s.ListNodePools(ctx, clusterID)
 	if err != nil {
@@ -1275,7 +1276,10 @@ func (s *Client) ReconcileNodePoolTags(ctx context.Context, clusterID, nodePoolI
 		}
 		return true, nil
 	}
-	return false, errors.Errorf("node pool %s not found in cluster %s", nodePoolID, clusterID)
+	// A pool missing from the list is not an error: the caller's own
+	// existence check (and recreate path) handles a pool deleted out of
+	// band. Returning an error here would abort the reconcile before it.
+	return false, nil
 }
 
 // tagsEqual reports whether two tag sets carry exactly the same keys and values.

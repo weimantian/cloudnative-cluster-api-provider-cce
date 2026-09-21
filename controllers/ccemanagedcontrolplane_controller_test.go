@@ -1316,11 +1316,14 @@ func TestToCreateClusterInputDataPlaneV2(t *testing.T) {
 	}
 }
 
-// TestControlPlaneReconcileDeleteReissuesOnce covers B11: the delete path issues
-// DeleteCluster exactly once, then polls ShowCluster only, while bumping the
-// keep-alive annotation so the next reconcile is driven by the watch even if the
-// delayed requeue is coalesced away.
-func TestControlPlaneReconcileDeleteReissuesOnce(t *testing.T) {
+// TestControlPlaneReconcileDeleteReissuesOnlyWhileDeleting covers B11 + H3:
+// the delete path issues DeleteCluster once, then polls ShowCluster while the
+// platform reports the cluster as Deleting (the keep-alive annotation makes the
+// watch re-drive the reconcile even if the delayed requeue is coalesced away).
+// If the cluster is not in the Deleting phase — the async delete failed or the
+// cluster fell back — the request is re-issued instead of being suppressed
+// forever by the annotation.
+func TestControlPlaneReconcileDeleteReissuesOnlyWhileDeleting(t *testing.T) {
 	ctx := context.Background()
 	ns := "cp-test-delete-once"
 	createNamespace(t, ns)
@@ -1330,6 +1333,17 @@ func TestControlPlaneReconcileDeleteReissuesOnce(t *testing.T) {
 	markInfrastructureProvisioned(t, cluster)
 
 	fakeSvc := fakes.NewFakeCCEService()
+	// Model the real platform: the phase only becomes Deleting once
+	// DeleteCluster has been accepted (and can fall back afterwards).
+	phase := "Available"
+	fakeSvc.ShowClusterFn = func(_ context.Context, clusterID string) (*cceService.ClusterInfo, error) {
+		return &cceService.ClusterInfo{
+			ClusterID: clusterID,
+			Phase:     phase,
+			Version:   "v1.30.0",
+			Endpoints: []cceService.Endpoint{{URL: "https://10.0.0.10:5443", Type: "Internal"}},
+		}, nil
+	}
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
 		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
@@ -1367,14 +1381,25 @@ func TestControlPlaneReconcileDeleteReissuesOnce(t *testing.T) {
 	if got.Annotations[controlPlaneDeletePollAnnotation] == "" {
 		t.Fatal("expected the keep-alive delete poll annotation to be stamped")
 	}
-
-	// Second delete reconcile (cluster still Available -> still deleting): the
-	// delete request must not be re-issued.
+	// The platform now reports Deleting: the delete request must not be
+	// re-issued while the deletion is genuinely in progress.
+	phase = "Deleting"
 	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
 		t.Fatalf("second delete reconcile failed: %v", err)
 	}
 	if len(fakeSvc.DeletedClusters) != 1 {
-		t.Errorf("DeleteCluster must not be re-issued while deleting, got %d calls", len(fakeSvc.DeletedClusters))
+		t.Errorf("DeleteCluster must not be re-issued while Deleting, got %d calls", len(fakeSvc.DeletedClusters))
+	}
+
+	// H3: the cluster falls back to a non-deleting phase (async delete failed).
+	// The annotation alone must not suppress the retry forever, or the
+	// finalizer is stranded and the CCE cluster keeps billing.
+	phase = "Available"
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("third delete reconcile failed: %v", err)
+	}
+	if len(fakeSvc.DeletedClusters) != 2 {
+		t.Errorf("DeleteCluster must be re-issued once the phase leaves Deleting, got %d calls", len(fakeSvc.DeletedClusters))
 	}
 }
 
@@ -1396,15 +1421,15 @@ func TestControlPlaneReconcilePostAvailableThrottleBacksOff(t *testing.T) {
 	defer resetBackoff(key)
 
 	// Pre-seed an already-provisioned, steady-state status so this reconcile
-	// exercises the post-Available path: no create, and the observed-generation
-	// requeue does not override the tuned backoff.
+	// exercises the post-Available path (no create). observedGeneration is
+	// deliberately left behind generation: H2 — the observed-generation requeue
+	// must not override the tuned throttle backoff.
 	seed := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, key, seed); err != nil {
 		t.Fatalf("failed to get control plane: %v", err)
 	}
 	seed.Status.ClusterID = "cluster-1"
 	seed.Status.ControlPlaneEndpoint = &clusterv1.APIEndpoint{Host: "10.0.0.10", Port: 5443}
-	seed.Status.ObservedGeneration = seed.Generation
 	if err := k8sClient.Status().Update(ctx, seed); err != nil {
 		t.Fatalf("failed to seed control plane status: %v", err)
 	}
