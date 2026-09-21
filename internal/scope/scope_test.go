@@ -253,15 +253,6 @@ func TestNewCCEClusterScope_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCCEClusterScope: %v", err)
 	}
-	if s.Name() != "cce1" || s.Namespace() != "ns1" {
-		t.Errorf("Name/Namespace: got %s/%s", s.Name(), s.Namespace())
-	}
-	if s.ControllerName() != "ccecluster" {
-		t.Errorf("ControllerName: %s", s.ControllerName())
-	}
-	if s.InfraClusterName() != "c1" {
-		t.Errorf("InfraClusterName: %s", s.InfraClusterName())
-	}
 	if err := s.Close(context.Background()); err != nil {
 		t.Errorf("Close: %v", err)
 	}
@@ -275,9 +266,6 @@ func TestNewCCMScope_HappyPath(t *testing.T) {
 	if err != nil {
 		t.Fatalf("NewCCMScope: %v", err)
 	}
-	if s.Name() != "cp1" {
-		t.Errorf("Name: %s", s.Name())
-	}
 	if err := s.Close(context.Background()); err != nil {
 		t.Errorf("Close: %v", err)
 	}
@@ -290,9 +278,6 @@ func TestNewCMPScope_HappyPath(t *testing.T) {
 	})
 	if err != nil {
 		t.Fatalf("NewCMPScope: %v", err)
-	}
-	if s.Name() != "mp1" {
-		t.Errorf("Name: %s", s.Name())
 	}
 	if err := s.Close(context.Background()); err != nil {
 		t.Errorf("Close: %v", err)

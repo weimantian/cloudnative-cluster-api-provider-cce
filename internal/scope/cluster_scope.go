@@ -9,13 +9,10 @@ package scope
 import (
 	"context"
 
-	"github.com/go-logr/logr"
-
 	"github.com/pkg/errors"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
@@ -29,16 +26,12 @@ type CCEClusterScopeParams struct {
 }
 
 // CCEClusterScope is the per-reconcile context for the CCECluster controller.
-// Holds logger + client + patchHelper + CR references + ControllerName,
-// CR references + ControllerName, exposes PatchObject()/Close() for the
-// controller's defer to call.
+// Holds the patchHelper + CR references and exposes PatchObject()/Close() for
+// the controller's defer to call.
 type CCEClusterScope struct {
-	log            logr.Logger
-	client         client.Client
-	patchHelper    *patch.Helper
-	Cluster        *clusterv1.Cluster
-	CCECluster     *infrav1beta2.CCECluster
-	controllerName string
+	patchHelper *patch.Helper
+	Cluster     *clusterv1.Cluster
+	CCECluster  *infrav1beta2.CCECluster
 }
 
 // NewCCEClusterScope builds a new scope for one reconcile iteration.
@@ -62,32 +55,11 @@ func NewCCEClusterScope(params CCEClusterScopeParams) (*CCEClusterScope, error) 
 	}
 
 	return &CCEClusterScope{
-		log:            logf.Log.WithName(params.ControllerName),
-		client:         params.Client,
-		patchHelper:    helper,
-		Cluster:        params.Cluster,
-		CCECluster:     params.CCECluster,
-		controllerName: params.ControllerName,
+		patchHelper: helper,
+		Cluster:     params.Cluster,
+		CCECluster:  params.CCECluster,
 	}, nil
 }
-
-// Client returns the controller-runtime client.
-func (s *CCEClusterScope) Client() client.Client { return s.client }
-
-// Logger returns the per-scope logger.
-func (s *CCEClusterScope) Logger() logr.Logger { return s.log }
-
-// Name returns the CCECluster name.
-func (s *CCEClusterScope) Name() string { return s.CCECluster.Name }
-
-// Namespace returns the CCECluster namespace.
-func (s *CCEClusterScope) Namespace() string { return s.CCECluster.Namespace }
-
-// ControllerName returns the controller name (used as cache key prefix).
-func (s *CCEClusterScope) ControllerName() string { return s.controllerName }
-
-// InfraClusterName returns the CAPI Cluster name (the parent).
-func (s *CCEClusterScope) InfraClusterName() string { return s.Cluster.Name }
 
 // PatchObject persists the CCECluster (spec + status).
 // start of reconcile (so the controller can compare against GenerationAtStart

@@ -35,6 +35,7 @@ import (
 	"sync"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/hwsdk"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
 )
@@ -663,8 +664,7 @@ func (s *Client) ListEips(ctx context.Context) ([]EipRef, error) {
 
 // DeleteEip implements Service.
 func (s *Client) DeleteEip(ctx context.Context, eipID string) error {
-	_, err := s.eip.DeletePublicip(&eipmodel.DeletePublicipRequest{PublicipId: eipID})
-	if err != nil && !clouderrors.IsNotFound(err) {
+	if err := hwsdk.DeletePublicip(s.eip, eipID); err != nil && !clouderrors.IsNotFound(err) {
 		return errors.Wrapf(err, "DeletePublicip %s failed", eipID)
 	}
 	return nil
@@ -738,8 +738,7 @@ func (s *Client) ListVpcs(ctx context.Context) ([]VpcRef, error) {
 
 // DeleteVpc implements Service.
 func (s *Client) DeleteVpc(ctx context.Context, vpcID string) error {
-	_, err := s.vpc.DeleteVpc(&vpcmodel.DeleteVpcRequest{VpcId: vpcID})
-	if err != nil && !clouderrors.IsNotFound(err) {
+	if err := hwsdk.DeleteVpc(s.vpc, vpcID); err != nil && !clouderrors.IsNotFound(err) {
 		return errors.Wrapf(err, "DeleteVpc %s failed", vpcID)
 	}
 	return nil
@@ -785,26 +784,29 @@ func (s *Client) ListNatGateways(ctx context.Context) ([]NatGatewayRef, error) {
 // DeleteNatGateway implements Service: SNAT rules first, then the gateway
 // (the platform rejects deleting a gateway that still has SNAT rules).
 func (s *Client) DeleteNatGateway(ctx context.Context, gatewayID string) error {
-	ids := []string{gatewayID}
-	rules, err := s.nat.ListNatGatewaySnatRules(&natmodel.ListNatGatewaySnatRulesRequest{NatGatewayId: &ids})
-	if err != nil && !clouderrors.IsNotFound(err) {
-		return errors.Wrap(err, "ListNatGatewaySnatRules failed")
-	}
-	if err == nil && rules.SnatRules != nil {
-		for _, r := range *rules.SnatRules {
-			if _, derr := s.nat.DeleteNatGatewaySnatRule(&natmodel.DeleteNatGatewaySnatRuleRequest{
-				NatGatewayId: gatewayID,
-				SnatRuleId:   r.Id,
-			}); derr != nil && !clouderrors.IsNotFound(derr) {
-				return errors.Wrapf(derr, "DeleteNatGatewaySnatRule %s failed", r.Id)
+	rulesErr, gatewayErr := hwsdk.DeleteNatGatewayOrdered(
+		func() error {
+			listErr, ruleErr, ruleID := hwsdk.DeleteSnatRules(s.nat, gatewayID)
+			if listErr != nil {
+				return errors.Wrap(listErr, "ListNatGatewaySnatRules failed")
 			}
-		}
+			if ruleErr != nil {
+				return errors.Wrapf(ruleErr, "DeleteNatGatewaySnatRule %s failed", ruleID)
+			}
+			return nil
+		},
+		func() error {
+			if err := hwsdk.DeleteNatGateway(s.nat, gatewayID); err != nil && !clouderrors.IsNotFound(err) {
+				return errors.Wrapf(err, "DeleteNatGateway %s failed", gatewayID)
+			}
+			return nil
+		},
+		true,
+	)
+	if rulesErr != nil {
+		return rulesErr
 	}
-	_, err = s.nat.DeleteNatGateway(&natmodel.DeleteNatGatewayRequest{NatGatewayId: gatewayID})
-	if err != nil && !clouderrors.IsNotFound(err) {
-		return errors.Wrapf(err, "DeleteNatGateway %s failed", gatewayID)
-	}
-	return nil
+	return gatewayErr
 }
 
 // parseKVTags converts EIP "k=v" tag strings into a map.

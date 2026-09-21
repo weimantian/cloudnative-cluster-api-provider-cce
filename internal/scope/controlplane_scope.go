@@ -9,12 +9,10 @@ package scope
 import (
 	"context"
 
-	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 )
@@ -31,12 +29,9 @@ type CCEManagedControlPlaneScopeParams struct {
 // CCEManagedControlPlane controller. Carries the WithStatusObservedGeneration
 // patch option to write status.observedGeneration atomically.
 type CCEManagedControlPlaneScope struct {
-	log                    logr.Logger
-	client                 client.Client
 	patchHelper            *patch.Helper
 	Cluster                *clusterv1.Cluster
 	CCEManagedControlPlane *controlplanev1beta2.CCEManagedControlPlane
-	controllerName         string
 	// observedGenerationAtStart is captured at scope build time so the
 	// controller can detect spec changes that arrived after the Get and
 	// were coalesced into the in-flight work-queue entry.
@@ -64,33 +59,12 @@ func NewCCEManagedControlPlaneScope(params CCEManagedControlPlaneScopeParams) (*
 	}
 
 	return &CCEManagedControlPlaneScope{
-		log:                       logf.Log.WithName(params.ControllerName),
-		client:                    params.Client,
 		patchHelper:               helper,
 		Cluster:                   params.Cluster,
 		CCEManagedControlPlane:    params.CCEManagedControlPlane,
-		controllerName:            params.ControllerName,
 		observedGenerationAtStart: params.CCEManagedControlPlane.Status.ObservedGeneration,
 	}, nil
 }
-
-// Client returns the controller-runtime client.
-func (s *CCEManagedControlPlaneScope) Client() client.Client { return s.client }
-
-// Logger returns the per-scope logger.
-func (s *CCEManagedControlPlaneScope) Logger() logr.Logger { return s.log }
-
-// Name returns the control plane name.
-func (s *CCEManagedControlPlaneScope) Name() string { return s.CCEManagedControlPlane.Name }
-
-// Namespace returns the control plane namespace.
-func (s *CCEManagedControlPlaneScope) Namespace() string { return s.CCEManagedControlPlane.Namespace }
-
-// ControllerName returns the controller name.
-func (s *CCEManagedControlPlaneScope) ControllerName() string { return s.controllerName }
-
-// InfraClusterName returns the CAPI Cluster name.
-func (s *CCEManagedControlPlaneScope) InfraClusterName() string { return s.Cluster.Name }
 
 // GenerationAtStart returns the spec.generation observed at scope build.
 func (s *CCEManagedControlPlaneScope) GenerationAtStart() int64 {

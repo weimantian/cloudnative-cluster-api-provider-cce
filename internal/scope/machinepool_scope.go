@@ -9,12 +9,10 @@ package scope
 import (
 	"context"
 
-	"github.com/go-logr/logr"
 	"github.com/pkg/errors"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util/patch"
 	"sigs.k8s.io/controller-runtime/pkg/client"
-	logf "sigs.k8s.io/controller-runtime/pkg/log"
 
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
@@ -31,12 +29,9 @@ type CCEManagedMachinePoolScopeParams struct {
 // CCEManagedMachinePool controller, carrying the
 // WithStatusObservedGeneration patch option.
 type CCEManagedMachinePoolScope struct {
-	log                       logr.Logger
-	client                    client.Client
 	patchHelper               *patch.Helper
 	Cluster                   *clusterv1.Cluster
 	CCEManagedMachinePool     *infrav1beta2.CCEManagedMachinePool
-	controllerName            string
 	observedGenerationAtStart int64
 }
 
@@ -61,33 +56,12 @@ func NewCCEManagedMachinePoolScope(params CCEManagedMachinePoolScopeParams) (*CC
 	}
 
 	return &CCEManagedMachinePoolScope{
-		log:                       logf.Log.WithName(params.ControllerName),
-		client:                    params.Client,
 		patchHelper:               helper,
 		Cluster:                   params.Cluster,
 		CCEManagedMachinePool:     params.CCEManagedMachinePool,
-		controllerName:            params.ControllerName,
 		observedGenerationAtStart: params.CCEManagedMachinePool.Status.ObservedGeneration,
 	}, nil
 }
-
-// Client returns the controller-runtime client.
-func (s *CCEManagedMachinePoolScope) Client() client.Client { return s.client }
-
-// Logger returns the per-scope logger.
-func (s *CCEManagedMachinePoolScope) Logger() logr.Logger { return s.log }
-
-// Name returns the machine pool name.
-func (s *CCEManagedMachinePoolScope) Name() string { return s.CCEManagedMachinePool.Name }
-
-// Namespace returns the machine pool namespace.
-func (s *CCEManagedMachinePoolScope) Namespace() string { return s.CCEManagedMachinePool.Namespace }
-
-// ControllerName returns the controller name.
-func (s *CCEManagedMachinePoolScope) ControllerName() string { return s.controllerName }
-
-// InfraClusterName returns the CAPI Cluster name.
-func (s *CCEManagedMachinePoolScope) InfraClusterName() string { return s.Cluster.Name }
 
 // GenerationAtStart returns the spec.generation observed at scope build.
 func (s *CCEManagedMachinePoolScope) GenerationAtStart() int64 {

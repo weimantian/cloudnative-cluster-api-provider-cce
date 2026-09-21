@@ -28,6 +28,7 @@ import (
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/hwsdk"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/wait"
 )
@@ -337,11 +338,16 @@ func (m *Manager) DeleteNetwork(ctx context.Context, spec *common.NetworkSpec, c
 			}
 		}
 		if gwID != "" {
-			if err := m.deleteSnatRules(ctx, gwID); err != nil {
-				errs = append(errs, errors.Wrap(err, "delete SNAT rules"))
+			rulesErr, gatewayErr := hwsdk.DeleteNatGatewayOrdered(
+				func() error { return m.deleteSnatRules(ctx, gwID) },
+				func() error { return m.deleteNatGateway(ctx, gwID) },
+				false,
+			)
+			if rulesErr != nil {
+				errs = append(errs, errors.Wrap(rulesErr, "delete SNAT rules"))
 			}
-			if err := m.deleteNatGateway(ctx, gwID); err != nil {
-				errs = append(errs, errors.Wrapf(err, "delete NAT gateway %s", gwID))
+			if gatewayErr != nil {
+				errs = append(errs, errors.Wrapf(gatewayErr, "delete NAT gateway %s", gwID))
 			}
 		}
 		if eipID != "" {
@@ -533,7 +539,7 @@ func (m *Manager) ensureSnatRules(ctx context.Context, spec *common.NetworkSpec,
 	rules := m.listSnatRules(ctx, ng.ResourceID)
 	existing := map[string]bool{}
 	for _, r := range rules {
-		existing[r.NetworkId] = true
+		existing[r.NetworkID] = true
 	}
 	for i := range spec.Subnets {
 		s := &spec.Subnets[i]
@@ -735,31 +741,20 @@ func (m *Manager) findNatGateway(ctx context.Context, name string) (*string, err
 	return nil, nil
 }
 
-type snatRule struct {
-	ID           string
-	NetworkId    string
-	FloatingIpID string
-}
-
-func (m *Manager) listSnatRules(ctx context.Context, gatewayID string) []snatRule {
-	ids := []string{gatewayID}
-	resp, err := m.nat.ListNatGatewaySnatRules(&natmodel.ListNatGatewaySnatRulesRequest{NatGatewayId: &ids})
-	if err != nil || resp.SnatRules == nil {
+func (m *Manager) listSnatRules(ctx context.Context, gatewayID string) []hwsdk.SnatRule {
+	rules, err := hwsdk.ListSnatRules(m.nat, gatewayID)
+	if err != nil {
 		return nil
 	}
-	var out []snatRule
-	for _, r := range *resp.SnatRules {
-		out = append(out, snatRule{ID: r.Id, NetworkId: r.NetworkId, FloatingIpID: r.FloatingIpId})
-	}
-	return out
+	return rules
 }
 
 // findEipBySnatRules extracts the EIP ID bound to the gateway's first SNAT
 // rule (used to re-adopt an EIP whose ID was lost).
 func (m *Manager) findEipBySnatRules(ctx context.Context, gatewayID string) string {
 	for _, r := range m.listSnatRules(ctx, gatewayID) {
-		if r.FloatingIpID != "" {
-			return r.FloatingIpID
+		if r.FloatingIPID != "" {
+			return r.FloatingIPID
 		}
 	}
 	return ""
@@ -857,15 +852,10 @@ func (m *Manager) waitNatGatewayActive(ctx context.Context, gatewayID string) er
 // ---- delete helpers (NotFound-tolerant, aggregated by the caller) ----
 
 func (m *Manager) deleteSnatRules(ctx context.Context, gatewayID string) error {
-	for _, r := range m.listSnatRules(ctx, gatewayID) {
-		if _, err := m.nat.DeleteNatGatewaySnatRule(&natmodel.DeleteNatGatewaySnatRuleRequest{
-			NatGatewayId: gatewayID,
-			SnatRuleId:   r.ID,
-		}); err != nil && !clouderrors.IsNotFound(err) {
-			return err
-		}
-	}
-	return nil
+	// A rule-list failure is ignored here (teardown is best-effort); a rule
+	// deletion failure is returned for the caller to aggregate.
+	_, ruleErr, _ := hwsdk.DeleteSnatRules(m.nat, gatewayID)
+	return ruleErr
 }
 
 func (m *Manager) deleteNatGateway(ctx context.Context, gatewayID string) error {
@@ -875,11 +865,10 @@ func (m *Manager) deleteNatGateway(ctx context.Context, gatewayID string) error 
 		}
 		return err
 	}
-	_, err := m.nat.DeleteNatGateway(&natmodel.DeleteNatGatewayRequest{NatGatewayId: gatewayID})
-	if err != nil && clouderrors.IsNotFound(err) {
-		return nil
+	if err := hwsdk.DeleteNatGateway(m.nat, gatewayID); err != nil && !clouderrors.IsNotFound(err) {
+		return err
 	}
-	return err
+	return nil
 }
 
 func (m *Manager) deleteEip(ctx context.Context, eipID string) error {
@@ -889,11 +878,10 @@ func (m *Manager) deleteEip(ctx context.Context, eipID string) error {
 		}
 		return err
 	}
-	_, err := m.eip.DeletePublicip(&eipmodel.DeletePublicipRequest{PublicipId: eipID})
-	if err != nil && clouderrors.IsNotFound(err) {
-		return nil
+	if err := hwsdk.DeletePublicip(m.eip, eipID); err != nil && !clouderrors.IsNotFound(err) {
+		return err
 	}
-	return err
+	return nil
 }
 
 // deleteSecurityGroup removes the managed node security group. Custom rules
@@ -939,11 +927,10 @@ func (m *Manager) deleteVpc(ctx context.Context, vpcID string) error {
 		}
 		return err
 	}
-	_, err := m.vpc.DeleteVpc(&vpcmodel.DeleteVpcRequest{VpcId: vpcID})
-	if err != nil && clouderrors.IsNotFound(err) {
-		return nil
+	if err := hwsdk.DeleteVpc(m.vpc, vpcID); err != nil && !clouderrors.IsNotFound(err) {
+		return err
 	}
-	return err
+	return nil
 }
 
 // ---- pure helpers ----
