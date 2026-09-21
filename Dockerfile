@@ -2,6 +2,10 @@
 FROM golang:1.26 AS builder
 ARG TARGETOS
 ARG TARGETARCH
+# GOPROXY override so module download works behind restrictive networks
+# (e.g. goproxy.cn in China); defaults to a mirror that is reachable there.
+ARG GOPROXY=https://goproxy.cn,direct
+ENV GOPROXY=${GOPROXY}
 
 WORKDIR /workspace
 # Copy the Go Modules manifests and download dependencies first
