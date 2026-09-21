@@ -657,6 +657,12 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 		secret := &corev1.Secret{}
 		key := types.NamespacedName{Namespace: cp.Namespace, Name: name}
 		if err := r.Get(ctx, key, secret); err == nil {
+			// Delete only a Secret this control plane actually owns (the create
+			// path sets the controller reference). A same-named Secret created by
+			// another owner must not be removed.
+			if !metav1.IsControlledBy(secret, cp) && secret.Labels[clusterv1.ClusterNameLabel] != cluster.Name {
+				continue
+			}
 			if err := r.Delete(ctx, secret); err != nil && !apierrors.IsNotFound(err) {
 				return ctrl.Result{}, err
 			}

@@ -134,9 +134,19 @@ func (g *GarbageCollector) sweep(ctx context.Context) {
 		log.Error(err, "garbage collector: failed to list Cluster CRs")
 		return
 	}
+	// Keyed by Cluster name: the provider owned tag records only the CCE
+	// cluster name (the control plane enforces clusterName == Cluster name),
+	// not a namespace, so two same-name Clusters in different namespaces are
+	// indistinguishable here. That is deliberately fail-safe — any same-name
+	// Cluster keeps the cloud cluster alive, at the cost of possibly not
+	// collecting a genuine orphan; log the ambiguity so it is diagnosable.
 	wanted := make(map[string]*clusterv1.Cluster, len(list.Items))
 	for i := range list.Items {
 		c := &list.Items[i]
+		if prev, ok := wanted[c.Name]; ok && prev.Namespace != c.Namespace {
+			log.Info("garbage collector: Cluster name is ambiguous across namespaces, keeping the cloud cluster",
+				"name", c.Name, "namespaces", []string{prev.Namespace, c.Namespace})
+		}
 		wanted[c.Name] = c
 	}
 

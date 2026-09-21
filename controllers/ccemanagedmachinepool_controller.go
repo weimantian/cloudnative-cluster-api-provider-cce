@@ -94,6 +94,18 @@ func (r *CCEManagedMachinePoolReconciler) newCCEService(regionID string, creds *
 func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
 
+	// A tuned backoff result (throttle/quota/permission) is returned with a nil
+	// error so controller-runtime does not override the delay; it increments
+	// the failure counter, which must not be mistaken for a clean reconcile.
+	// Any reconcile that completes without an error and without such a backoff
+	// resets the counter (mirrors the control-plane reconciler).
+	failuresBefore := errorBackoff.failures(req.NamespacedName)
+	defer func() {
+		if reterr == nil && errorBackoff.failures(req.NamespacedName) == failuresBefore {
+			resetBackoff(req.NamespacedName)
+		}
+	}()
+
 	pool := &infrav1beta2.CCEManagedMachinePool{}
 	if err := r.Get(ctx, req.NamespacedName, pool); err != nil {
 		if apierrors.IsNotFound(err) {
@@ -140,11 +152,19 @@ func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctr
 
 	res, err = r.reconcileNormal(ctx, cluster, pool)
 	if err != nil {
-		return res, err
+		// Classified platform errors (throttle/quota/permission) become a tuned
+		// delayed requeue with no error so controller-runtime's millisecond
+		// backoff cannot hammer the CCE write API; everything else passes
+		// through unchanged.
+		return resultAfterError(req.NamespacedName, err)
 	}
 
-	// Requeue when observed generation is behind current.
-	if scope.ObservedGenerationAtStart() < scope.GenerationAtStart() {
+	// Requeue when observed generation is behind current, unless this pass
+	// already produced a tuned backoff (shortening it would put the next
+	// attempt straight back into the rate-limit window).
+	classifiedBackoff := errorBackoff.failures(req.NamespacedName) != failuresBefore ||
+		res.RequeueAfter == permissionBackoff
+	if !classifiedBackoff && scope.ObservedGenerationAtStart() < scope.GenerationAtStart() {
 		log.Info("Observed generation behind current generation, requeueing",
 			"observedGeneration", scope.ObservedGenerationAtStart(),
 			"generation", scope.GenerationAtStart())
