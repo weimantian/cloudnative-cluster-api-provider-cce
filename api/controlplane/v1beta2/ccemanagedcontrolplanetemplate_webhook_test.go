@@ -54,6 +54,31 @@ func TestCCEManagedControlPlaneTemplateDefault(t *testing.T) {
 	}
 }
 
+// TestCCEManagedControlPlaneTemplateDefaultVpcRouter verifies a template that
+// selects the Standard network model (vpc-router) without setting category is
+// defaulted to CCE (not Turbo) and passes validation — the ClusterClass path
+// that was previously forced to Turbo and rejected.
+func TestCCEManagedControlPlaneTemplateDefaultVpcRouter(t *testing.T) {
+	tmpl := &CCEManagedControlPlaneTemplate{
+		ObjectMeta: metav1.ObjectMeta{Name: "tmpl"},
+		Spec: CCEManagedControlPlaneTemplateSpec{Template: CCEManagedControlPlaneTemplateResource{
+			Spec: CCEManagedControlPlaneSpec{
+				ContainerNetwork: ContainerNetworkSpec{Mode: "vpc-router"},
+				EndpointAccess:   EndpointAccessSpec{Private: true},
+			},
+		}},
+	}
+	if err := tmpl.Default(context.TODO(), tmpl); err != nil {
+		t.Fatalf("Default returned error: %v", err)
+	}
+	if got := tmpl.Spec.Template.Spec.Category; got != "CCE" {
+		t.Errorf("expected vpc-router template to default category CCE, got %q", got)
+	}
+	if err := tmpl.validate(); err != nil {
+		t.Errorf("expected vpc-router template to validate, got %v", err)
+	}
+}
+
 // TestCCEManagedControlPlaneTemplateValidateCIDRAndSemver covers the two new
 // validations added in P1-#5: ContainerNetwork.CIDR format and Version
 // semver format. k8s ParseSemantic only accepts full vMAJOR.MINOR.PATCH forms

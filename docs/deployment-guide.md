@@ -318,7 +318,7 @@ kubectl apply -f my-cluster.yaml
 > ⚠️ ② **节点池 AZ 创建后不可变**：AZ/flavor 填错必须删池重建（delete machinepool + ccemanagedmachinepool → 改 yaml → apply），不能只 patch。
 > ⚠️ ③ 所有 `VERIFY-*` 都要替换（10 个），替换后 `grep VERIFY my-cluster.yaml` 应无输出；`VERIFY-AZ` 最后替换（先 AZ2/AZ7）。
 > ⚠️ ④ **容量只增不减**：集群规格 `flavor` 不支持降级（webhook 会拒绝降级变更），容器网段 `containerNetwork.cidr`/`mode` 创建后不可变（只能追加 `cidrs` 扩容）——建集群前请按峰值容量规划。
-> ⚠️ ⑤（可选）**NetworkPolicy（DataPlane V2）**：CCE Turbo 集群默认**没有** NetworkPolicy 能力；如需开启，创建时给 `CCEManagedControlPlane.spec` 加 `enableDataPlaneV2: true`（**仅 eni/Turbo 支持、仅新建可开、开启后不可关**，webhook 拦截后续变更）。开启后可用 K8s `NetworkPolicy`（L3/L4）与 `CiliumNetworkPolicy`（L7 仅 Standard-VPC 模型支持）；可用 `kubectl -n kube-system get ds yangtse-cilium` 确认数据面已就绪。
+> ⚠️ ⑤（可选）**NetworkPolicy（DataPlane V2）**：Turbo（eni）集群默认**没有** NetworkPolicy 能力；Standard（vpc-router）集群如需 eBPF Service/NetworkPolicy 也用同一开关。创建时给 `CCEManagedControlPlane.spec` 加 `enableDataPlaneV2: true`（**仅新建可开、开启后不可关**，webhook 拦截后续变更）。版本门槛（不满足时平台**静默忽略**该参数）：Standard `v1.25.16-r30`/`v1.27.16-r30`/`v1.28.15-r20`/`v1.29.10-r14`/`v1.30.6-r14` 或 ≥ `v1.31.4-r4`；Turbo `v1.27.16-r10`/`v1.28.15-r0`/`v1.29.10-r0`/`v1.30.6-r0` 或 ≥ `v1.34.3-r10`。开启后：K8s `NetworkPolicy`（L3/L4）+ `CiliumNetworkPolicy`（L7 仅 Standard-VPC）；节点镜像限 HCE 2.0 / Ubuntu 22.04 / Ubuntu 24.04；1.34+ 节点不再安装 kube-proxy；每节点部署 cilium-agent（约 80 MiB + 每 Pod 约 10 KiB）。确认：`kubectl -n kube-system get ds yangtse-cilium`。
 
 **步骤 9：验证 + 扩缩容**
 

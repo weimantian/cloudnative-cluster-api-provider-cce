@@ -46,23 +46,31 @@ var _ admission.Defaulter[*CCEManagedControlPlane] = &CCEManagedControlPlane{}
 
 // Default implements admission.Defaulter.
 func (c *CCEManagedControlPlane) Default(_ context.Context, obj *CCEManagedControlPlane) error {
-	// Category must follow the network mode: vpc-router = Standard (CCE),
-	// eni = Turbo. Defaulting to Turbo regardless of mode produced a
-	// CCE_CM.0004 type/network-mode mismatch (mode=vpc-router + Turbo).
-	if obj.Spec.Category == "" {
-		if obj.Spec.ContainerNetwork.Mode == "eni" {
-			obj.Spec.Category = "Turbo"
+	applyControlPlaneDefaults(&obj.Spec)
+	return nil
+}
+
+// applyControlPlaneDefaults fills the spec defaults shared by the
+// CCEManagedControlPlane and its ClusterClass template, so the two admission
+// paths cannot diverge. Mode is resolved before Category because Category
+// follows the network mode: eni = Turbo, vpc-router/overlay_l2 = Standard
+// (CCE). Defaulting Turbo regardless of mode produced a CCE_CM.0004
+// type/network-mode mismatch (mode=vpc-router + Turbo) and made Standard
+// clusters unusable through ClusterClass.
+func applyControlPlaneDefaults(spec *CCEManagedControlPlaneSpec) {
+	if spec.ContainerNetwork.Mode == "" {
+		spec.ContainerNetwork.Mode = "eni"
+	}
+	if spec.Category == "" {
+		if spec.ContainerNetwork.Mode == "eni" {
+			spec.Category = "Turbo"
 		} else {
-			obj.Spec.Category = "CCE"
+			spec.Category = "CCE"
 		}
 	}
-	if obj.Spec.ContainerNetwork.Mode == "" {
-		obj.Spec.ContainerNetwork.Mode = "eni"
+	if spec.Flavor == "" {
+		spec.Flavor = "cce.s1.small"
 	}
-	if obj.Spec.Flavor == "" {
-		obj.Spec.Flavor = "cce.s1.small"
-	}
-	return nil
 }
 
 var _ admission.Validator[*CCEManagedControlPlane] = &CCEManagedControlPlane{}
@@ -192,11 +200,14 @@ func (c *CCEManagedControlPlane) validate() error {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "containerNetwork", "eniSubnets"),
 			"eni mode requires at least one ENI subnet (official eniNetwork.subnets)"))
 	}
-	// DataPlane V2 is only exposed for the eni (Turbo) network model (its
-	// configuration item lives in the eni component group).
-	if ipv6Enabled(c.Spec.EnableDataPlaneV2) && c.Spec.ContainerNetwork.Mode != "eni" {
+	// DataPlane V2 is a configuration item of the eni component group in
+	// spec.configurationsOverride, and the platform supports it for both the
+	// eni (Turbo) and vpc-router (Standard) network models — the CCE console
+	// emits the same eni.dataplane-v2 override for either. The container
+	// tunnel model (overlay_l2) has no such switch.
+	if ipv6Enabled(c.Spec.EnableDataPlaneV2) && c.Spec.ContainerNetwork.Mode != "eni" && c.Spec.ContainerNetwork.Mode != "vpc-router" {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "enableDataPlaneV2"), "true",
-			"DataPlane V2 requires containerNetwork.mode=eni (Turbo)"))
+			"DataPlane V2 requires containerNetwork.mode=eni (Turbo) or vpc-router (Standard)"))
 	}
 	// Subscription billing (mode=1) requires periodType/periodNum which the
 	// CRD does not expose yet — reject it explicitly instead of letting the

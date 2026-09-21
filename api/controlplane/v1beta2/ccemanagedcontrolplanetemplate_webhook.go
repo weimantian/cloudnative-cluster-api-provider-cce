@@ -30,15 +30,7 @@ var _ admission.Defaulter[*CCEManagedControlPlaneTemplate] = &CCEManagedControlP
 
 // Default implements admission.Defaulter.
 func (t *CCEManagedControlPlaneTemplate) Default(_ context.Context, obj *CCEManagedControlPlaneTemplate) error {
-	if obj.Spec.Template.Spec.Category == "" {
-		obj.Spec.Template.Spec.Category = "Turbo"
-	}
-	if obj.Spec.Template.Spec.ContainerNetwork.Mode == "" {
-		obj.Spec.Template.Spec.ContainerNetwork.Mode = "eni"
-	}
-	if obj.Spec.Template.Spec.Flavor == "" {
-		obj.Spec.Template.Spec.Flavor = "cce.s1.small"
-	}
+	applyControlPlaneDefaults(&obj.Spec.Template.Spec)
 	return nil
 }
 

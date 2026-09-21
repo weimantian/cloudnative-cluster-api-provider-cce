@@ -202,7 +202,6 @@ spec:
                     type: integer
                 type: object
               category:
-                default: Turbo
                 description: 'Category of the CCE cluster: CCE (Standard) or Turbo.'
                 enum:
                 - CCE
@@ -276,11 +275,19 @@ spec:
               enableDataPlaneV2:
                 description: |-
                   EnableDataPlaneV2 turns on the CCE DataPlane V2 (eBPF/Cilium) data plane,
-                  which provides Service and NetworkPolicy capabilities. A CCE cluster on
-                  the eni (Turbo) network model has no NetworkPolicy support until this is
-                  enabled. The platform only allows enabling it at cluster creation (it
-                  cannot be disabled and existing clusters cannot opt in), so the webhook
-                  enforces immutability; it requires containerNetwork.mode=eni.
+                  which provides Service ClusterIP, NetworkPolicy and Bandwidth via eBPF.
+                  Maps to spec.configurationsOverride[{name:"eni",configurations:[{name:
+                  "dataplane-v2",value:true}]}] and the platform supports it for both the
+                  eni (Turbo) and vpc-router (Standard, VirtualMachine) network models —
+                  the CCE console emits the same eni.dataplane-v2 override for either. The
+                  platform only allows enabling it at cluster creation (it cannot be
+                  disabled and existing clusters cannot opt in), so the webhook enforces
+                  immutability. The platform silently ignores the override when the
+                  cluster version does not offer the switch (Standard: v1.25.16-r30 /
+                  v1.27.16-r30 / v1.28.15-r20 / v1.29.10-r14 / v1.30.6-r14 or
+                  >= v1.31.4-r4; Turbo: v1.27.16-r10 / v1.28.15-r0 / v1.29.10-r0 /
+                  v1.30.6-r0 or >= v1.34.3-r10), and node images are then limited to
+                  HCE 2.0 / Ubuntu 22.04 / Ubuntu 24.04.
                 type: boolean
               encryptionConfig:
                 description: |-

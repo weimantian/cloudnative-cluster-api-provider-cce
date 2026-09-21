@@ -247,20 +247,28 @@ func TestControlPlaneFlavorDowngradeRejected(t *testing.T) {
 
 func TestControlPlaneDataPlaneV2(t *testing.T) {
 	ctx := context.Background()
-	// create-time: requires eni (Turbo).
+	// create-time: supported for eni (Turbo) and vpc-router (Standard) — the
+	// CCE console emits the same eni.dataplane-v2 override for either.
 	b := true
 	c := validCP() // eni defaults via Mode=eni in validCP
 	c.Spec.EnableDataPlaneV2 = &b
 	if err := c.validate(); err != nil {
 		t.Errorf("eni + DPv2 should validate, got %v", err)
 	}
-	// non-eni mode rejects DPv2.
 	c2 := validCP()
 	c2.Spec.ContainerNetwork.Mode = "vpc-router"
 	c2.Spec.Category = "CCE"
 	c2.Spec.EnableDataPlaneV2 = &b
-	if err := c2.validate(); err == nil {
-		t.Error("vpc-router + DPv2 must be rejected")
+	if err := c2.validate(); err != nil {
+		t.Errorf("vpc-router (Standard) + DPv2 should validate, got %v", err)
+	}
+	// the container-tunnel model has no DPv2 switch.
+	c3 := validCP()
+	c3.Spec.ContainerNetwork.Mode = "overlay_l2"
+	c3.Spec.Category = "CCE"
+	c3.Spec.EnableDataPlaneV2 = &b
+	if err := c3.validate(); err == nil {
+		t.Error("overlay_l2 + DPv2 must be rejected")
 	}
 	// immutable after creation.
 	old := validCP()
@@ -268,5 +276,40 @@ func TestControlPlaneDataPlaneV2(t *testing.T) {
 	nw.Spec.EnableDataPlaneV2 = &b
 	if _, err := old.ValidateUpdate(ctx, old, nw); err == nil {
 		t.Error("enabling DPv2 on an existing cluster must be rejected")
+	}
+}
+
+// TestCCEManagedControlPlaneDefaultVpcRouter verifies the raw control plane
+// path derives category CCE from mode=vpc-router when category is omitted
+// (Turbo only supports eni), and that omitting mode still defaults to
+// eni + Turbo.
+func TestCCEManagedControlPlaneDefaultVpcRouter(t *testing.T) {
+	ctx := context.Background()
+
+	vpc := &CCEManagedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{Name: "cp"},
+		Spec: CCEManagedControlPlaneSpec{
+			ClusterName:      "test",
+			ContainerNetwork: ContainerNetworkSpec{Mode: "vpc-router"},
+			EndpointAccess:   EndpointAccessSpec{Private: true},
+		},
+	}
+	if err := vpc.Default(ctx, vpc); err != nil {
+		t.Fatalf("Default returned error: %v", err)
+	}
+	if vpc.Spec.Category != "CCE" {
+		t.Errorf("expected vpc-router to default category CCE, got %q", vpc.Spec.Category)
+	}
+	if err := vpc.validate(); err != nil {
+		t.Errorf("expected vpc-router control plane to validate, got %v", err)
+	}
+
+	empty := &CCEManagedControlPlane{ObjectMeta: metav1.ObjectMeta{Name: "cp2"}}
+	if err := empty.Default(ctx, empty); err != nil {
+		t.Fatalf("Default returned error: %v", err)
+	}
+	if empty.Spec.ContainerNetwork.Mode != "eni" || empty.Spec.Category != "Turbo" {
+		t.Errorf("expected omitted mode to default eni + Turbo, got mode=%q category=%q",
+			empty.Spec.ContainerNetwork.Mode, empty.Spec.Category)
 	}
 }

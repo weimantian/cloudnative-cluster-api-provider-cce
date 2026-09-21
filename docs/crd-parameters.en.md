@@ -82,6 +82,8 @@ spec:
   # ipv6enable: <value>
   # EnableAutopilot creates an Autopilot (Serverless) cluster instead of a standard CCE/Turbo cluster (maps to CCE spec.enableAutopilot). Autopilot requires category Turbo and a compatible flavor (cce.autopilot.cluster).
   # enableAutopilot: <value>
+  # EnableDataPlaneV2 turns on DataPlane V2 (eBPF/Cilium: Service ClusterIP / NetworkPolicy / Bandwidth; new clusters only, cannot be disabled afterwards). Supported on the eni (Turbo) and vpc-router (Standard) models.
+  # enableDataPlaneV2: <value>
   # CustomSan entries for the API server certificate.
   # customSan: <value>
   # AgencyName used by the cluster (1.27+; empty uses the system agency).
