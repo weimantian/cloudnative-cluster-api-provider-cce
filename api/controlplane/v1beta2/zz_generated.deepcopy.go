@@ -264,6 +264,16 @@ func (in *CCEManagedControlPlaneStatus) DeepCopyInto(out *CCEManagedControlPlane
 		*out = new(corev1beta2.APIEndpoint)
 		**out = **in
 	}
+	if in.Addons != nil {
+		in, out := &in.Addons, &out.Addons
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
+	if in.AccessPolicies != nil {
+		in, out := &in.AccessPolicies, &out.AccessPolicies
+		*out = make([]string, len(*in))
+		copy(*out, *in)
+	}
 	if in.Conditions != nil {
 		in, out := &in.Conditions, &out.Conditions
 		*out = make([]metav1.Condition, len(*in))

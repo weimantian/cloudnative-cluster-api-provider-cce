@@ -400,6 +400,19 @@ type CCEManagedControlPlaneStatus struct {
 	// +optional
 	ObservedGeneration int64 `json:"observedGeneration,omitempty"`
 
+	// Addons records the addon template names this provider has successfully
+	// applied. It gates deletion so only provider-managed addons are ever
+	// removed; platform-default and foreign addons are never touched.
+	// +optional
+	Addons []string `json:"addons,omitempty"`
+
+	// AccessPolicies records the names of access policies this provider has
+	// successfully applied. Access policies are account-scoped, so this latch
+	// ensures only policies this provider manages are updated or deleted
+	// (policies owned by other clusters are never touched).
+	// +optional
+	AccessPolicies []string `json:"accessPolicies,omitempty"`
+
 	// Conditions defines current service state.
 	// +optional
 	Conditions []metav1.Condition `json:"conditions,omitempty"`

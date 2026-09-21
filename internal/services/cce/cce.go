@@ -809,27 +809,38 @@ func (s *Client) ListAccessPolicies(ctx context.Context) ([]AccessPolicyInfo, er
 	var infos []AccessPolicyInfo
 	if resp.AccessPolicyList != nil {
 		for _, p := range *resp.AccessPolicyList {
-			info := AccessPolicyInfo{}
-			if p.PolicyId != nil {
-				info.PolicyID = *p.PolicyId
-			}
-			if p.Name != nil {
-				info.Name = *p.Name
-			}
-			if p.PolicyType != nil {
-				info.PolicyType = *p.PolicyType
-			}
-			if p.Principal != nil {
-				info.PrincipalType = p.Principal.Type.Value()
-				info.PrincipalIDs = p.Principal.Ids
-			}
-			if p.AccessScope != nil {
-				info.Namespaces = p.AccessScope.Namespaces
-			}
-			infos = append(infos, info)
+			infos = append(infos, toAccessPolicyInfo(p))
 		}
 	}
 	return infos, nil
+}
+
+// toAccessPolicyInfo maps the SDK response to the provider-side representation.
+// Clusters (the policy's cluster scope; "*" = all clusters) is captured so the
+// controller can tell this cluster's policy apart from a same-named policy that
+// belongs to another cluster (B4).
+func toAccessPolicyInfo(p model.AccessPolicyResp) AccessPolicyInfo {
+	info := AccessPolicyInfo{}
+	if p.PolicyId != nil {
+		info.PolicyID = *p.PolicyId
+	}
+	if p.Name != nil {
+		info.Name = *p.Name
+	}
+	if p.PolicyType != nil {
+		info.PolicyType = *p.PolicyType
+	}
+	if p.Principal != nil {
+		info.PrincipalType = p.Principal.Type.Value()
+		info.PrincipalIDs = p.Principal.Ids
+	}
+	if p.AccessScope != nil {
+		info.Namespaces = p.AccessScope.Namespaces
+	}
+	if p.Clusters != nil {
+		info.ClusterIDs = *p.Clusters
+	}
+	return info
 }
 
 // DeleteAccessPolicy implements Service.
@@ -901,16 +912,15 @@ func (s *Client) GetClusterKubeconfig(ctx context.Context, clusterID string, dur
 	}
 	// CCE's CreateKubernetesClusterCert can return a stale server (e.g. the
 	// address assigned at creation, 10.0.1.17) that differs from the live
-	// Internal endpoint after the control plane settles (10.0.1.200). Overlay
-	// the current Internal endpoint so the kubeconfig is actually reachable.
+	// endpoint after the control plane settles (10.0.1.200). Prefer the
+	// reachable public (External) endpoint when the cluster exposes one, and
+	// fall back to the VPC-internal endpoint for private-only clusters. No
+	// endpoints at all leaves the kubeconfig (and any error) untouched.
 	if info, serr := s.ShowCluster(ctx, clusterID); serr == nil {
-		for _, ep := range info.Endpoints {
-			if ep.Type == "Internal" && ep.URL != "" {
-				kube, err = replaceKubeconfigServer(kube, ep.URL)
-				if err != nil {
-					return "", errors.Wrap(err, "replace kubeconfig server")
-				}
-				break
+		if url, epType := preferredEndpoint(info.Endpoints); url != "" {
+			kube, err = replaceKubeconfigServer(kube, url, epType)
+			if err != nil {
+				return "", errors.Wrap(err, "replace kubeconfig server")
 			}
 		}
 	}
@@ -1669,18 +1679,61 @@ func assembleKubeconfig(resp *model.CreateKubernetesClusterCertResponse) (string
 	return string(data), nil
 }
 
-// replaceKubeconfigServer rewrites every cluster's server to the given URL.
-// CCE's CreateKubernetesClusterCert can embed a stale server (the address
-// assigned at creation); GetClusterKubeconfig overlays the live Internal
-// endpoint so the kubeconfig is reachable from the same VPC.
-func replaceKubeconfigServer(kubeconfig, server string) (string, error) {
+// preferredEndpoint picks the API server URL a user should connect through:
+// the public External endpoint when the cluster exposes one, otherwise the
+// VPC-internal endpoint. It returns an empty URL (and empty type) when no
+// endpoint carries a URL, signalling that the kubeconfig must be left as-is.
+func preferredEndpoint(endpoints []Endpoint) (url, epType string) {
+	internalURL := ""
+	for _, ep := range endpoints {
+		switch ep.Type {
+		case "External":
+			if ep.URL != "" {
+				return ep.URL, "External"
+			}
+		case "Internal":
+			if ep.URL != "" && internalURL == "" {
+				internalURL = ep.URL
+			}
+		}
+	}
+	if internalURL != "" {
+		return internalURL, "Internal"
+	}
+	return "", ""
+}
+
+// replaceKubeconfigServer rewrites the server of the kubeconfig cluster entry
+// that corresponds to epType (CCE names them internalCluster/externalCluster),
+// leaving other entries untouched so the endpoint the user did not choose is
+// not clobbered. It also points current-context at the rewritten entry so the
+// chosen address is the one actually used. When no entry matches epType
+// (single-endpoint kubeconfigs), every entry's server is rewritten as before.
+func replaceKubeconfigServer(kubeconfig, server, epType string) (string, error) {
 	cfg, err := clientcmd.Load([]byte(kubeconfig))
 	if err != nil {
 		return "", errors.Wrap(err, "parse kubeconfig")
 	}
+	needle := strings.ToLower(epType)
+	target := ""
 	for name := range cfg.Clusters {
-		if cfg.Clusters[name] != nil {
+		if cfg.Clusters[name] != nil && strings.Contains(strings.ToLower(name), needle) {
 			cfg.Clusters[name].Server = server
+			target = name
+		}
+	}
+	if target == "" {
+		for name := range cfg.Clusters {
+			if cfg.Clusters[name] != nil {
+				cfg.Clusters[name].Server = server
+			}
+		}
+	} else {
+		for name, ctx := range cfg.Contexts {
+			if ctx != nil && ctx.Cluster == target {
+				cfg.CurrentContext = name
+				break
+			}
 		}
 	}
 	out, err := clientcmd.Write(*cfg)

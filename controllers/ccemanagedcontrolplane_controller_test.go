@@ -353,15 +353,16 @@ func TestControlPlaneReconcileAddons(t *testing.T) {
 		t.Fatalf("Reconcile returned error: %v", err)
 	}
 
-	// metrics-server must be created, coredns upgraded (drift), old-addon deleted.
+	// metrics-server must be created, coredns upgraded (drift). "old-addon"
+	// was never declared by this provider, so it must NOT be deleted (B5).
 	if len(fakeSvc.AddonCreateCalls) != 1 || fakeSvc.AddonCreateCalls[0].Name != "metrics-server" {
 		t.Errorf("expected create metrics-server, got %+v", fakeSvc.AddonCreateCalls)
 	}
 	if len(fakeSvc.AddonUpdateCalls) != 1 || fakeSvc.AddonUpdateCalls[0].Name != "coredns" || fakeSvc.AddonUpdateCalls[0].Version != "1.2.0" {
 		t.Errorf("expected upgrade coredns to 1.2.0, got %+v", fakeSvc.AddonUpdateCalls)
 	}
-	if len(fakeSvc.AddonDeleteCalls) != 1 || fakeSvc.AddonDeleteCalls[0] != "addon-id-old" {
-		t.Errorf("expected delete old-addon, got %v", fakeSvc.AddonDeleteCalls)
+	if len(fakeSvc.AddonDeleteCalls) != 0 {
+		t.Errorf("undeclared addon must never be deleted, got %v", fakeSvc.AddonDeleteCalls)
 	}
 
 	got := &controlplanev1beta2.CCEManagedControlPlane{}
@@ -370,6 +371,39 @@ func TestControlPlaneReconcileAddons(t *testing.T) {
 	}
 	if c := capiconditions.Get(got, conditions.AddonsConfiguredCondition); c == nil || c.Status != metav1.ConditionTrue {
 		t.Errorf("expected AddonsConfigured=True, got %v", c)
+	}
+	if len(got.Status.Addons) != 2 || got.Status.Addons[0] != "coredns" || got.Status.Addons[1] != "metrics-server" {
+		t.Errorf("expected status.addons [coredns metrics-server], got %v", got.Status.Addons)
+	}
+
+	// Emptying the spec removes the addons this provider applied, and only
+	// those: old-addon (never declared) survives.
+	fakeSvc.Addons = []cceService.AddonInfo{
+		{ID: "addon-id-coredns", Name: "coredns", Version: "1.2.0", Status: "running"},
+		{ID: "addon-id-metrics-server", Name: "metrics-server", Version: "1.0.0", Status: "running"},
+		{ID: "addon-id-old", Name: "old-addon", Version: "1.0.0", Status: "running"},
+	}
+	latest := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), latest); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	latest.Spec.Addons = nil
+	if err := k8sClient.Update(ctx, latest); err != nil {
+		t.Fatalf("failed to empty addons: %v", err)
+	}
+	fakeSvc.AddonDeleteCalls = nil
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile (empty) returned error: %v", err)
+	}
+	deleted := map[string]bool{}
+	for _, id := range fakeSvc.AddonDeleteCalls {
+		deleted[id] = true
+	}
+	if !deleted["addon-id-coredns"] || !deleted["addon-id-metrics-server"] {
+		t.Errorf("expected coredns+metrics-server deleted after emptying spec, got %v", fakeSvc.AddonDeleteCalls)
+	}
+	if deleted["addon-id-old"] {
+		t.Errorf("undeclared old-addon must not be deleted, got %v", fakeSvc.AddonDeleteCalls)
 	}
 }
 
@@ -424,6 +458,221 @@ func TestControlPlaneReconcilePodIdentity(t *testing.T) {
 	}
 	if c := capiconditions.Get(got, conditions.PodIdentityAssociationsConfiguredCondition); c == nil || c.Status != metav1.ConditionTrue {
 		t.Errorf("expected PodIdentityAssociationsConfigured=True, got %v", c)
+	}
+}
+
+// TestControlPlaneReconcileAddonsScopedDeletion covers B5 end to end: the
+// addon declared by this provider is removed once the spec is emptied, while
+// platform-default addons (coredns/everest) are never deleted.
+func TestControlPlaneReconcileAddonsScopedDeletion(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-addons-scoped"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	cp.Spec.Addons = []controlplanev1beta2.AddonSpec{{Name: "metrics-server"}}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set addons: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	// Platform-default addons the provider never declared.
+	fakeSvc.Addons = []cceService.AddonInfo{
+		{ID: "addon-id-coredns", Name: "coredns", Version: "1.0.0", Status: "running"},
+		{ID: "addon-id-everest", Name: "everest", Version: "1.0.0", Status: "running"},
+	}
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.AddonCreateCalls) != 1 || fakeSvc.AddonCreateCalls[0].Name != "metrics-server" {
+		t.Errorf("expected create metrics-server, got %+v", fakeSvc.AddonCreateCalls)
+	}
+	if len(fakeSvc.AddonDeleteCalls) != 0 {
+		t.Fatalf("platform-default addons must never be deleted, got %v", fakeSvc.AddonDeleteCalls)
+	}
+
+	// Empty the spec: our addon is removed, the platform defaults stay.
+	fakeSvc.Addons = append(fakeSvc.Addons,
+		cceService.AddonInfo{ID: "addon-id-metrics-server", Name: "metrics-server", Version: "1.0.0", Status: "running"})
+	latest := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), latest); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	latest.Spec.Addons = nil
+	if err := k8sClient.Update(ctx, latest); err != nil {
+		t.Fatalf("failed to empty addons: %v", err)
+	}
+	fakeSvc.AddonDeleteCalls = nil
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile (empty) returned error: %v", err)
+	}
+	deleted := map[string]bool{}
+	for _, id := range fakeSvc.AddonDeleteCalls {
+		deleted[id] = true
+	}
+	if !deleted["addon-id-metrics-server"] {
+		t.Errorf("expected metrics-server deleted after emptying spec, got %v", fakeSvc.AddonDeleteCalls)
+	}
+	if deleted["addon-id-coredns"] || deleted["addon-id-everest"] {
+		t.Errorf("platform-default addons must never be deleted, got %v", fakeSvc.AddonDeleteCalls)
+	}
+}
+
+// TestControlPlaneReconcileAddonsNeverDeclaredNoDelete covers B5's safety
+// latch: a cluster that never declared addons must not delete anything on its
+// first reconcile.
+func TestControlPlaneReconcileAddonsNeverDeclaredNoDelete(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-addons-undeclared"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeSvc.Addons = []cceService.AddonInfo{
+		{ID: "addon-id-coredns", Name: "coredns", Version: "1.0.0", Status: "running"},
+		{ID: "addon-id-everest", Name: "everest", Version: "1.0.0", Status: "running"},
+	}
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.AddonDeleteCalls) != 0 {
+		t.Fatalf("a cluster that never declared addons must delete nothing, got %v", fakeSvc.AddonDeleteCalls)
+	}
+}
+
+// TestControlPlaneReconcilePodIdentityEmptySpecCleanup covers B3: once pod
+// identity associations have been configured, emptying the spec must run the
+// delete-difference loop instead of short-circuiting.
+func TestControlPlaneReconcilePodIdentityEmptySpecCleanup(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-podid-cleanup"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	cp.Spec.PodIdentityAssociations = []controlplanev1beta2.PodIdentityAssociationSpec{
+		{Namespace: "default", ServiceAccount: "app-sa", AgencyName: "app-agency"},
+	}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set pod identity associations: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.PodIdentityCreate) != 1 {
+		t.Fatalf("expected 1 created association, got %d", len(fakeSvc.PodIdentityCreate))
+	}
+
+	fakeSvc.PodIdentities = []cceService.PodIdentityAssociationInfo{
+		{ID: "podid-app-sa", Namespace: "default", ServiceAccount: "app-sa", AgencyName: "app-agency"},
+	}
+	latest := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), latest); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	latest.Spec.PodIdentityAssociations = nil
+	if err := k8sClient.Update(ctx, latest); err != nil {
+		t.Fatalf("failed to empty pod identity associations: %v", err)
+	}
+	fakeSvc.PodIdentityDelete = nil
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile (empty) returned error: %v", err)
+	}
+	if len(fakeSvc.PodIdentityDelete) != 1 || fakeSvc.PodIdentityDelete[0] != "podid-app-sa" {
+		t.Errorf("expected cleanup delete podid-app-sa, got %v", fakeSvc.PodIdentityDelete)
+	}
+}
+
+// TestControlPlaneReconcileAccessPoliciesScoped covers B4: access policies are
+// account-scoped, so another cluster's policy (present in the account list)
+// must never be updated or deleted by this control plane.
+func TestControlPlaneReconcileAccessPoliciesScoped(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-accesspolicy-scoped"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	cp.Spec.AccessPolicies = []controlplanev1beta2.AccessPolicySpec{
+		{Name: "ours", PolicyType: "CCEViewPolicy", PrincipalType: "user", PrincipalIds: []string{"user-1"}},
+	}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set access policies: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	// The account-scoped list also contains another cluster's policy.
+	fakeSvc.AccessPolicies = []cceService.AccessPolicyInfo{
+		{PolicyID: "pol-other", Name: "other-cluster-policy", ClusterIDs: []string{"cluster-other"}, PolicyType: "CCEAdminPolicy", PrincipalType: "group", PrincipalIDs: []string{"grp-9"}, Namespaces: []string{"*"}},
+	}
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	// First reconcile: our policy is created; the foreign policy is untouched.
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.AccessPolicyCreate) != 1 || fakeSvc.AccessPolicyCreate[0].Name != "ours" {
+		t.Fatalf("expected create ours, got %+v", fakeSvc.AccessPolicyCreate)
+	}
+	if len(fakeSvc.AccessPolicyDelete) != 0 || len(fakeSvc.AccessPolicyUpdate) != 0 {
+		t.Errorf("another cluster's policy must not be managed, delete=%v update=%v", fakeSvc.AccessPolicyDelete, fakeSvc.AccessPolicyUpdate)
+	}
+
+	// Empty the spec: our policy is removed, the foreign one survives.
+	fakeSvc.AccessPolicies = []cceService.AccessPolicyInfo{
+		{PolicyID: "pol-other", Name: "other-cluster-policy", ClusterIDs: []string{"cluster-other"}, PolicyType: "CCEAdminPolicy", PrincipalType: "group", PrincipalIDs: []string{"grp-9"}, Namespaces: []string{"*"}},
+		{PolicyID: "access-policy-ours", Name: "ours", ClusterIDs: []string{"cluster-1"}, PolicyType: "CCEViewPolicy", PrincipalType: "user", PrincipalIDs: []string{"user-1"}, Namespaces: []string{"*"}},
+	}
+	latest := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), latest); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	latest.Spec.AccessPolicies = nil
+	if err := k8sClient.Update(ctx, latest); err != nil {
+		t.Fatalf("failed to empty access policies: %v", err)
+	}
+	fakeSvc.AccessPolicyDelete = nil
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile (empty) returned error: %v", err)
+	}
+	if len(fakeSvc.AccessPolicyDelete) != 1 || fakeSvc.AccessPolicyDelete[0] != "access-policy-ours" {
+		t.Errorf("expected only our policy deleted, got %v", fakeSvc.AccessPolicyDelete)
 	}
 }
 

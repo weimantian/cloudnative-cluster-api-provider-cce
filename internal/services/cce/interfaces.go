@@ -441,8 +441,12 @@ type AccessPolicyInput struct {
 
 // AccessPolicyInfo is an access policy as reported by ListAccessPolicy.
 type AccessPolicyInfo struct {
-	PolicyID      string
-	Name          string
+	PolicyID string
+	Name     string
+	// ClusterIDs scopes the policy to clusters; "*" means all clusters
+	// (official AccessPolicyResp.Clusters). A policy scoped to other
+	// clusters only must never be managed by this control plane (B4).
+	ClusterIDs    []string
 	PolicyType    string
 	PrincipalType string
 	PrincipalIDs  []string

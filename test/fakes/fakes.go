@@ -89,6 +89,7 @@ type FakeCCEService struct {
 	PodIdentityCreate    []cceService.PodIdentityAssociationInput
 	AccessPolicyCreate   []cceService.AccessPolicyInput
 	AccessPolicyUpdate   []cceService.AccessPolicyInput
+	AccessPolicyUpdateID []string                      // policy IDs passed to UpdateAccessPolicy
 	AccessPolicyDelete   []string                      // policy IDs
 	AccessPolicies       []cceService.AccessPolicyInfo // returned by ListAccessPolicies
 	PodIdentityDelete    []string                      // association IDs
@@ -185,8 +186,9 @@ func NewFakeCCEService() *FakeCCEService {
 		f.AccessPolicyCreate = append(f.AccessPolicyCreate, in)
 		return "access-policy-" + in.Name, nil
 	}
-	f.UpdateAccessPolicyFn = func(_ context.Context, _ string, in cceService.AccessPolicyInput) error {
+	f.UpdateAccessPolicyFn = func(_ context.Context, policyID string, in cceService.AccessPolicyInput) error {
 		f.AccessPolicyUpdate = append(f.AccessPolicyUpdate, in)
+		f.AccessPolicyUpdateID = append(f.AccessPolicyUpdateID, policyID)
 		return nil
 	}
 	f.ListAccessPoliciesFn = func(_ context.Context) ([]cceService.AccessPolicyInfo, error) {

@@ -1472,6 +1472,23 @@ spec:
               CCEManagedControlPlaneStatus defines the observed state of
               CCEManagedControlPlane.
             properties:
+              accessPolicies:
+                description: |-
+                  AccessPolicies records the names of access policies this provider has
+                  successfully applied. Access policies are account-scoped, so this latch
+                  ensures only policies this provider manages are updated or deleted
+                  (policies owned by other clusters are never touched).
+                items:
+                  type: string
+                type: array
+              addons:
+                description: |-
+                  Addons records the addon template names this provider has successfully
+                  applied. It gates deletion so only provider-managed addons are ever
+                  removed; platform-default and foreign addons are never touched.
+                items:
+                  type: string
+                type: array
               clusterID:
                 description: ClusterID is the CCE cluster UUID.
                 type: string

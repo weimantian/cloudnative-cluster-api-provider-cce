@@ -22,6 +22,7 @@ import (
 	"k8s.io/client-go/tools/record"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/cluster-api/util"
+	capiconditions "sigs.k8s.io/cluster-api/util/conditions"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -855,9 +856,12 @@ func splitEndpointURL(raw string) (string, int32) {
 }
 
 // reconcileAddons reconciles the declared addon set against the cloud: create
-// missing, upgrade version drift, delete those no longer listed.
+// missing, upgrade version drift, delete those this provider previously applied
+// and that are no longer listed. Deletion is gated on status.addons so platform
+// default addons (and any addon this provider never declared) are never removed.
 func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta2.CCEManagedControlPlane) error {
-	if len(cp.Spec.Addons) == 0 {
+	log := ctrl.LoggerFrom(ctx)
+	if len(cp.Spec.Addons) == 0 && !capiconditions.Has(cp, conditions.AddonsConfiguredCondition) {
 		return nil
 	}
 	current, err := svc.ListAddonInstances(ctx, clusterID)
@@ -871,6 +875,10 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, 
 	specByName := map[string]controlplanev1beta2.AddonSpec{}
 	for _, a := range cp.Spec.Addons {
 		specByName[a.Name] = a
+	}
+	managed := map[string]bool{}
+	for _, name := range cp.Status.Addons {
+		managed[name] = true
 	}
 
 	// Create missing / upgrade drift.
@@ -891,21 +899,33 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, 
 			}
 		}
 	}
-	// Remove addons no longer listed.
+	// Remove addons this provider applied that are no longer listed. Addons
+	// never applied here (platform defaults, addons managed elsewhere) are
+	// skipped so they survive a declarative set change.
 	for _, got := range current {
-		if _, keep := specByName[got.Name]; !keep {
-			if err := svc.DeleteAddonInstance(ctx, clusterID, got.ID); err != nil {
-				return err
-			}
+		if _, keep := specByName[got.Name]; keep {
+			continue
+		}
+		if !managed[got.Name] {
+			log.V(4).Info("Skipping addon deletion: not managed by this provider", "addon", got.Name)
+			continue
+		}
+		if err := svc.DeleteAddonInstance(ctx, clusterID, got.ID); err != nil {
+			return err
 		}
 	}
+	var applied []string
+	for _, want := range cp.Spec.Addons {
+		applied = append(applied, want.Name)
+	}
+	cp.Status.Addons = applied
 	return nil
 }
 
 // reconcilePodIdentityAssociations reconciles the declared pod-identity
 // associations against the cloud: create missing, delete removed.
 func (r *CCEManagedControlPlaneReconciler) reconcilePodIdentityAssociations(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta2.CCEManagedControlPlane) error {
-	if len(cp.Spec.PodIdentityAssociations) == 0 {
+	if len(cp.Spec.PodIdentityAssociations) == 0 && !capiconditions.Has(cp, conditions.PodIdentityAssociationsConfiguredCondition) {
 		return nil
 	}
 	current, err := svc.ListPodIdentityAssociations(ctx, clusterID)
@@ -1002,25 +1022,39 @@ func logConfigEqual(a, b *cceService.LogConfigInfo) bool {
 }
 
 // reconcileAccessPolicies reconciles the declared CCE access policies against
-// the account: create missing (by name), update drift (policyType/principal/
-// namespaces), delete those no longer listed. CCE access policies are account-
-// scoped (one policy may span many clusters), so they are keyed by name and
-// scoped to the owning cluster via clusters=[clusterID].
+// the account: create missing, update drift (policyType/principal/namespaces),
+// delete those this provider previously applied and that are no longer listed.
+// CCE access policies are account-scoped (one policy may span many clusters),
+// so management is gated on BOTH the policy scope (it must include this
+// cluster's ID, or the "*" wildcard) AND status.accessPolicies (only policies
+// this provider created). A same-named policy scoped to other clusters only is
+// never adopted, updated or deleted.
 func (r *CCEManagedControlPlaneReconciler) reconcileAccessPolicies(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta2.CCEManagedControlPlane) error {
-	if len(cp.Spec.AccessPolicies) == 0 {
+	log := ctrl.LoggerFrom(ctx)
+	if len(cp.Spec.AccessPolicies) == 0 && !capiconditions.Has(cp, conditions.AccessPoliciesConfiguredCondition) {
 		return nil
 	}
 	current, err := svc.ListAccessPolicies(ctx)
 	if err != nil {
 		return err
 	}
+	// Candidate map scoped to this cluster: an out-of-scope policy (same name,
+	// other clusters only) is never a candidate, so it can neither satisfy our
+	// spec nor be updated as if it were ours.
 	cloudByName := map[string]cceService.AccessPolicyInfo{}
 	for _, p := range current {
+		if !accessPolicyInScope(p, clusterID) {
+			continue
+		}
 		cloudByName[p.Name] = p
 	}
 	specByName := map[string]controlplanev1beta2.AccessPolicySpec{}
 	for _, p := range cp.Spec.AccessPolicies {
 		specByName[p.Name] = p
+	}
+	managed := map[string]bool{}
+	for _, name := range cp.Status.AccessPolicies {
+		managed[name] = true
 	}
 
 	// Create missing / update drift.
@@ -1032,21 +1066,50 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAccessPolicies(ctx context.C
 			if _, err := svc.CreateAccessPolicy(ctx, input); err != nil {
 				return err
 			}
+		case !managed[want.Name]:
+			log.V(4).Info("Skipping access policy: not managed by this provider", "policy", want.Name)
 		case accessPolicyDrifted(got, want):
 			if err := svc.UpdateAccessPolicy(ctx, got.PolicyID, input); err != nil {
 				return err
 			}
 		}
 	}
-	// Remove policies no longer listed.
+	// Remove policies this provider applied that are no longer listed; never
+	// touch policies owned by another cluster (the list is account-scoped).
 	for _, got := range current {
-		if _, keep := specByName[got.Name]; !keep {
-			if err := svc.DeleteAccessPolicy(ctx, got.PolicyID); err != nil {
-				return err
-			}
+		if _, keep := specByName[got.Name]; keep {
+			continue
+		}
+		if !managed[got.Name] || !accessPolicyInScope(got, clusterID) {
+			log.V(4).Info("Skipping access policy deletion: not managed by this provider", "policy", got.Name)
+			continue
+		}
+		if err := svc.DeleteAccessPolicy(ctx, got.PolicyID); err != nil {
+			return err
 		}
 	}
+	var applied []string
+	for _, want := range cp.Spec.AccessPolicies {
+		if _, exists := cloudByName[want.Name]; exists && !managed[want.Name] {
+			continue
+		}
+		applied = append(applied, want.Name)
+	}
+	cp.Status.AccessPolicies = applied
 	return nil
+}
+
+// accessPolicyInScope reports whether a cloud access policy applies to
+// clusterID: an explicit cluster ID match, or the "*" wildcard (all
+// clusters). A policy scoped only to other clusters (or with no scope
+// reported) is not ours to manage (B4).
+func accessPolicyInScope(p cceService.AccessPolicyInfo, clusterID string) bool {
+	for _, id := range p.ClusterIDs {
+		if id == clusterID || id == "*" {
+			return true
+		}
+	}
+	return false
 }
 
 // toAccessPolicyInput maps a spec to the service input, scoping the policy to

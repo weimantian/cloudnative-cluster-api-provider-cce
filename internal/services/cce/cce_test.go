@@ -541,3 +541,190 @@ func TestAdoptConflictCandidateOwnership(t *testing.T) {
 		})
 	}
 }
+
+func TestPreferredEndpoint(t *testing.T) {
+	tests := []struct {
+		name      string
+		endpoints []Endpoint
+		wantURL   string
+		wantType  string
+	}{
+		{
+			name: "both endpoints -> external wins",
+			endpoints: []Endpoint{
+				{Type: "External", URL: "https://1.2.3.4:5443"},
+				{Type: "Internal", URL: "https://10.0.0.1:5443"},
+			},
+			wantURL:  "https://1.2.3.4:5443",
+			wantType: "External",
+		},
+		{
+			name: "both endpoints -> external wins regardless of order",
+			endpoints: []Endpoint{
+				{Type: "Internal", URL: "https://10.0.0.1:5443"},
+				{Type: "External", URL: "https://1.2.3.4:5443"},
+			},
+			wantURL:  "https://1.2.3.4:5443",
+			wantType: "External",
+		},
+		{
+			name:      "internal only -> internal",
+			endpoints: []Endpoint{{Type: "Internal", URL: "https://10.0.0.1:5443"}},
+			wantURL:   "https://10.0.0.1:5443",
+			wantType:  "Internal",
+		},
+		{
+			name: "external with empty URL -> falls back to internal",
+			endpoints: []Endpoint{
+				{Type: "External", URL: ""},
+				{Type: "Internal", URL: "https://10.0.0.1:5443"},
+			},
+			wantURL:  "https://10.0.0.1:5443",
+			wantType: "Internal",
+		},
+		{name: "no endpoints -> empty (kubeconfig unchanged)", endpoints: nil, wantURL: "", wantType: ""},
+		{
+			name:      "endpoints with no URL -> empty (kubeconfig unchanged)",
+			endpoints: []Endpoint{{Type: "External", URL: ""}, {Type: "Internal", URL: ""}},
+			wantURL:   "",
+			wantType:  "",
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			url, epType := preferredEndpoint(tt.endpoints)
+			if url != tt.wantURL || epType != tt.wantType {
+				t.Errorf("preferredEndpoint() = (%q,%q), want (%q,%q)", url, epType, tt.wantURL, tt.wantType)
+			}
+		})
+	}
+}
+
+func TestReplaceKubeconfigServerSelection(t *testing.T) {
+	const dualKubeconfig = `apiVersion: v1
+kind: Config
+clusters:
+- name: internalCluster
+  cluster:
+    server: https://10.0.0.1:5443
+- name: externalCluster
+  cluster:
+    server: https://1.2.3.4:5443
+contexts:
+- name: internal
+  context:
+    cluster: internalCluster
+    user: internal
+- name: external
+  context:
+    cluster: externalCluster
+    user: external
+users:
+- name: internal
+  user: {}
+- name: external
+  user: {}
+current-context: internal
+`
+
+	tests := []struct {
+		name         string
+		epType       string
+		server       string
+		wantContext  string
+		wantInternal string
+		wantExternal string
+	}{
+		{
+			name:         "external chosen rewrites external entry only",
+			epType:       "External",
+			server:       "https://5.6.7.8:5443",
+			wantContext:  "external",
+			wantInternal: "https://10.0.0.1:5443", // not clobbered
+			wantExternal: "https://5.6.7.8:5443",
+		},
+		{
+			name:         "internal chosen rewrites internal entry only",
+			epType:       "Internal",
+			server:       "https://10.0.0.99:5443",
+			wantContext:  "internal",
+			wantInternal: "https://10.0.0.99:5443",
+			wantExternal: "https://1.2.3.4:5443", // not clobbered
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			out, err := replaceKubeconfigServer(dualKubeconfig, tt.server, tt.epType)
+			if err != nil {
+				t.Fatalf("replaceKubeconfigServer failed: %v", err)
+			}
+			cfg, err := clientcmd.Load([]byte(out))
+			if err != nil {
+				t.Fatalf("serialized kubeconfig unparseable: %v", err)
+			}
+			if cfg.CurrentContext != tt.wantContext {
+				t.Errorf("current-context = %q, want %q", cfg.CurrentContext, tt.wantContext)
+			}
+			if got := cfg.Clusters["internalCluster"].Server; got != tt.wantInternal {
+				t.Errorf("internalCluster server = %q, want %q", got, tt.wantInternal)
+			}
+			if got := cfg.Clusters["externalCluster"].Server; got != tt.wantExternal {
+				t.Errorf("externalCluster server = %q, want %q", got, tt.wantExternal)
+			}
+		})
+	}
+
+	// Single-endpoint kubeconfig: no type-specific entry, so the chosen URL is
+	// applied to every entry as before.
+	const singleKubeconfig = `apiVersion: v1
+kind: Config
+clusters:
+- name: internalCluster
+  cluster:
+    server: https://10.0.0.1:5443
+contexts:
+- name: internal
+  context:
+    cluster: internalCluster
+    user: internal
+users:
+- name: internal
+  user: {}
+current-context: internal
+`
+	out, err := replaceKubeconfigServer(singleKubeconfig, "https://5.6.7.8:5443", "External")
+	if err != nil {
+		t.Fatalf("replaceKubeconfigServer failed: %v", err)
+	}
+	cfg, err := clientcmd.Load([]byte(out))
+	if err != nil {
+		t.Fatalf("serialized kubeconfig unparseable: %v", err)
+	}
+	if got := cfg.Clusters["internalCluster"].Server; got != "https://5.6.7.8:5443" {
+		t.Errorf("internalCluster server = %q, want the chosen external URL", got)
+	}
+}
+
+// TestToAccessPolicyInfoClusters verifies the SDK response mapping captures
+// the policy's cluster scope (clusters), including the nil case (B4).
+func TestToAccessPolicyInfoClusters(t *testing.T) {
+	name, id, ptype := "p", "pol-1", "CCEViewPolicy"
+	in := model.AccessPolicyResp{
+		PolicyId:   &id,
+		Name:       &name,
+		Clusters:   &[]string{"cluster-1"},
+		PolicyType: &ptype,
+	}
+	got := toAccessPolicyInfo(in)
+	if got.PolicyID != id || got.Name != name || got.PolicyType != ptype {
+		t.Fatalf("basic fields not mapped: %+v", got)
+	}
+	if len(got.ClusterIDs) != 1 || got.ClusterIDs[0] != "cluster-1" {
+		t.Errorf("ClusterIDs = %v, want [cluster-1]", got.ClusterIDs)
+	}
+	// nil clusters must not panic and must leave the scope empty.
+	in.Clusters = nil
+	if got := toAccessPolicyInfo(in); got.ClusterIDs != nil {
+		t.Errorf("nil clusters should map to nil scope, got %v", got.ClusterIDs)
+	}
+}
