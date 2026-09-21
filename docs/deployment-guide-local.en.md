@@ -313,6 +313,7 @@ kubectl apply -f my-cluster.yaml
 > ⚠️ ① Every AZ must have an available sub-ENI flavor: pool-2 uses AZ7 (`cn-north-4g`, has `c7.large.2`); if an AZ runs out, switch to `at7.large.1` or another AZ.
 > ⚠️ ② **A node pool's AZ is immutable after creation**: if the AZ/flavor is wrong you must delete the pool and recreate it (`kubectl delete machinepool <name>` + `ccemanagedmachinepool <name>` → edit the yaml → `kubectl apply`); patching alone does not work (CCE does not rebuild the pool).
 > ⚠️ ③ Replace every `VERIFY-*` placeholder (10 of them): REGION / VPC-ID / SUBNET-ID / ENI-SUBNET-ID / ENI-NEUTRON-ID / AZ / AZ2 / AZ3 / KEYPAIR-NAME / FLAVOR — missing any one of them fails the creation. After replacing, `grep VERIFY my-cluster.yaml` should output nothing.
+> ⚠️ ④ **Capacity scales up only**: the cluster `flavor` cannot be downgraded (the webhook rejects a downgrade) and `containerNetwork.cidr`/`mode` are immutable after creation (only `cidrs` can be appended) — plan for peak capacity before creating the cluster.
 
 **Step 7: Verify + scale**
 

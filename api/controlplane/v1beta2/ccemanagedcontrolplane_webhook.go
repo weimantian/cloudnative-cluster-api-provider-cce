@@ -9,6 +9,8 @@ package v1beta2
 import (
 	"context"
 	"net"
+	"regexp"
+	"strconv"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
@@ -113,6 +115,17 @@ func (c *CCEManagedControlPlane) ValidateUpdate(_ context.Context, oldObj, newOb
 		if oldErr == nil && newErr == nil && newV.LessThan(oldV) {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "version"),
 				newObj.Spec.Version, "version cannot be downgraded"))
+		}
+	}
+	// Flavor downgrade is rejected: a CCE cluster's capacity can only be
+	// scaled up, never down (the platform cannot reclaim an already-allocated
+	// cluster scale). Unknown flavor shapes are left to the platform.
+	if oldObj.Spec.Flavor != "" && newObj.Spec.Flavor != "" && oldObj.Spec.Flavor != newObj.Spec.Flavor {
+		if oldRank, ok := cceFlavorRank(oldObj.Spec.Flavor); ok {
+			if newRank, ok2 := cceFlavorRank(newObj.Spec.Flavor); ok2 && newRank < oldRank {
+				allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "flavor"),
+					newObj.Spec.Flavor, "flavor cannot be downgraded (cluster capacity can only be scaled up)"))
+			}
 		}
 	}
 	// Encryption config cannot be removed once set (etcd encryption is
@@ -264,4 +277,32 @@ func (c *CCEManagedControlPlane) validate() error {
 		return nil
 	}
 	return apierrors.NewInvalid(c.GroupVersionKind().GroupKind(), c.Name, allErrs)
+}
+
+// cceFlavorSizes ranks the size segment of a CCE cluster flavor
+// (cce.s<N>.<size>). Small→large→xlarge→2xlarge→… ; unknown sizes make the
+// flavor unrankable (fail-open, the platform still validates it).
+var cceFlavorSizes = map[string]int{
+	"small": 1, "medium": 2, "large": 3, "xlarge": 4,
+	"2xlarge": 5, "4xlarge": 6, "8xlarge": 7, "16xlarge": 8,
+}
+
+// cceFlavorRank parses "cce.s<N>.<size>" into a comparable rank so the webhook
+// can reject downgrades. ok=false for any shape it does not understand.
+var cceFlavorRe = regexp.MustCompile(`^cce\.s(\d+)\.([a-z0-9]+)$`)
+
+func cceFlavorRank(flavor string) (int, bool) {
+	m := cceFlavorRe.FindStringSubmatch(flavor)
+	if m == nil {
+		return 0, false
+	}
+	scale, err := strconv.Atoi(m[1])
+	if err != nil {
+		return 0, false
+	}
+	size, ok := cceFlavorSizes[m[2]]
+	if !ok {
+		return 0, false
+	}
+	return scale*100 + size, true
 }

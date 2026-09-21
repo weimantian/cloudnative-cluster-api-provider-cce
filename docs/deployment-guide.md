@@ -317,6 +317,7 @@ kubectl apply -f my-cluster.yaml
 > ⚠️ ① 各 AZ 需有可用 sub-ENI flavor：pool-2 用 AZ7（`cn-north-4g`，有 `c7.large.2`）；若某 AZ 缺货，可换 `at7.large.1` 或换其他 AZ。
 > ⚠️ ② **节点池 AZ 创建后不可变**：AZ/flavor 填错必须删池重建（delete machinepool + ccemanagedmachinepool → 改 yaml → apply），不能只 patch。
 > ⚠️ ③ 所有 `VERIFY-*` 都要替换（10 个），替换后 `grep VERIFY my-cluster.yaml` 应无输出；`VERIFY-AZ` 最后替换（先 AZ2/AZ7）。
+> ⚠️ ④ **容量只增不减**：集群规格 `flavor` 不支持降级（webhook 会拒绝降级变更），容器网段 `containerNetwork.cidr`/`mode` 创建后不可变（只能追加 `cidrs` 扩容）——建集群前请按峰值容量规划。
 
 **步骤 9：验证 + 扩缩容**
 

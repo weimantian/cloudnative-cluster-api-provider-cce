@@ -513,10 +513,15 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 			}
 		}
 		// Cloud node pool gone (or the cluster was never created): clear the
-		// ID so the finalizer can release, and persist it (status subresource)
-		// so a surviving object does not retry deleting a pool that no
-		// longer exists.
-		pool.Status.NodePoolID = ""
+		// ID so the finalizer can release. Persist it through the status
+		// subresource — a plain Client.Update (below) does not write status and
+		// its response would restore the stale cloud value into memory.
+		if pool.Status.NodePoolID != "" {
+			pool.Status.NodePoolID = ""
+			if err := r.Status().Update(ctx, pool); err != nil {
+				return ctrl.Result{}, errors.Wrap(err, "failed to clear node pool ID")
+			}
+		}
 	}
 
 	controllerutil.RemoveFinalizer(pool, MachinePoolFinalizer)

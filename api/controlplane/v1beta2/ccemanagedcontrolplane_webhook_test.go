@@ -216,3 +216,31 @@ func TestCCEManagedControlPlaneValidateUpdate(t *testing.T) {
 		}
 	})
 }
+
+func TestControlPlaneFlavorDowngradeRejected(t *testing.T) {
+	ctx := context.Background()
+	cases := []struct {
+		name     string
+		old, new string
+		wantErr  bool
+	}{
+		{"upgrade s1->s2", "cce.s1.small", "cce.s2.small", false},
+		{"upgrade size", "cce.s2.small", "cce.s2.xlarge", false},
+		{"same", "cce.s2.small", "cce.s2.small", false},
+		{"downgrade scale", "cce.s2.xlarge", "cce.s1.xlarge", true},
+		{"downgrade size", "cce.s2.xlarge", "cce.s2.small", true},
+		{"unknown shapes pass", "weird", "other", false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			old := validCP()
+			old.Spec.Flavor = tc.old
+			nw := validCP()
+			nw.Spec.Flavor = tc.new
+			_, err := old.ValidateUpdate(ctx, old, nw)
+			if (err != nil) != tc.wantErr {
+				t.Errorf("flavor %s -> %s: err=%v, wantErr=%v", tc.old, tc.new, err, tc.wantErr)
+			}
+		})
+	}
+}

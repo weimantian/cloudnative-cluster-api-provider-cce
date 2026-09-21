@@ -48,15 +48,16 @@ func TestRequeueAfterForErrorExponential(t *testing.T) {
 	defer resetBackoff(key)
 
 	throttled := &sdkerr.ServiceResponseError{StatusCode: 429}
-	// 1st: base (1m); 2nd: doubled (2m); 3rd: 4m.
-	if got := requeueAfterForError(key, throttled); got != time.Minute {
-		t.Fatalf("1st throttled: got %v, want %v", got, time.Minute)
+	// 429 uses a 3-minute base (> the 1-minute platform write window, so retries
+	// let the window drain instead of re-hitting it): base, 2x, 4x.
+	if got := requeueAfterForError(key, throttled); got != throttledBackoffBase {
+		t.Fatalf("1st throttled: got %v, want %v", got, throttledBackoffBase)
 	}
-	if got := requeueAfterForError(key, throttled); got != 2*time.Minute {
-		t.Fatalf("2nd throttled: got %v, want %v", got, 2*time.Minute)
+	if got := requeueAfterForError(key, throttled); got != 2*throttledBackoffBase {
+		t.Fatalf("2nd throttled: got %v, want %v", got, 2*throttledBackoffBase)
 	}
-	if got := requeueAfterForError(key, throttled); got != 4*time.Minute {
-		t.Fatalf("3rd throttled: got %v, want %v", got, 4*time.Minute)
+	if got := requeueAfterForError(key, throttled); got != 4*throttledBackoffBase {
+		t.Fatalf("3rd throttled: got %v, want %v", got, 4*throttledBackoffBase)
 	}
 }
 
