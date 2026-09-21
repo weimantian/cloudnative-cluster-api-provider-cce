@@ -455,3 +455,89 @@ func TestClusterTagsDiff(t *testing.T) {
 		t.Errorf("in-sync must be a no-op, got %v/%v", d3.add, d3.del)
 	}
 }
+
+// TestAdoptConflictCandidateOwnership proves the conflict-adoption guard:
+// only a same-name candidate carrying this provider's owned tag may be
+// adopted; anything else (no tag, wrong value, a foreign cluster's owned key)
+// fails closed with an explicit conflict error, so the provider can never
+// take over — and later delete or scale — a user-owned resource.
+func TestAdoptConflictCandidateOwnership(t *testing.T) {
+	cases := []struct {
+		name        string
+		kind        string
+		resName     string
+		clusterName string
+		tags        map[string]string
+		wantID      string
+		wantErr     bool
+	}{
+		{
+			name:        "owned same-name cluster is adopted",
+			kind:        "cluster",
+			resName:     "demo",
+			clusterName: "demo",
+			tags:        map[string]string{ownedTagKey("demo"): "owned", RoleTagKey: "apiserver"},
+			wantID:      "cluster-id-1",
+		},
+		{
+			name:        "owned node pool keyed by cluster name is adopted",
+			kind:        "node pool",
+			resName:     "pool-0",
+			clusterName: "demo",
+			tags:        map[string]string{ownedTagKey("demo"): "owned", RoleTagKey: "node"},
+			wantID:      "pool-id-1",
+		},
+		{
+			name:        "non-owned candidate is refused",
+			kind:        "cluster",
+			resName:     "demo",
+			clusterName: "demo",
+			tags:        map[string]string{"env": "prod"},
+			wantErr:     true,
+		},
+		{
+			name:        "owned tag with wrong value is refused",
+			kind:        "cluster",
+			resName:     "demo",
+			clusterName: "demo",
+			tags:        map[string]string{ownedTagKey("demo"): "shared"},
+			wantErr:     true,
+		},
+		{
+			name:        "foreign cluster owned tag is refused",
+			kind:        "node pool",
+			resName:     "pool-0",
+			clusterName: "demo",
+			tags:        map[string]string{ownedTagKey("other-cluster"): "owned"},
+			wantErr:     true,
+		},
+		{
+			name:        "missing tags fail closed",
+			kind:        "node pool",
+			resName:     "pool-0",
+			clusterName: "demo",
+			tags:        nil,
+			wantErr:     true,
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			id, err := adoptConflictCandidate(tc.kind, tc.resName, tc.wantID, tc.tags, tc.clusterName)
+			if tc.wantErr {
+				if err == nil {
+					t.Fatalf("expected refusal, got id %q", id)
+				}
+				if !strings.Contains(err.Error(), "refusing to adopt") || !strings.Contains(err.Error(), tc.resName) {
+					t.Errorf("error must name the refused resource, got %q", err)
+				}
+				return
+			}
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+			if id != tc.wantID {
+				t.Errorf("id = %q, want %q", id, tc.wantID)
+			}
+		})
+	}
+}

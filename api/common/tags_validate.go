@@ -21,17 +21,18 @@ import (
 //	value — 0..255 characters (empty is allowed, the entry must exist); charset:
 //	        letters, digits, spaces and _ . : / = + - @ (allows '/')
 //
-// One resource carries at most MaxResourceTags tags in total. The provider
-// owned tag (cluster-api-provider-cce.cluster.<name>=owned) counts toward that
-// limit and is always added by the service layer, so user-facing
-// AdditionalTags is capped one lower.
+// One resource carries at most MaxResourceTags tags in total. The service layer
+// ALWAYS adds two provider owned tags on top of the user tags: the ownership tag
+// (cluster-api-provider-cce.cluster.<name>=owned) and the role tag
+// (cluster-api-provider-cce.role), so user-facing AdditionalTags is capped two lower.
 const (
 	// MaxResourceTags is the maximum number of tags on one Huawei Cloud
 	// resource (official limit: 20 per resource).
 	MaxResourceTags = 20
-	// MaxAdditionalTags reserves one slot for the provider owned tag, which
-	// is always added on top of the user tags (the owned tag wins on collision).
-	MaxAdditionalTags = MaxResourceTags - 1
+	// MaxAdditionalTags reserves two slots for the provider owned tags (the
+	// ownership tag and the role tag), which are always added on top of the user
+	// tags (the owned tags win on collision).
+	MaxAdditionalTags = MaxResourceTags - 2
 )
 
 // tagKeyRe matches a full valid tag key (no '/', charset _ . : = + - @ and

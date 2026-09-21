@@ -109,8 +109,9 @@ const (
 
 // CCEClusterReady condition reasons.
 const (
-	CCEClusterNotFoundReason = "CCEClusterNotFound" // out-of-band delete, recreate path
-	CCEClusterCreatingReason = "CCEClusterCreating" // cluster is being created
+	CCEClusterNotFoundReason     = "CCEClusterNotFound" // out-of-band delete, recreate path
+	CCEClusterCreatingReason     = "CCEClusterCreating" // cluster is being created
+	CCEClusterNameMismatchReason = "InvalidClusterName" // spec.clusterName != owning Cluster name (GC would orphan-delete)
 )
 
 // KubeconfigReady condition reasons.

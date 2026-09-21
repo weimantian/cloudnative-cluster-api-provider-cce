@@ -179,6 +179,97 @@ func (m *Manager) resourceTagList(clusterName string) []string {
 	return tags
 }
 
+// ---- ownership verification for name-based adoption ----
+//
+// After a lost spec patch the manager re-discovers resources by NAME. Adopting
+// a name match would hand the provider a pre-existing user resource, and
+// DeleteNetwork would later destroy it. Every name match is therefore checked
+// against the provider owned tag before adoption; a match whose ownership
+// cannot be proven is refused (fail closed) - never adopted, duplicated or
+// deleted.
+
+// verifyVpcOwned returns nil only when the VPC carries the provider owned tag
+// for clusterName (read via ShowVpcTags).
+func (m *Manager) verifyVpcOwned(id, name, clusterName string) error {
+	var tags common.Tags
+	resp, err := m.vpc.ShowVpcTags(&vpcmodel.ShowVpcTagsRequest{VpcId: id})
+	if err == nil && resp != nil {
+		tags = tagsFromResourceTag(resp.Tags)
+	}
+	return requireOwned("VPC", name, id, tags, err, clusterName)
+}
+
+// verifySubnetOwned returns nil only when the subnet carries the provider owned
+// tag for clusterName (read via ShowSubnetTags).
+func (m *Manager) verifySubnetOwned(id, name, clusterName string) error {
+	var tags common.Tags
+	resp, err := m.vpc.ShowSubnetTags(&vpcmodel.ShowSubnetTagsRequest{SubnetId: id})
+	if err == nil && resp != nil {
+		tags = tagsFromResourceTag(resp.Tags)
+	}
+	return requireOwned("subnet", name, id, tags, err, clusterName)
+}
+
+// verifySecurityGroupOwned returns nil only when the security group carries the
+// provider owned tag for clusterName (read via ShowSecurityGroupTags).
+func (m *Manager) verifySecurityGroupOwned(id, name, clusterName string) error {
+	var tags common.Tags
+	resp, err := m.vpc.ShowSecurityGroupTags(&vpcmodel.ShowSecurityGroupTagsRequest{SecurityGroupId: id})
+	if err == nil && resp != nil {
+		tags = tagsFromResourceTag(resp.Tags)
+	}
+	return requireOwned("security group", name, id, tags, err, clusterName)
+}
+
+// verifyNatGatewayOwned returns nil only when the NAT gateway carries the
+// provider owned tag for clusterName (read via ShowNatGatewayTag).
+func (m *Manager) verifyNatGatewayOwned(id, name, clusterName string) error {
+	var tags common.Tags
+	resp, err := m.nat.ShowNatGatewayTag(&natmodel.ShowNatGatewayTagRequest{NatGatewayId: id})
+	if err == nil && resp != nil {
+		tags = tagsFromTagBody(resp.Tags)
+	}
+	return requireOwned("NAT gateway", name, id, tags, err, clusterName)
+}
+
+// requireOwned is the single fail-closed decision point for adoption: an
+// unreadable tag list and a missing owned tag both yield an explicit conflict
+// error naming the resource type, name and ID.
+func requireOwned(resourceType, name, id string, tags common.Tags, readErr error, clusterName string) error {
+	if readErr != nil {
+		return errors.Wrapf(readErr, "%s %q (%s) already exists but its ownership tags could not be read; refusing to adopt", resourceType, name, id)
+	}
+	if !HasOwnedTag(tags, clusterName) {
+		return errors.Errorf("%s %q (%s) already exists but is not owned by this provider; refusing to adopt", resourceType, name, id)
+	}
+	return nil
+}
+
+// tagsFromResourceTag converts a VPC v2 tag list (VPC/subnet/security group)
+// into the common.Tags shape used by HasOwnedTag.
+func tagsFromResourceTag(list *[]vpcmodel.ResourceTag) common.Tags {
+	if list == nil {
+		return nil
+	}
+	tags := make(common.Tags, len(*list))
+	for _, t := range *list {
+		tags[t.Key] = t.Value
+	}
+	return tags
+}
+
+// tagsFromTagBody converts a NAT v2 tag list into the common.Tags shape.
+func tagsFromTagBody(list *[]natmodel.TagBody) common.Tags {
+	if list == nil {
+		return nil
+	}
+	tags := make(common.Tags, len(*list))
+	for _, t := range *list {
+		tags[t.Key] = t.Value
+	}
+	return tags
+}
+
 func (m *Manager) ReconcileVpc(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {
 	if spec.VPC.ID != "" {
 		// vpc.id set: BYO (no owned tag) is a no-op; adopted (owned tag) is
@@ -298,6 +389,9 @@ func (m *Manager) ensureVpc(ctx context.Context, spec *common.NetworkSpec, clust
 		name = clusterName + "-vpc"
 	}
 	if id := m.findVpcByName(ctx, name); id != "" {
+		if err := m.verifyVpcOwned(id, name, clusterName); err != nil {
+			return err
+		}
 		spec.VPC.ResourceID = id
 		return nil
 	}
@@ -353,6 +447,9 @@ func (m *Manager) ensureSubnets(ctx context.Context, spec *common.NetworkSpec, c
 		}
 		for _, sub := range existing {
 			if sub.Name == name {
+				if err := m.verifySubnetOwned(sub.Id, name, clusterName); err != nil {
+					return err
+				}
 				s.ResourceID = sub.Id
 				s.NeutronSubnetID = sub.NeutronSubnetId
 				break
@@ -395,6 +492,9 @@ func (m *Manager) ensureNatGateway(ctx context.Context, spec *common.NetworkSpec
 	if ng.ResourceID == "" {
 		name := clusterName + "-nat"
 		if id := m.findNatGatewayByName(ctx, name); id != "" {
+			if err := m.verifyNatGatewayOwned(id, name, clusterName); err != nil {
+				return err
+			}
 			ng.ResourceID = id
 		}
 	}
@@ -472,6 +572,9 @@ func (m *Manager) ensureSecurityGroup(ctx context.Context, spec *common.NetworkS
 	}
 	if sg.ResourceID == "" {
 		if id := m.findSecurityGroupByName(ctx, name, vpcID); id != "" {
+			if err := m.verifySecurityGroupOwned(id, name, clusterName); err != nil {
+				return err
+			}
 			sg.ResourceID = id
 		}
 	}

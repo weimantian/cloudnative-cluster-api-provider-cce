@@ -397,10 +397,12 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		if clouderrors.IsConflict(err) {
 			if id, ferr := s.findClusterIDByName(ctx, in.Name); ferr == nil && id != "" {
 				// Ownership guard: only adopt a cluster that is actually
-				// provisioned (not Deleting/Unavailable) — adopting a dying or
-				// foreign same-name cluster would lead to wrong operations.
+				// provisioned (not Deleting/Unavailable) AND carries this
+				// provider's owned tag. A foreign same-name cluster must never
+				// be adopted — the provider would then reconcile, and could
+				// scale or delete, a resource it does not own.
 				if info, serr := s.ShowCluster(ctx, id); serr == nil && (info.Phase == "Available" || info.Phase == "Creating") {
-					return id, nil
+					return adoptConflictCandidate("cluster", in.Name, id, info.Tags, in.Name)
 				}
 				return "", errors.Wrapf(err, "CreateCluster conflicted but existing cluster %q is not adoptable", in.Name)
 			}
@@ -1059,10 +1061,12 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 		// Idempotent create: if the pool already exists (a previous create
 		// succeeded but the response was lost to throttling — the same failure
 		// mode CreateCluster handles), adopt it by name instead of failing on a
-		// 409 forever.
+		// 409 forever — but only when it carries this provider's owned tag. A
+		// foreign same-name pool must never be adopted (the provider would later
+		// scale or delete a resource it does not own).
 		if clouderrors.IsConflict(err) {
-			if id, ferr := s.findNodePoolIDByName(ctx, in.ClusterID, in.Name); ferr == nil && id != "" {
-				return id, nil
+			if pool, ferr := s.findNodePoolIDByName(ctx, in.ClusterID, in.Name); ferr == nil && pool.NodePoolID != "" {
+				return adoptConflictCandidate("node pool", in.Name, pool.NodePoolID, pool.Tags, in.ClusterName)
 			}
 		}
 		return "", errors.Wrap(err, "CreateNodePool failed")
@@ -1073,18 +1077,20 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 	return *resp.Metadata.Uid, nil
 }
 
-// findNodePoolIDByName looks up a node pool ID by name within a cluster.
-func (s *Client) findNodePoolIDByName(ctx context.Context, clusterID, name string) (string, error) {
+// findNodePoolIDByName looks up a node pool by name within a cluster and
+// returns its full info (incl. Tags) so the caller can verify provider
+// ownership before adopting it after a create conflict.
+func (s *Client) findNodePoolIDByName(ctx context.Context, clusterID, name string) (NodePoolInfo, error) {
 	pools, err := s.ListNodePools(ctx, clusterID)
 	if err != nil {
-		return "", errors.Wrap(err, "ListNodePools failed")
+		return NodePoolInfo{}, errors.Wrap(err, "ListNodePools failed")
 	}
 	for _, p := range pools {
 		if p.Name == name {
-			return p.NodePoolID, nil
+			return p, nil
 		}
 	}
-	return "", errors.Errorf("node pool %q not found in cluster %s", name, clusterID)
+	return NodePoolInfo{}, errors.Errorf("node pool %q not found in cluster %s", name, clusterID)
 }
 
 // ScaleNodePool implements Service.
@@ -1212,6 +1218,17 @@ func (s *Client) ListNodePools(_ context.Context, clusterID string) ([]NodePoolI
 			}
 			if p.Spec != nil && p.Spec.InitialNodeCount != nil {
 				info.DesiredNodeCount = *p.Spec.InitialNodeCount
+			}
+			// Node-pool queries return the node template's userTags (SDK
+			// note: 节点池场景 ... 查询时支持返回该字段). Capture them so the
+			// create-conflict adoption path can verify provider ownership.
+			if p.Spec != nil && p.Spec.NodeTemplate != nil && p.Spec.NodeTemplate.UserTags != nil {
+				info.Tags = map[string]string{}
+				for _, tg := range *p.Spec.NodeTemplate.UserTags {
+					if tg.Key != nil && tg.Value != nil {
+						info.Tags[*tg.Key] = *tg.Value
+					}
+				}
 			}
 			// status.currentNode = expected total, status.activeNode = nodes
 			// in Active state (official NodePoolStatus, verified live).
@@ -1568,6 +1585,22 @@ const (
 
 // ownedTagKey returns the ownership tag key for a cluster.
 func ownedTagKey(clusterName string) string { return OwnedTagPrefix + "." + clusterName }
+
+// adoptConflictCandidate verifies provider ownership before a same-name
+// resource found after a 409 conflict is adopted. A candidate is adoptable
+// only when it carries the provider owned tag (ownedTagKey(clusterName) ==
+// "owned"); a foreign same-name resource must never be adopted, because the
+// provider would then reconcile — and could scale or delete — a resource it
+// does not own. It fails closed: when ownership cannot be confirmed (no tags,
+// or a wrong/foreign key), it returns an explicit conflict error naming the
+// resource instead of adopting it. kind is the human-readable resource kind
+// ("cluster", "node pool") used in that error.
+func adoptConflictCandidate(kind, name, id string, tags map[string]string, clusterName string) (string, error) {
+	if tags[ownedTagKey(clusterName)] != "owned" {
+		return "", errors.Errorf("%s %q (%s) already exists but is not owned by this provider; refusing to adopt", kind, name, id)
+	}
+	return id, nil
+}
 
 // ---- helpers ----
 

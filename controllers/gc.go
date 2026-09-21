@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/go-logr/logr"
+	"github.com/pkg/errors"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 	"sigs.k8s.io/controller-runtime/pkg/manager"
@@ -74,6 +75,18 @@ func (g *GarbageCollector) region() string {
 	return g.Region
 }
 
+// serviceForRegion resolves the GC's region and builds the CCE service for
+// the sweep. A GC with no resolvable region is a misconfiguration: fail
+// loudly, naming it, instead of letting ServiceFactory("") fail with a
+// generic client-build error and silently never deleting anything.
+func (g *GarbageCollector) serviceForRegion(creds *credentials.Credentials) (cceService.Service, error) {
+	region := g.region()
+	if region == "" {
+		return nil, errors.New("garbage collector: no GC region configured (set --gc-region or GlobalScope.Region)")
+	}
+	return g.ServiceFactory(region, creds)
+}
+
 // Start runs the periodic sweep until ctx is cancelled.
 func (g *GarbageCollector) Start(ctx context.Context) error {
 	g.Log.Info("starting CCE garbage collector", "region", g.region(), "interval", g.Interval)
@@ -101,7 +114,7 @@ func (g *GarbageCollector) sweep(ctx context.Context) {
 		log.Info("garbage collector: no controller credentials, skipping sweep", "reason", err.Error())
 		return
 	}
-	svc, err := g.ServiceFactory(g.region(), &credentials.Credentials{AccessKey: creds.AccessKey, SecretKey: creds.SecretKey})
+	svc, err := g.serviceForRegion(&credentials.Credentials{AccessKey: creds.AccessKey, SecretKey: creds.SecretKey})
 	if err != nil {
 		log.Error(err, "garbage collector: failed to build CCE service")
 		return

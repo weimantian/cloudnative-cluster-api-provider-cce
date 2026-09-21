@@ -8,6 +8,7 @@ package controllers
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
@@ -275,5 +276,48 @@ func TestGarbageCollectorSweepSkipsOptedOutCluster(t *testing.T) {
 	}
 	if fakeSvc.DeletedEips[0] != "eip-orphan-1" {
 		t.Errorf("expected eip-orphan-1 deleted, got %v", fakeSvc.DeletedEips[0])
+	}
+}
+
+// TestGarbageCollectorRegionWiring pins the production wiring: the region the
+// sweeper passes to ServiceFactory is the configured one, and a GC with an
+// empty region fails loudly instead of silently sweeping nothing.
+// Regression: main.go never set Region/GlobalScope, so region() returned "" and
+// the sweep no-op'd — which the old tests missed by setting Region directly.
+func TestGarbageCollectorRegionWiring(t *testing.T) {
+	creds := &credentials.Credentials{AccessKey: "test-ak", SecretKey: "test-sk"}
+
+	var gotRegion string
+	gc := &GarbageCollector{
+		Region: "cn-north-4",
+		ServiceFactory: func(regionID string, _ *credentials.Credentials) (cceService.Service, error) {
+			gotRegion = regionID
+			return fakes.NewFakeCCEService(), nil
+		},
+	}
+	if _, err := gc.serviceForRegion(creds); err != nil {
+		t.Fatalf("serviceForRegion(configured region) returned unexpected error: %v", err)
+	}
+	if gotRegion != "cn-north-4" {
+		t.Errorf("ServiceFactory region = %q, want %q", gotRegion, "cn-north-4")
+	}
+
+	// Empty region must surface a clear error and never reach ServiceFactory.
+	factoryCalled := false
+	emptyGC := &GarbageCollector{
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			factoryCalled = true
+			return fakes.NewFakeCCEService(), nil
+		},
+	}
+	_, err := emptyGC.serviceForRegion(creds)
+	if err == nil {
+		t.Fatal("expected an error for an empty GC region, got nil")
+	}
+	if !strings.Contains(err.Error(), "region") {
+		t.Errorf("expected the error to name the region misconfiguration, got %q", err.Error())
+	}
+	if factoryCalled {
+		t.Error("ServiceFactory must not be called when the region is unresolvable")
 	}
 }

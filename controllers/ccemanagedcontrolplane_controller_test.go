@@ -18,6 +18,7 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
@@ -864,5 +865,177 @@ func TestControlPlaneReconcileRequeueWhenObservedBehind(t *testing.T) {
 	}
 	if len(fakeSvc.CreatedClusters) != 1 {
 		t.Errorf("expected 1 cluster creation on first reconcile, got %d", len(fakeSvc.CreatedClusters))
+	}
+}
+
+// TestControlPlaneReconcileDeleteWithoutOwnerCluster covers the delete path
+// when the owner Cluster reference is missing: reconcileDelete dereferences
+// cluster.Spec.InfrastructureRef, so calling it with a nil cluster panicked
+// (recovered by controller-runtime and requeued), leaving the control plane
+// Terminating forever with its finalizer stranded. The reconcile must not
+// panic, must requeue, and must keep the finalizer so deletion is retried.
+func TestControlPlaneReconcileDeleteWithoutOwnerCluster(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-delete-noowner"
+	createNamespace(t, ns)
+
+	cp := &controlplanev1beta2.CCEManagedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "orphan-control-plane",
+			Namespace: ns,
+			// Finalizer present (normally added by reconcileNormal) so the
+			// delete leaves the object Terminating instead of vanishing.
+			Finalizers: []string{ControlPlaneFinalizer},
+		},
+		Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{
+			ClusterName: "orphan-cluster",
+			Category:    "Turbo",
+			Flavor:      "cce.s2.medium",
+			ContainerNetwork: controlplanev1beta2.ContainerNetworkSpec{
+				Mode:       "eni",
+				ENISubnets: []string{"sub-1"},
+			},
+			ServiceNetwork: controlplanev1beta2.ServiceNetworkSpec{CIDR: "10.247.0.0/16"},
+			EndpointAccess: controlplanev1beta2.EndpointAccessSpec{Public: true},
+		},
+	}
+	if err := k8sClient.Create(ctx, cp); err != nil {
+		t.Fatalf("failed to create control plane: %v", err)
+	}
+	// No ownerReferences -> util.GetOwnerCluster returns (nil, nil).
+	if err := k8sClient.Delete(ctx, cp); err != nil {
+		t.Fatalf("failed to delete control plane: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	// A panic in Reconcile would fail the whole test process; reaching the
+	// assertions below is the "does not panic" check.
+	res, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)})
+	if err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if res.RequeueAfter <= 0 {
+		t.Errorf("expected positive requeue after missing owner cluster, got %+v", res)
+	}
+	if len(fakeSvc.DeletedClusters) != 0 {
+		t.Errorf("expected no cloud delete without an owner cluster, got %v", fakeSvc.DeletedClusters)
+	}
+
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane after reconcile: %v", err)
+	}
+	if !hasFinalizer(got.Finalizers, ControlPlaneFinalizer) {
+		t.Error("expected finalizer to remain so deletion is retried")
+	}
+}
+
+// TestControlPlaneReconcileRejectsClusterNameMismatch covers the GC identity
+// invariant: spec.clusterName must equal the owning Cluster name, otherwise
+// ExternalResourceGC would treat the live CCE cluster as an orphan and delete
+// it. The mismatch must be rejected before any cloud call.
+func TestControlPlaneReconcileRejectsClusterNameMismatch(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-name-mismatch"
+	createNamespace(t, ns)
+
+	cluster := &clusterv1.Cluster{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster", Namespace: ns},
+		Spec: clusterv1.ClusterSpec{
+			InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+				APIGroup: infrav1beta2.GroupVersion.Group,
+				Kind:     "CCECluster",
+				Name:     "test-cluster",
+			},
+			ControlPlaneRef: clusterv1.ContractVersionedObjectReference{
+				APIGroup: controlplanev1beta2.GroupVersion.Group,
+				Kind:     "CCEManagedControlPlane",
+				Name:     "test-cluster-control-plane",
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, cluster); err != nil {
+		t.Fatalf("failed to create Cluster: %v", err)
+	}
+	ownerRef := metav1.OwnerReference{
+		APIVersion: clusterv1.GroupVersion.String(),
+		Kind:       "Cluster",
+		Name:       cluster.Name,
+		UID:        cluster.UID,
+	}
+	cceCluster := &infrav1beta2.CCECluster{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "test-cluster",
+			Namespace:       ns,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
+		},
+		Spec: infrav1beta2.CCEClusterSpec{
+			Region: "cn-north-4",
+			Network: common.NetworkSpec{
+				VPC:     common.VPC{ID: "vpc-1"},
+				Subnets: []common.Subnet{{ID: "sub-1"}},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, cceCluster); err != nil {
+		t.Fatalf("failed to create CCECluster: %v", err)
+	}
+	// clusterName is immutable after creation, so the divergent value must be
+	// set here, at creation time.
+	cp := &controlplanev1beta2.CCEManagedControlPlane{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:            "test-cluster-control-plane",
+			Namespace:       ns,
+			OwnerReferences: []metav1.OwnerReference{ownerRef},
+		},
+		Spec: controlplanev1beta2.CCEManagedControlPlaneSpec{
+			ClusterName: "other-cluster",
+			Category:    "Turbo",
+			Flavor:      "cce.s2.medium",
+			ContainerNetwork: controlplanev1beta2.ContainerNetworkSpec{
+				Mode:       "eni",
+				ENISubnets: []string{"sub-1"},
+			},
+			ServiceNetwork: controlplanev1beta2.ServiceNetworkSpec{CIDR: "10.247.0.0/16"},
+			EndpointAccess: controlplanev1beta2.EndpointAccessSpec{Public: true},
+		},
+	}
+	if err := k8sClient.Create(ctx, cp); err != nil {
+		t.Fatalf("failed to create control plane: %v", err)
+	}
+	createCredentialsSecret(t, ns, "test-cluster")
+	createCredentialsSecret(t, ns, "other-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.CreatedClusters) != 0 {
+		t.Errorf("expected no cluster creation on name mismatch, got %v", fakeSvc.CreatedClusters)
+	}
+
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	c := capiconditions.Get(got, conditions.CCEClusterReadyCondition)
+	if c == nil || c.Status != metav1.ConditionFalse || c.Reason != conditions.CCEClusterNameMismatchReason {
+		t.Errorf("expected %s=False reason %s, got %v",
+			conditions.CCEClusterReadyCondition, conditions.CCEClusterNameMismatchReason, c)
 	}
 }

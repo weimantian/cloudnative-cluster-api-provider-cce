@@ -29,11 +29,9 @@ func j(v interface{}) string {
 func main() {
 	ak := os.Getenv("CLOUD_SDK_AK")
 	sk := os.Getenv("CLOUD_SDK_SK")
-	if ak == "" {
-		ak = "HPUANXUOD69NHMA22B1O"
-	}
-	if sk == "" {
-		sk = "doPPU6gJmSKoOi047zs8dd8Cn0MYEuIQVQeQkS3z"
+	if ak == "" || sk == "" {
+		fmt.Fprintln(os.Stderr, "CLOUD_SDK_AK and CLOUD_SDK_SK must be set")
+		os.Exit(1)
 	}
 	cred, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).SafeBuild()
 	if err != nil {

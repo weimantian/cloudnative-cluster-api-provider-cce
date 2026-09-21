@@ -148,9 +148,10 @@ func main() {
 			ServiceFactory: func(regionID string, creds *credentials.Credentials) (cceService.Service, error) {
 				return cceService.NewClient(regionID, creds)
 			},
-			GlobalScope:   nil, // populated below if --gc-region is set; GarbageCollector.region() falls back to Region.
+			GlobalScope:   nil, // GC uses the legacy Region field below; region() falls back to it.
 			Interval:      gcInterval,
 			ResourceTypes: gcResourceTypes,
+			Region:        gcRegion,
 			Log:           ctrl.Log.WithName("garbage-collector"),
 		}); err != nil {
 			setupLog.Error(err, "unable to add garbage collector")

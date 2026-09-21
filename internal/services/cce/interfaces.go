@@ -215,6 +215,10 @@ type NodePoolInfo struct {
 	NodeCount int32
 	// ActiveNodeCount is status.activeNode (nodes in Active state).
 	ActiveNodeCount int32
+	// Tags are the node pool's current node-template user tags
+	// (spec.nodeTemplate.userTags), used to verify provider ownership before
+	// adopting a same-name pool after a create conflict.
+	Tags map[string]string
 }
 
 // NodeInfo is a node with its lifecycle phase (used by node auto-repair).

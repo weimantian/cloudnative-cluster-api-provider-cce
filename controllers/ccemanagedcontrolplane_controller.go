@@ -142,6 +142,16 @@ func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ct
 	// pre-refactor structure: scope is only needed for normal reconcile
 	// since the delete path doesn't write status.observedGeneration).
 	if !cp.ObjectMeta.DeletionTimestamp.IsZero() {
+		if cluster == nil {
+			// Deleting without an owner Cluster reference: reconcileDelete
+			// dereferences cluster.Spec.InfrastructureRef and would panic, so
+			// never call it with a nil cluster. Requeue (do not return an
+			// empty Result) — otherwise the finalizer is stranded with no
+			// retry. The owner ref is a CAPI-managed invariant set once, so a
+			// slow interval is enough.
+			log.Info("Deleting control plane has no owner Cluster reference, deferring deletion")
+			return ctrl.Result{RequeueAfter: reconciliationPeriod}, nil
+		}
 		res, err := r.reconcileDelete(ctx, cluster, cp)
 		return res, err
 	}
@@ -185,6 +195,23 @@ func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ct
 
 func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, cluster *clusterv1.Cluster, cp *controlplanev1beta2.CCEManagedControlPlane) (ctrl.Result, error) {
 	log := ctrl.LoggerFrom(ctx)
+
+	// Identity invariant: spec.clusterName names both the cloud CCE cluster and
+	// the ownership tag key (cluster-api-provider-cce.cluster.<clusterName>=owned).
+	// ExternalResourceGC matches that key against Cluster CR names, so a
+	// divergent name makes the sweeper treat the live CCE cluster as an orphan
+	// and delete it. Enforce clusterName == owning Cluster name before any cloud
+	// call. clusterName is immutable, so this state never self-heals: delete and
+	// recreate the object with the correct name.
+	if cp.Spec.ClusterName != cluster.Name {
+		msg := errors.Errorf("spec.clusterName %q must equal the owning Cluster name %q",
+			cp.Spec.ClusterName, cluster.Name).Error()
+		conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
+			conditions.CCEClusterNameMismatchReason, msg)
+		recordEvent(r.Recorder, cp, corev1.EventTypeWarning,
+			"InvalidClusterName", "%s", msg)
+		return ctrl.Result{}, nil
+	}
 
 	// Wait for the CCECluster shell to report ready (CAPI v1beta2 contract:
 	// Cluster.Status.Initialization.InfrastructureProvisioned).
