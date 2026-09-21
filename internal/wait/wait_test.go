@@ -15,10 +15,7 @@ import (
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
-var (
-	errRetryable    = errors.New("retryable error")
-	errNonRetryable = errors.New("non retryable error")
-)
+var errNonRetryable = errors.New("non retryable error")
 
 func fastBackoff() wait.Backoff {
 	return wait.Backoff{
@@ -80,39 +77,6 @@ func TestWaitForWithRetryable_NonRetryableImmediateReturn(t *testing.T) {
 	}
 	if calls != 1 {
 		t.Errorf("expected 1 call (immediate return), got %d", calls)
-	}
-}
-
-func TestWaitForWithRetryable_RetryableUntilTimeout(t *testing.T) {
-	calls := 0
-	err := WaitForWithRetryable(context.Background(), fastBackoff(), func() (bool, error) {
-		calls++
-		return false, errRetryable
-	}, "retryable error")
-	if err != errRetryable {
-		t.Errorf("expected errRetryable, got %v", err)
-	}
-	if calls < 2 {
-		t.Errorf("expected at least 2 calls (retry), got %d", calls)
-	}
-}
-
-func TestWaitForWithRetryable_NonRetryableAfterRetryable(t *testing.T) {
-	first := true
-	calls := 0
-	err := WaitForWithRetryable(context.Background(), fastBackoff(), func() (bool, error) {
-		calls++
-		if first {
-			first = false
-			return false, errRetryable
-		}
-		return false, errNonRetryable
-	}, "retryable error")
-	if err != errNonRetryable {
-		t.Errorf("expected errNonRetryable (latest wins), got %v", err)
-	}
-	if calls < 2 {
-		t.Errorf("expected at least 2 calls (retry then immediate return), got %d", calls)
 	}
 }
 

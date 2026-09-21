@@ -6,16 +6,13 @@ Licensed under the MIT No Attribution (MIT-0) License.
 
 // Package wait provides utilities for polling and waiting on cloud resources
 // with exponential backoff. Adapted from the Cluster API provider reference
-// implementation. Stripped of the provider-specific awserrors dependency —
-// uses errors.Cause() + string match so it works against any SDK (CCE's
-// pkg/errors-based error wrapping is compatible).
+// implementation.
 package wait
 
 import (
 	"context"
 	"time"
 
-	"github.com/pkg/errors"
 	"k8s.io/apimachinery/pkg/util/wait"
 )
 
@@ -35,14 +32,12 @@ func NewBackoff() wait.Backoff {
 }
 
 // WaitForWithRetryable repeatedly evaluates condition with exponential backoff
-// until the condition returns true, a non-retryable error occurs, or the
+// until the condition returns true, a condition error occurs, or the
 // backoff budget is exhausted. ctx is honored: cancellation returns
 // ctx.Err() immediately.
 //
-// retryableErrors is a list of error message strings (compared against
-// errors.Cause(err).Error()) that should be retried instead of returned
-// immediately. Pass nil/empty to disable retry classification.
-func WaitForWithRetryable(ctx context.Context, backoff wait.Backoff, condition wait.ConditionFunc, retryableErrors ...string) error {
+// A condition error is returned immediately (it is never retried).
+func WaitForWithRetryable(ctx context.Context, backoff wait.Backoff, condition wait.ConditionFunc) error {
 	var lastErr error
 	waitErr := wait.ExponentialBackoff(backoff, func() (bool, error) {
 		lastErr = nil
@@ -62,12 +57,7 @@ func WaitForWithRetryable(ctx context.Context, backoff wait.Backoff, condition w
 		}
 
 		lastErr = err
-		for _, r := range retryableErrors {
-			if errors.Cause(err).Error() == r {
-				return false, nil // retryable
-			}
-		}
-		return false, err // non-retryable, propagate immediately
+		return false, err // propagate immediately
 	})
 
 	if waitErr == nil {

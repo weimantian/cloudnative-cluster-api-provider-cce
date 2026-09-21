@@ -74,13 +74,6 @@ type CreateClusterInput struct {
 	PublicAccessCIDRs []string
 	AgencyName        string
 	BillingMode       int32
-	// PeriodType/PeriodNum are REQUIRED when BillingMode=1 (subscription):
-	// periodType month|year, periodNum month [1-9] / year [1-3] (official
-	// ClusterExtendParam; verified against CreateCluster.txt).
-	PeriodType  string
-	PeriodNum   int32
-	IsAutoRenew string // "true" | "false"
-	IsAutoPay   string // "true" | "false"
 	// EnableDataPlaneV2 sets the CCE DataPlane V2 (dataplane-v2) configuration
 	// item on creation, turning on the eBPF/Cilium data plane (Service,
 	// NetworkPolicy). Only valid for the eni (Turbo) network model.

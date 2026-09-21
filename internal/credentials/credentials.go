@@ -11,20 +11,18 @@ package credentials
 
 import (
 	"context"
-	"time"
 
 	"github.com/pkg/errors"
 )
 
 // Credentials are the Huawei Cloud credentials used to build SDK clients for
-// a single reconcile. When an agency is present, SecurityToken and ExpiresAt
-// are populated from an STS AssumeAgency response (temporary credentials);
-// otherwise only AccessKey and SecretKey are set (long-lived AK/SK).
+// a single reconcile. When an agency is present, SecurityToken is populated
+// from an STS AssumeAgency response (temporary credentials); otherwise only
+// AccessKey and SecretKey are set (long-lived AK/SK).
 type Credentials struct {
 	AccessKey     string
 	SecretKey     string
 	SecurityToken string
-	ExpiresAt     time.Time
 }
 
 // Provider assumes an agency and returns temporary security credentials.

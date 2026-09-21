@@ -70,9 +70,9 @@ spec:
   endpointAccess:
     public: false         # true=开公网 endpoint
     private: true          # CCE 恒有内网 endpoint
-  # 计费 0=按需/1=包周期
+  # 计费（当前仅支持按需；1=包周期暂未支持，设置会被 webhook 拒绝）
   billing:
-    mode: 0               # 0=按需 1=包周期
+    mode: 0               # 仅支持 0（按需）
   # 用户附加标签（写 CCE clusterTags/userTags；保留 key 优先）
   additionalTags:         # 写入 CCE 集群 clusterTags（owned/role 保留 key 自动且优先）
     env: prod
@@ -164,7 +164,7 @@ spec:
   # ---- 以下为全部可选字段（默认省略；按需取消注释）----
   # 节点 providerID（控制器回填）
   # providerIDList: <value>
-  # 0=按需/1=包周期
+  # 0=按需（仅支持 0；1=包周期暂未支持，会被 webhook 拒绝）
   # billingMode: <value>
   # 竞价实例（仅按需）
   # spot: <value>

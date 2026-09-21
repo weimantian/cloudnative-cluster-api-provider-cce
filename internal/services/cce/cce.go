@@ -410,19 +410,6 @@ func buildCreateClusterRequest(in CreateClusterInput) (*model.CreateClusterReque
 		}
 		spec.Authentication = auth
 	}
-	if in.BillingMode == 1 {
-		// Subscription clusters require periodType/periodNum (official
-		// ClusterExtendParam: "billingMode为1(包周期)时生效,且为必选").
-		if in.PeriodType == "" {
-			return nil, errors.New("CreateCluster: periodType is required when billingMode=1 (subscription)")
-		}
-		spec.ExtendParam = &model.ClusterExtendParam{
-			PeriodType:  &in.PeriodType,
-			PeriodNum:   int32Ptr(in.PeriodNum),
-			IsAutoRenew: stringPtr(in.IsAutoRenew),
-			IsAutoPay:   stringPtr(in.IsAutoPay),
-		}
-	}
 
 	cluster := &model.Cluster{
 		Kind:       "Cluster",

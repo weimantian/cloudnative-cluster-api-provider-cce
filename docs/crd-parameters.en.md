@@ -70,9 +70,9 @@ spec:
   endpointAccess:
     public: false         # true=开公网 endpoint
     private: true          # CCE 恒有内网 endpoint
-  # Billing controls billing mode: 0=on-demand, 1=subscription.
+  # Billing: on-demand only for now (1=subscription is not supported yet and is rejected by the webhook).
   billing:
-    mode: 0               # 0=按需 1=包周期
+    mode: 0               # only 0 (on-demand) is accepted
   # AdditionalTags is an optional set of tags to add to the CCE cluster (maps to CCE clusterTags / ResourceTag), in addition to the provider owned tag cluster-api-provider-cce.cluster.<clusterName>=owned that is always added. The owned tag wins on key collision. Tag updates on an already-created cluster are reconciled via the CCE BatchCreateClusterTags API (see requirements FR-1.9).
   additionalTags:         # 写入 CCE 集群 clusterTags（owned/role 保留 key 自动且优先）
     env: prod
@@ -164,7 +164,7 @@ spec:
   # ---- all optional fields below (omitted by default; uncomment as needed) ----
   # ProviderIDList is the list of provider IDs of the nodes in the pool, populated by the controller so Cluster API can fill MachinePool.status.nodeRefs (and the deprecated readyReplicas). Each entry has the form huaweicloud:///<serverId>, matching the spec.providerID of the corresponding workload node. The controller owns this field.
   # providerIDList: <value>
-  # BillingMode: 0=on-demand, 1=subscription.
+  # BillingMode: 0=on-demand (only 0 is accepted; 1=subscription is not supported yet and is rejected by the webhook).
   # billingMode: <value>
   # Spot requests spot (竞价) instances for the node pool. Only effective when billingMode=0 (on-demand); maps to nodeTemplate.extendParam. marketType=spot.
   # spot: <value>

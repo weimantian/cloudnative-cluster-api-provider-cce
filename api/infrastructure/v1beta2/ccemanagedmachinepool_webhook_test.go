@@ -111,14 +111,18 @@ func TestMachinePoolUpdateConfigValidation(t *testing.T) {
 	}
 }
 
-// TestMachinePoolSpotValidation verifies spot (竞价) requires on-demand billing.
-func TestMachinePoolSpotValidation(t *testing.T) {
-	// spot + billingMode=1 (subscription) must be rejected.
-	bad := validPool()
-	bad.Spec.Spot = true
-	bad.Spec.BillingMode = 1
-	if err := bad.validate(); err == nil {
-		t.Error("expected spot+billingMode=1 to be rejected")
+// TestMachinePoolBillingModeValidation verifies subscription billing (mode=1)
+// is rejected — the CRD does not expose periodType/periodNum — and that spot
+// (竞价) instances remain legal on on-demand billing.
+func TestMachinePoolBillingModeValidation(t *testing.T) {
+	// billingMode=1 (subscription) must be rejected with or without spot.
+	for _, withSpot := range []bool{false, true} {
+		bad := validPool()
+		bad.Spec.BillingMode = 1
+		bad.Spec.Spot = withSpot
+		if err := bad.validate(); err == nil {
+			t.Errorf("expected billingMode=1 (spot=%v) to be rejected", withSpot)
+		}
 	}
 	// spot + billingMode=0 (on-demand) is allowed.
 	ok := validPool()

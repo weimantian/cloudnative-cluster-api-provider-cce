@@ -107,10 +107,13 @@ func (m *CCEManagedMachinePool) validate() error {
 	if len(m.Spec.SecurityGroups) > 5 {
 		allErrs = append(allErrs, field.TooMany(field.NewPath("spec", "securityGroups"), len(m.Spec.SecurityGroups), 5))
 	}
-	// Spot (竞价) instances are only supported with on-demand billing.
-	if m.Spec.Spot && m.Spec.BillingMode == 1 {
-		allErrs = append(allErrs, field.Forbidden(field.NewPath("spec", "spot"),
-			"spot instances require billingMode=0 (on-demand)"))
+	// Subscription billing (billingMode=1) requires periodType/periodNum which
+	// the CRD does not expose — reject it explicitly instead of letting the
+	// create loop fail on a missing required field. On-demand (0) is the only
+	// supported mode, which also keeps spot (竞价) instances legal.
+	if m.Spec.BillingMode == 1 {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "billingMode"), "1",
+			"subscription billing is not supported yet (periodType/periodNum not exposed)"))
 	}
 	// Extension scale group flavor/AZ validation (multi-AZ).
 	for i, g := range m.Spec.ExtensionScaleGroups {

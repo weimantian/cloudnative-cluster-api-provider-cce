@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
-	"time"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
@@ -36,12 +35,7 @@ import (
 // Managed-network constants (defaults mirror hack/deploy-network and
 // hack/nat-egress, which were verified against a real account).
 const (
-	defaultVPCCIDR        = "10.0.0.0/16"
-	defaultNatGatewaySpec = "1"
-	// NAT wait timeout. Polling uses exponential backoff via internal/wait
-	// (no fixed pollInterval needed); the backoff budget (~5m) bounds
-	// total wait. Kept here for downstream callers that read this value.
-	natActiveTimeout = 60 * time.Second
+	defaultVPCCIDR   = "10.0.0.0/16"
 	eipBandwidthSize = 5
 )
 

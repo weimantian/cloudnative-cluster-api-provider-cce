@@ -10,7 +10,6 @@ import (
 	"context"
 	"fmt"
 	"strings"
-	"time"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
@@ -121,9 +120,6 @@ func assumeAgency(ctx context.Context, region, agencyURN, accessKey, secretKey s
 		AccessKey:     resp.Credentials.AccessKeyId,
 		SecretKey:     resp.Credentials.SecretAccessKey,
 		SecurityToken: resp.Credentials.SecurityToken,
-	}
-	if resp.Credentials.Expiration != nil {
-		creds.ExpiresAt = time.Time(*resp.Credentials.Expiration)
 	}
 	return creds, nil
 }

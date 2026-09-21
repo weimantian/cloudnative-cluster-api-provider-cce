@@ -8,7 +8,6 @@ Licensed under the MIT No Attribution (MIT-0) License.
 package features
 
 import (
-	"k8s.io/apimachinery/pkg/util/runtime"
 	"k8s.io/component-base/featuregate"
 )
 
@@ -60,5 +59,3 @@ func Enabled(f featuregate.Feature) bool {
 func SetFromMap(m map[string]bool) error {
 	return featureGatesMutable.SetFromMap(m)
 }
-
-var _ = runtime.Must // reserved for future gate wiring

@@ -74,7 +74,6 @@ const (
 	ReconciliationFailedReason            = "ReconciliationFailed"
 	WaitingForClusterInfrastructureReason = "WaitingForClusterInfrastructure"
 	WaitingForControlPlaneReason          = "WaitingForControlPlane"
-	WaitingForKubeconfigReason            = "WaitingForKubeconfig"
 	// UpgradeNotOfferedReason reports that the platform currently offers no
 	// upgrade target from the running version (questionnaire Q11, verified
 	// live: ShowClusterUpgradeInfo returns an empty target list).
@@ -86,12 +85,10 @@ const (
 	UpgradeTargetUnavailableReason = "UpgradeTargetUnavailable"
 )
 
-// Per-condition reason constants. One
-// dedicated reason per condition so downstream tooling (kubectl describe,
-// status dashboards) can disambiguate failure modes without parsing the
-// free-form Message field. The shared Reconciliation{Failed,InProgress}
-// reasons remain valid for unexpected failures that fall outside these
-// categories.
+// Per-condition reason constants. A dedicated reason exists only for the
+// failure modes that actually need disambiguation; other failures reuse the
+// shared Reconciliation{Failed,InProgress} reasons above, with the detail in
+// the free-form Message field.
 
 // Network condition reasons (CCECluster / VpcReady / SubnetsReady /
 // NatGatewaysReady).
@@ -103,14 +100,12 @@ const (
 // Credentials condition reasons.
 const (
 	CredentialsResolutionFailedReason = "CredentialsResolutionFailed" // identityRef/secret/Secret not found
-	CredentialsInvalidReason          = "CredentialsInvalid"          // AK/SK rejected by the cloud
 	AgencyCreationFailedReason        = "AgencyCreationFailed"        // EnsureAgency (List/Create trust agency) failed
 )
 
 // CCEClusterReady condition reasons.
 const (
 	CCEClusterNotFoundReason     = "CCEClusterNotFound" // out-of-band delete, recreate path
-	CCEClusterCreatingReason     = "CCEClusterCreating" // cluster is being created
 	CCEClusterNameMismatchReason = "InvalidClusterName" // spec.clusterName != owning Cluster name (GC would orphan-delete)
 )
 
@@ -122,14 +117,11 @@ const (
 // AddonsConfigured condition reasons.
 const (
 	AddonInstallFailedReason = "AddonInstallFailed" // CreateAddonInstance failed
-	AddonUpgradeFailedReason = "AddonUpgradeFailed" // UpdateAddonInstance failed (version drift)
-	AddonDeleteFailedReason  = "AddonDeleteFailed"  // DeleteAddonInstance failed (stale addon not removed)
 )
 
 // PodIdentityAssociationsConfigured condition reasons.
 const (
 	PodIdentityCreationFailedReason = "PodIdentityCreationFailed" // CreatePodIdentityAssociation failed
-	PodIdentityDeletionFailedReason = "PodIdentityDeletionFailed" // DeletePodIdentityAssociation failed
 )
 
 // LoggingConfigured condition reasons.
@@ -140,17 +132,12 @@ const (
 // AccessPoliciesConfigured condition reasons.
 const (
 	AccessPolicyCreateFailedReason = "AccessPolicyCreateFailed" // CreateAccessPolicy failed
-	AccessPolicyUpdateFailedReason = "AccessPolicyUpdateFailed" // UpdateAccessPolicy (drift) failed
-	AccessPolicyDeleteFailedReason = "AccessPolicyDeleteFailed" // DeleteAccessPolicy (stale) failed
 )
 
 // NodePoolReady / NodePoolScaling condition reasons.
 const (
-	NodePoolCreationFailedReason            = "NodePoolCreationFailed"    // CreateNodePool failed
-	NodePoolUpdateFailedReason              = "NodePoolUpdateFailed"      // UpdateNodePool (attribute drift) failed
-	NodePoolScaleFailedReason               = "NodePoolScaleFailed"       // ScaleNodePool failed
-	NodePoolDeleteFailedReason              = "NodePoolDeleteFailed"      // DeleteNodePool failed
-	NodePoolReplicasExternallyManagedReason = "ReplicasExternallyManaged" // external autoscaler owns replicas
+	NodePoolCreationFailedReason = "NodePoolCreationFailed" // CreateNodePool failed
+	NodePoolScaleFailedReason    = "NodePoolScaleFailed"    // ScaleNodePool failed
 )
 
 // MarkTrue sets a condition to True.
