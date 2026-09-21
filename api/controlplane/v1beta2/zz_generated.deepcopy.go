@@ -182,6 +182,11 @@ func (in *CCEManagedControlPlaneSpec) DeepCopyInto(out *CCEManagedControlPlaneSp
 		*out = new(bool)
 		**out = **in
 	}
+	if in.EnableDataPlaneV2 != nil {
+		in, out := &in.EnableDataPlaneV2, &out.EnableDataPlaneV2
+		*out = new(bool)
+		**out = **in
+	}
 	if in.CustomSan != nil {
 		in, out := &in.CustomSan, &out.CustomSan
 		*out = make([]string, len(*in))

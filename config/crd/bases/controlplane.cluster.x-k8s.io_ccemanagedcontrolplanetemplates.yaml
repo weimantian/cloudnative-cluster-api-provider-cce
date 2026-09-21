@@ -279,6 +279,15 @@ spec:
                           standard CCE/Turbo cluster (maps to CCE spec.enableAutopilot). Autopilot
                           requires category Turbo and a compatible flavor (cce.autopilot.cluster).
                         type: boolean
+                      enableDataPlaneV2:
+                        description: |-
+                          EnableDataPlaneV2 turns on the CCE DataPlane V2 (eBPF/Cilium) data plane,
+                          which provides Service and NetworkPolicy capabilities. A CCE cluster on
+                          the eni (Turbo) network model has no NetworkPolicy support until this is
+                          enabled. The platform only allows enabling it at cluster creation (it
+                          cannot be disabled and existing clusters cannot opt in), so the webhook
+                          enforces immutability; it requires containerNetwork.mode=eni.
+                        type: boolean
                       encryptionConfig:
                         description: |-
                           EncryptionConfig controls etcd secret encryption.

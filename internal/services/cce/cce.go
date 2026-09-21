@@ -338,6 +338,15 @@ func (s *Client) CreateCluster(ctx context.Context, in CreateClusterInput) (stri
 		spec.PublicAccess = pa
 	}
 	spec.HostNetwork = &model.HostNetwork{Vpc: in.HostNetworkVpcID, Subnet: in.HostNetworkSubnetID}
+	if in.EnableDataPlaneV2 {
+		// DataPlane V2 is a per-component configuration item (eni group →
+		// dataplane-v2=true); CCE only accepts it at cluster creation.
+		group := "eni"
+		itemName := "dataplane-v2"
+		var itemValue interface{} = true
+		items := []model.ConfigurationItem{{Name: &itemName, Value: &itemValue}}
+		spec.ConfigurationsOverride = &[]model.PackageConfiguration{{Name: &group, Configurations: &items}}
+	}
 	// Ownership + user tags -> CCE clusterTags (official ResourceTag array).
 	spec.ClusterTags = toClusterTags(in.Name, in.Tags)
 	if in.EncryptionConfig != nil && in.EncryptionConfig.Mode != "" {

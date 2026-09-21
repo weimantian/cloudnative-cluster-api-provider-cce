@@ -318,6 +318,7 @@ kubectl apply -f my-cluster.yaml
 > ⚠️ ② **节点池 AZ 创建后不可变**：AZ/flavor 填错必须删池重建（delete machinepool + ccemanagedmachinepool → 改 yaml → apply），不能只 patch。
 > ⚠️ ③ 所有 `VERIFY-*` 都要替换（10 个），替换后 `grep VERIFY my-cluster.yaml` 应无输出；`VERIFY-AZ` 最后替换（先 AZ2/AZ7）。
 > ⚠️ ④ **容量只增不减**：集群规格 `flavor` 不支持降级（webhook 会拒绝降级变更），容器网段 `containerNetwork.cidr`/`mode` 创建后不可变（只能追加 `cidrs` 扩容）——建集群前请按峰值容量规划。
+> ⚠️ ⑤（可选）**NetworkPolicy（DataPlane V2）**：CCE Turbo 集群默认**没有** NetworkPolicy 能力；如需开启，创建时给 `CCEManagedControlPlane.spec` 加 `enableDataPlaneV2: true`（**仅 eni/Turbo 支持、仅新建可开、开启后不可关**，webhook 拦截后续变更）。开启后可用 K8s `NetworkPolicy`（L3/L4）与 `CiliumNetworkPolicy`（L7 仅 Standard-VPC 模型支持）；可用 `kubectl -n kube-system get ds yangtse-cilium` 确认数据面已就绪。
 
 **步骤 9：验证 + 扩缩容**
 

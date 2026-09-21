@@ -141,6 +141,12 @@ func (c *CCEManagedControlPlane) ValidateUpdate(_ context.Context, oldObj, newOb
 	}
 	// IPv6 enablement is immutable (changing the IP family of a live cluster
 	// is not supported).
+	// DataPlane V2 can only be enabled at cluster creation (the platform does
+	// not allow disabling it or opting in later), so it is immutable.
+	if ipv6Enabled(oldObj.Spec.EnableDataPlaneV2) != ipv6Enabled(newObj.Spec.EnableDataPlaneV2) {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "enableDataPlaneV2"),
+			newObj.Spec.EnableDataPlaneV2, "field is immutable after creation"))
+	}
 	if ipv6Enabled(oldObj.Spec.Ipv6Enable) != ipv6Enabled(newObj.Spec.Ipv6Enable) {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "ipv6enable"),
 			newObj.Spec.Ipv6Enable, "field is immutable after creation"))
@@ -185,6 +191,12 @@ func (c *CCEManagedControlPlane) validate() error {
 	if c.Spec.ContainerNetwork.Mode == "eni" && len(c.Spec.ContainerNetwork.ENISubnets) == 0 {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "containerNetwork", "eniSubnets"),
 			"eni mode requires at least one ENI subnet (official eniNetwork.subnets)"))
+	}
+	// DataPlane V2 is only exposed for the eni (Turbo) network model (its
+	// configuration item lives in the eni component group).
+	if ipv6Enabled(c.Spec.EnableDataPlaneV2) && c.Spec.ContainerNetwork.Mode != "eni" {
+		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "enableDataPlaneV2"), "true",
+			"DataPlane V2 requires containerNetwork.mode=eni (Turbo)"))
 	}
 	// Subscription billing (mode=1) requires periodType/periodNum which the
 	// CRD does not expose yet — reject it explicitly instead of letting the

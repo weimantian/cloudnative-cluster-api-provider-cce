@@ -57,6 +57,15 @@ type CCEManagedControlPlaneSpec struct {
 	// +optional
 	EnableAutopilot *bool `json:"enableAutopilot,omitempty"`
 
+	// EnableDataPlaneV2 turns on the CCE DataPlane V2 (eBPF/Cilium) data plane,
+	// which provides Service and NetworkPolicy capabilities. A CCE cluster on
+	// the eni (Turbo) network model has no NetworkPolicy support until this is
+	// enabled. The platform only allows enabling it at cluster creation (it
+	// cannot be disabled and existing clusters cannot opt in), so the webhook
+	// enforces immutability; it requires containerNetwork.mode=eni.
+	// +optional
+	EnableDataPlaneV2 *bool `json:"enableDataPlaneV2,omitempty"`
+
 	// CustomSan entries for the API server certificate.
 	// +optional
 	CustomSan []string `json:"customSan,omitempty"`

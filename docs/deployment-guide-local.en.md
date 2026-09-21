@@ -314,6 +314,7 @@ kubectl apply -f my-cluster.yaml
 > ⚠️ ② **A node pool's AZ is immutable after creation**: if the AZ/flavor is wrong you must delete the pool and recreate it (`kubectl delete machinepool <name>` + `ccemanagedmachinepool <name>` → edit the yaml → `kubectl apply`); patching alone does not work (CCE does not rebuild the pool).
 > ⚠️ ③ Replace every `VERIFY-*` placeholder (10 of them): REGION / VPC-ID / SUBNET-ID / ENI-SUBNET-ID / ENI-NEUTRON-ID / AZ / AZ2 / AZ3 / KEYPAIR-NAME / FLAVOR — missing any one of them fails the creation. After replacing, `grep VERIFY my-cluster.yaml` should output nothing.
 > ⚠️ ④ **Capacity scales up only**: the cluster `flavor` cannot be downgraded (the webhook rejects a downgrade) and `containerNetwork.cidr`/`mode` are immutable after creation (only `cidrs` can be appended) — plan for peak capacity before creating the cluster.
+> ⚠️ ⑤ (optional) **NetworkPolicy (DataPlane V2)**: a CCE Turbo cluster has **no** NetworkPolicy capability by default. To enable it, set `enableDataPlaneV2: true` on `CCEManagedControlPlane.spec` at creation (**eni/Turbo only, new clusters only, cannot be disabled afterwards**; the webhook rejects later changes). Once on, K8s `NetworkPolicy` (L3/L4) and `CiliumNetworkPolicy` (L7, Standard-VPC model only) apply; check `kubectl -n kube-system get ds yangtse-cilium` to confirm the data plane is up.
 
 **Step 7: Verify + scale**
 

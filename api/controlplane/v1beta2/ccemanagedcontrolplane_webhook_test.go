@@ -244,3 +244,29 @@ func TestControlPlaneFlavorDowngradeRejected(t *testing.T) {
 		})
 	}
 }
+
+func TestControlPlaneDataPlaneV2(t *testing.T) {
+	ctx := context.Background()
+	// create-time: requires eni (Turbo).
+	b := true
+	c := validCP() // eni defaults via Mode=eni in validCP
+	c.Spec.EnableDataPlaneV2 = &b
+	if err := c.validate(); err != nil {
+		t.Errorf("eni + DPv2 should validate, got %v", err)
+	}
+	// non-eni mode rejects DPv2.
+	c2 := validCP()
+	c2.Spec.ContainerNetwork.Mode = "vpc-router"
+	c2.Spec.Category = "CCE"
+	c2.Spec.EnableDataPlaneV2 = &b
+	if err := c2.validate(); err == nil {
+		t.Error("vpc-router + DPv2 must be rejected")
+	}
+	// immutable after creation.
+	old := validCP()
+	nw := validCP()
+	nw.Spec.EnableDataPlaneV2 = &b
+	if _, err := old.ValidateUpdate(ctx, old, nw); err == nil {
+		t.Error("enabling DPv2 on an existing cluster must be rejected")
+	}
+}

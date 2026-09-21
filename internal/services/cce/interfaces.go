@@ -81,6 +81,10 @@ type CreateClusterInput struct {
 	PeriodNum   int32
 	IsAutoRenew string // "true" | "false"
 	IsAutoPay   string // "true" | "false"
+	// EnableDataPlaneV2 sets the CCE DataPlane V2 (dataplane-v2) configuration
+	// item on creation, turning on the eBPF/Cilium data plane (Service,
+	// NetworkPolicy). Only valid for the eni (Turbo) network model.
+	EnableDataPlaneV2 bool
 	// Tags are additional cluster tags (mapped to CCE clusterTags); the owned
 	// tag (cluster-api-provider-cce.cluster.<name>=owned) is always added by
 	// the service.
