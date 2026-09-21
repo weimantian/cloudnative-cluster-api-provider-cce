@@ -105,3 +105,24 @@ func TestResultAfterError(t *testing.T) {
 		t.Fatalf("non-transient error should not requeue, got %v", res.RequeueAfter)
 	}
 }
+
+func TestResultAfterErrorForDelete(t *testing.T) {
+	key := types.NamespacedName{Namespace: "default", Name: "delete-target"}
+	resetBackoff(key)
+	defer resetBackoff(key)
+
+	throttled := &sdkerr.ServiceResponseError{StatusCode: 429}
+	// Deletion uses the shorter operator-facing backoff (90s), doubling on repeat.
+	res, err := resultAfterErrorForDelete(key, throttled)
+	if err != nil || res.RequeueAfter != deletedThrottledBackoffBase {
+		t.Fatalf("1st delete throttle: got %v err=%v, want %v", res.RequeueAfter, err, deletedThrottledBackoffBase)
+	}
+	res, err = resultAfterErrorForDelete(key, throttled)
+	if err != nil || res.RequeueAfter != 2*deletedThrottledBackoffBase {
+		t.Fatalf("2nd delete throttle: got %v err=%v, want %v", res.RequeueAfter, err, 2*deletedThrottledBackoffBase)
+	}
+	// Non-throttled errors pass through unchanged.
+	if _, e := resultAfterErrorForDelete(key, errors.New("boom")); e == nil {
+		t.Error("non-throttled error must pass through as an error")
+	}
+}

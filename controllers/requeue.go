@@ -110,6 +110,22 @@ func resultAfterError(key types.NamespacedName, err error) (ctrl.Result, error) 
 	return ctrl.Result{}, err
 }
 
+// deletedThrottledBackoffBase is the shorter 429 backoff used on delete paths.
+// Deletion is an operator-blocking action, so it retries sooner than the
+// create-time base; 90s still exceeds Huawei Cloud's 1-minute write window so
+// the window drains between retries instead of accumulating a longer penalty.
+const deletedThrottledBackoffBase = 90 * time.Second
+
+// resultAfterErrorForDelete is resultAfterError tuned for the delete paths:
+// throttled (429) errors requeue after the shorter delete backoff; quota and
+// permission keep their (longer) policy; other errors pass through unchanged.
+func resultAfterErrorForDelete(key types.NamespacedName, err error) (ctrl.Result, error) {
+	if clouderrors.IsThrottled(err) {
+		return ctrl.Result{RequeueAfter: errorBackoff.delay(key, deletedThrottledBackoffBase)}, nil
+	}
+	return resultAfterError(key, err)
+}
+
 // resetBackoff clears the exponential-backoff counter for a reconcile key
 // (called after a clean reconcile so the next transient failure starts over).
 func resetBackoff(key types.NamespacedName) {

@@ -557,7 +557,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 			// (throttle/network) must NOT fall through to removing the
 			// finalizer — that would leak the CCE cluster forever.
 			if !clouderrors.IsNotFound(err) {
-				return ctrl.Result{}, errors.Wrap(err, "failed to check CCE cluster before deletion")
+				return resultAfterErrorForDelete(client.ObjectKeyFromObject(cp), errors.Wrap(err, "failed to check CCE cluster before deletion"))
 			}
 		} else {
 			// Delete with explicit options to avoid leftovers (official
@@ -570,7 +570,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 				OnDemandNodePolicy: "delete",
 				PeriodicNodePolicy: "reset",
 			}); err != nil && !clouderrors.IsNotFound(err) {
-				return ctrl.Result{}, errors.Wrap(err, "failed to delete CCE cluster")
+				return resultAfterErrorForDelete(client.ObjectKeyFromObject(cp), errors.Wrap(err, "failed to delete CCE cluster"))
 			}
 			log.Info("CCE cluster deletion requested, waiting", "clusterID", cp.Status.ClusterID)
 			recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "ClusterDeletionRequested", "deletion requested for CCE cluster %s", cp.Status.ClusterID)

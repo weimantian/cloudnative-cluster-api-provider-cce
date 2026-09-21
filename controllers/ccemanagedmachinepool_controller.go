@@ -481,7 +481,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 			// dead-locking deletion forever).
 			pools, err := svc.ListNodePools(ctx, cp.Status.ClusterID)
 			if err != nil {
-				return ctrl.Result{}, err
+				return resultAfterErrorForDelete(client.ObjectKeyFromObject(pool), err)
 			}
 			stillExists := false
 			for _, p := range pools {
@@ -492,7 +492,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 			}
 			if stillExists {
 				if err := svc.DeleteNodePool(ctx, cp.Status.ClusterID, pool.Status.NodePoolID); err != nil {
-					return ctrl.Result{}, err
+					return resultAfterErrorForDelete(client.ObjectKeyFromObject(pool), err)
 				}
 				log.Info("Node pool deletion requested, waiting", "nodePoolID", pool.Status.NodePoolID)
 				recordEvent(r.Recorder, pool, corev1.EventTypeNormal, "NodePoolDeletionRequested", "deletion requested for CCE node pool %s", pool.Status.NodePoolID)
