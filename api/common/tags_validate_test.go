@@ -131,13 +131,13 @@ func TestTagsValidateNodePoolReservedPrefixes(t *testing.T) {
 }
 
 // TestValidateMergedTagsCap locks the post-merge node-pool tag cap: the merge
-// of control-plane and pool tags is limited to MaxAdditionalTags (two slots
-// reserved for the provider-owned tags).
+// of control-plane and pool tags is limited to MaxNodePoolAdditionalTags (the
+// node-pool userTags limit minus the two provider-owned tags).
 func TestValidateMergedTagsCap(t *testing.T) {
 	// One over the cap is rejected, naming the limit.
-	over := ValidateMergedTags(quota(MaxAdditionalTags+1), field.NewPath("spec", "additionalTags"))
+	over := ValidateMergedTags(quota(MaxNodePoolAdditionalTags+1), field.NewPath("spec", "additionalTags"))
 	if len(over) == 0 {
-		t.Fatalf("expected a merged set of %d tags to be rejected", MaxAdditionalTags+1)
+		t.Fatalf("expected a merged set of %d tags to be rejected", MaxNodePoolAdditionalTags+1)
 	}
 	if got := over.ToAggregate().Error(); !strings.Contains(got, "at most") {
 		t.Errorf("expected the error to name the limit, got %v", over)
@@ -150,7 +150,7 @@ func TestValidateMergedTagsCap(t *testing.T) {
 	}
 
 	// Exactly at the cap is accepted (boundary).
-	if errs := ValidateMergedTags(quota(MaxAdditionalTags), field.NewPath("spec", "additionalTags")); len(errs) != 0 {
-		t.Errorf("expected a merged set of exactly %d tags to be accepted, got %v", MaxAdditionalTags, errs)
+	if errs := ValidateMergedTags(quota(MaxNodePoolAdditionalTags), field.NewPath("spec", "additionalTags")); len(errs) != 0 {
+		t.Errorf("expected a merged set of exactly %d tags to be accepted, got %v", MaxNodePoolAdditionalTags, errs)
 	}
 }

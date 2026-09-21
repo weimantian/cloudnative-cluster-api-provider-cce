@@ -37,6 +37,7 @@ type FakeCCEService struct {
 	UpdateNodePoolFn         func(ctx context.Context, in cceService.UpdateNodePoolInput) error
 	DeleteNodePoolFn         func(ctx context.Context, clusterID, nodePoolID string) error
 	ListNodePoolsFn          func(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error)
+	ReconcileNodePoolTagsFn  func(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string) (bool, error)
 	ListNodesFn              func(ctx context.Context, clusterID, nodePoolID string) ([]string, error)
 	ListNodesWithStatusFn    func(ctx context.Context, clusterID string) ([]cceService.NodeInfo, error)
 	ResetNodeFn              func(ctx context.Context, clusterID string, nodeIDs []string) error
@@ -75,26 +76,27 @@ type FakeCCEService struct {
 	ResetNodeCalls [][]string
 
 	// Records for assertions.
-	CreatedClusters      []cceService.CreateClusterInput
-	DeletedClusters      []cceService.DeleteClusterInput
-	CreatedNodePools     []cceService.CreateNodePoolInput
-	ScaleCalls           []int32
-	UpdateNodePoolCalls  []cceService.UpdateNodePoolInput
-	KubeconfigCalls      int
-	StartUpgradeCalls    []string // target versions
-	AddonCreateCalls     []cceService.AddonInput
-	AddonUpdateCalls     []cceService.AddonInput
-	AddonDeleteCalls     []string               // addon IDs
-	Addons               []cceService.AddonInfo // returned by ListAddonInstances
-	PodIdentityCreate    []cceService.PodIdentityAssociationInput
-	AccessPolicyCreate   []cceService.AccessPolicyInput
-	AccessPolicyUpdate   []cceService.AccessPolicyInput
-	AccessPolicyUpdateID []string                      // policy IDs passed to UpdateAccessPolicy
-	AccessPolicyDelete   []string                      // policy IDs
-	AccessPolicies       []cceService.AccessPolicyInfo // returned by ListAccessPolicies
-	PodIdentityDelete    []string                      // association IDs
-	PodIdentities        []cceService.PodIdentityAssociationInfo
-	UpgradeNodePoolCalls []struct {
+	CreatedClusters            []cceService.CreateClusterInput
+	DeletedClusters            []cceService.DeleteClusterInput
+	CreatedNodePools           []cceService.CreateNodePoolInput
+	ScaleCalls                 []int32
+	UpdateNodePoolCalls        []cceService.UpdateNodePoolInput
+	ReconcileNodePoolTagsCalls []map[string]string // user tags passed per call
+	KubeconfigCalls            int
+	StartUpgradeCalls          []string // target versions
+	AddonCreateCalls           []cceService.AddonInput
+	AddonUpdateCalls           []cceService.AddonInput
+	AddonDeleteCalls           []string               // addon IDs
+	Addons                     []cceService.AddonInfo // returned by ListAddonInstances
+	PodIdentityCreate          []cceService.PodIdentityAssociationInput
+	AccessPolicyCreate         []cceService.AccessPolicyInput
+	AccessPolicyUpdate         []cceService.AccessPolicyInput
+	AccessPolicyUpdateID       []string                      // policy IDs passed to UpdateAccessPolicy
+	AccessPolicyDelete         []string                      // policy IDs
+	AccessPolicies             []cceService.AccessPolicyInfo // returned by ListAccessPolicies
+	PodIdentityDelete          []string                      // association IDs
+	PodIdentities              []cceService.PodIdentityAssociationInfo
+	UpgradeNodePoolCalls       []struct {
 		ClusterID      string
 		NodePoolID     string
 		MaxUnavailable int32
@@ -174,6 +176,10 @@ func NewFakeCCEService() *FakeCCEService {
 	f.UpdateNodePoolFn = func(_ context.Context, in cceService.UpdateNodePoolInput) error {
 		f.UpdateNodePoolCalls = append(f.UpdateNodePoolCalls, in)
 		return nil
+	}
+	f.ReconcileNodePoolTagsFn = func(_ context.Context, _, _, _ string, userTags map[string]string) (bool, error) {
+		f.ReconcileNodePoolTagsCalls = append(f.ReconcileNodePoolTagsCalls, userTags)
+		return true, nil
 	}
 	f.UpgradeNodePoolFn = func(_ context.Context, _, _ string, _ int32) error { return nil }
 	f.ShowClusterLogConfigFn = func(_ context.Context, _ string) (*cceService.LogConfigInfo, error) {
@@ -498,6 +504,11 @@ func (f *FakeCCEService) DeleteNodePool(ctx context.Context, clusterID, nodePool
 // ListNodePools implements cceService.Service.
 func (f *FakeCCEService) ListNodePools(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error) {
 	return f.ListNodePoolsFn(ctx, clusterID)
+}
+
+// ReconcileNodePoolTags implements cceService.Service.
+func (f *FakeCCEService) ReconcileNodePoolTags(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string) (bool, error) {
+	return f.ReconcileNodePoolTagsFn(ctx, clusterID, nodePoolID, clusterName, userTags)
 }
 
 // ListNodes implements cceService.Service.

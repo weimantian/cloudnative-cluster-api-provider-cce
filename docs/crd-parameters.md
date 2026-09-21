@@ -159,7 +159,7 @@ spec:
   # 期望节点数（MachinePool.replicas 驱动）
   replicas: 1
   # 用户附加标签（写 CCE clusterTags/userTags；保留 key 优先）
-  additionalTags:         # 写入 CCE 节点池 userTags
+  additionalTags:         # 写入 CCE 节点池 userTags（上限 8 含 provider 的 owned/role → 用户最多 6；控制器周期对账并同步到存量节点）
     team: platform
   # ---- 以下为全部可选字段（默认省略；按需取消注释）----
   # 节点 providerID（控制器回填）

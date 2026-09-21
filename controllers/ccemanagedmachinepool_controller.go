@@ -356,6 +356,21 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		log.Info("Node pool attributes updated and rolled onto existing nodes", "nodePoolID", pool.Status.NodePoolID)
 	}
 
+	// Drift-reconcile the node-pool tags on the periodic reconcile: desired is
+	// the control plane's additionalTags merged with the pool's own (the
+	// service adds the provider ownership + role tags). Mirrors the
+	// cluster-level tag reconciliation — a tag removed from the spec is
+	// dropped, and the service pushes the change onto existing nodes too.
+	if drifted, err := svc.ReconcileNodePoolTags(ctx, clusterID, pool.Status.NodePoolID, pool.Spec.ClusterName,
+		mergedTags(cp.Spec.AdditionalTags, pool.Spec.AdditionalTags)); err != nil {
+		conditions.MarkFalse(pool,
+			conditions.NodePoolReadyCondition,
+			conditions.NodePoolCreationFailedReason, err.Error())
+		return ctrl.Result{}, err
+	} else if drifted {
+		log.Info("Reconciled node pool tag drift", "nodePoolID", pool.Status.NodePoolID)
+	}
+
 	// Refresh observed state from the cloud (Active node count is a
 	// verification item — questionnaire Q3).
 	pools, err := svc.ListNodePools(ctx, clusterID)

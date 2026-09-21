@@ -499,6 +499,11 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	DeleteNodePool(ctx context.Context, clusterID, nodePoolID string) error
 	// ListNodePools lists the node pools of a cluster.
 	ListNodePools(ctx context.Context, clusterID string) ([]NodePoolInfo, error)
+	// ReconcileNodePoolTags converges an existing node pool's user tags to the
+	// desired set (provider ownership + role tags plus the merged user tags) and
+	// reports whether an update was issued. It is declarative: tags removed from
+	// the desired set are dropped, and the change is pushed onto existing nodes.
+	ReconcileNodePoolTags(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string) (bool, error)
 	// ListNodes lists the provider IDs of the nodes belonging to the given node
 	// pool (empty nodePoolID matches nodes in no pool). Each entry has the form
 	// huaweicloud:///<serverId>, matching the spec.providerID of the

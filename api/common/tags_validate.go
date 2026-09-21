@@ -31,8 +31,16 @@ const (
 	MaxResourceTags = 20
 	// MaxAdditionalTags reserves two slots for the provider owned tags (the
 	// ownership tag and the role tag), which are always added on top of the user
-	// tags (the owned tags win on collision).
+	// tags (the owned tags win on collision). This is the CLUSTER resource cap.
 	MaxAdditionalTags = MaxResourceTags - 2
+	// MaxNodePoolTags is the maximum number of custom tags CCE accepts on a node
+	// pool's nodeTemplate.userTags (official: region dependent, up to 8) — much
+	// lower than a cluster resource's 20-tag limit.
+	MaxNodePoolTags = 8
+	// MaxNodePoolAdditionalTags reserves the two provider tags (ownership + role)
+	// that the service always adds to a node pool, so user-facing pool
+	// AdditionalTags is capped two lower than the node-pool limit.
+	MaxNodePoolAdditionalTags = MaxNodePoolTags - 2
 )
 
 // tagKeyRe matches a full valid tag key (no '/', charset _ . : = + - @ and
@@ -95,11 +103,18 @@ func (t Tags) Validate(fldPath *field.Path) field.ErrorList {
 var nodePoolReservedKeyPrefixes = []string{"CCE-", "__type_baremetal"}
 
 // ValidateNodePool checks that t satisfies the constraints for a node pool's
-// user tags (CCE UserTag model): the shared resource-tag rules plus the
-// node-pool-only reserved key prefixes. Cluster additionalTags (the ResourceTag
-// model) must keep using Validate, which allows those prefixes.
+// user tags (CCE UserTag model): the shared resource-tag rules, the lower
+// node-pool tag-count cap, and the node-pool-only reserved key prefixes.
+// Cluster additionalTags (the ResourceTag model) must keep using Validate,
+// which allows those prefixes and the higher cluster tag cap.
 func (t Tags) ValidateNodePool(fldPath *field.Path) field.ErrorList {
 	errs := t.Validate(fldPath)
+
+	// A node pool accepts far fewer custom tags than a cluster resource
+	// (nodeTemplate.userTags: up to 8, minus the two provider tags).
+	if len(t) > MaxNodePoolAdditionalTags {
+		errs = append(errs, field.TooMany(fldPath, len(t), MaxNodePoolAdditionalTags))
+	}
 
 	for _, prefix := range nodePoolReservedKeyPrefixes {
 		for k := range t {
@@ -115,12 +130,12 @@ func (t Tags) ValidateNodePool(fldPath *field.Path) field.ErrorList {
 // ValidateMergedTags checks the effective tag set a node pool will carry: the
 // control plane's additionalTags merged with the pool's additionalTags (the same
 // order the node-pool controller merges them). Each side is admitted
-// independently, but their union can exceed MaxAdditionalTags, and a
+// independently, but their union can exceed MaxNodePoolAdditionalTags, and a
 // control-plane key may carry a prefix the node-pool UserTag model forbids; the
 // platform rejects the node-pool create in both cases. The effective set is
 // therefore validated with the node-pool rules at the merge site before the
-// create/update (MaxAdditionalTags reserves the two tags the service always
-// adds: ownership and role).
+// create/update (MaxNodePoolAdditionalTags reserves the two tags the service
+// always adds: ownership and role).
 //
 // The node-pool admission webhook cannot run this check: it has no client and
 // cannot read the control plane's additionalTags, so enforcement lives in the

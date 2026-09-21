@@ -1218,6 +1218,77 @@ func (s *Client) UpdateNodePool(_ context.Context, in UpdateNodePoolInput) error
 	return nil
 }
 
+// updateNodePoolTags pushes the desired user tags (provider ownership + role
+// tags plus the merged user tags) onto an existing node pool. It sends only the
+// tag portion of the update — never the node count or the security groups,
+// which the attribute-update path owns — and always sets
+// userTagsPolicyOnExistingNodes=refresh so the change also reaches nodes that
+// already exist (official cce_02_0356; the create-time default is "ignore").
+//
+// The desired set is never empty: CCE treats an empty userTags array as "delete
+// all node-pool tags".
+func (s *Client) updateNodePoolTags(_ context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string) error {
+	spec := &model.NodePoolSpecUpdate{
+		IgnoreInitialNodeCount:        boolPtr(true),
+		UserTagsPolicyOnExistingNodes: stringPtr("refresh"),
+		NodeTemplate:                  &model.NodeSpecUpdate{UserTags: toUserTags(clusterName, userTags)},
+	}
+	if _, err := s.cce.UpdateNodePool(&model.UpdateNodePoolRequest{
+		ClusterId:  clusterID,
+		NodepoolId: nodePoolID,
+		Body:       &model.NodePoolUpdate{Spec: spec},
+	}); err != nil {
+		return errors.Wrapf(err, "UpdateNodePool(userTags) %s failed", nodePoolID)
+	}
+	return nil
+}
+
+// ReconcileNodePoolTags converges an existing node pool's user tags to the
+// desired set, mirroring ReconcileClusterTags: it reads the pool's current
+// nodeTemplate.userTags via ListNodePools and only calls the update API when
+// the pool actually drifted. The desired set is declarative — a tag removed
+// from the spec is dropped from the pool (and, with the refresh policy, from
+// existing nodes), matching what the upstream reference provider does for its
+// managed node groups. Returns true when an update was issued.
+func (s *Client) ReconcileNodePoolTags(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string) (bool, error) {
+	pools, err := s.ListNodePools(ctx, clusterID)
+	if err != nil {
+		return false, err
+	}
+	want := map[string]string{}
+	for _, t := range *toUserTags(clusterName, userTags) {
+		if t.Key != nil && t.Value != nil {
+			want[*t.Key] = *t.Value
+		}
+	}
+	for i := range pools {
+		if pools[i].NodePoolID != nodePoolID {
+			continue
+		}
+		if tagsEqual(pools[i].Tags, want) {
+			return false, nil
+		}
+		if err := s.updateNodePoolTags(ctx, clusterID, nodePoolID, clusterName, userTags); err != nil {
+			return false, err
+		}
+		return true, nil
+	}
+	return false, errors.Errorf("node pool %s not found in cluster %s", nodePoolID, clusterID)
+}
+
+// tagsEqual reports whether two tag sets carry exactly the same keys and values.
+func tagsEqual(a, b map[string]string) bool {
+	if len(a) != len(b) {
+		return false
+	}
+	for k, v := range a {
+		if bv, ok := b[k]; !ok || bv != v {
+			return false
+		}
+	}
+	return true
+}
+
 // toNodePoolAutoscaling maps the provider-side autoscaling spec to the SDK
 // model. A nil input is mapped to disabled (enable=false) so an explicit
 // "disable autoscaling" update works.

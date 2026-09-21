@@ -1423,10 +1423,10 @@ func TestMachinePoolReconcileMergedTagCap(t *testing.T) {
 		return fakeSvc, r, pool
 	}
 
-	// Over the cap: 18 control-plane tags + 18 pool tags merge to 36 > 18.
+	// Over the cap: 6 control-plane tags + 6 pool tags merge to 12 > 6 (the node-pool cap).
 	overNS := "mp-test-tagmerge-over"
 	createNamespace(t, overNS)
-	overSvc, overR, overPool := setup(overNS, tagSet("cp-", common.MaxAdditionalTags), tagSet("pool-", common.MaxAdditionalTags))
+	overSvc, overR, overPool := setup(overNS, tagSet("cp-", common.MaxNodePoolAdditionalTags), tagSet("pool-", common.MaxNodePoolAdditionalTags))
 	_, err := overR.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(overPool)})
 	if err == nil {
 		t.Fatal("expected Reconcile to reject a merged tag set over the cap")
@@ -1438,17 +1438,106 @@ func TestMachinePoolReconcileMergedTagCap(t *testing.T) {
 		t.Errorf("expected no CCE node-pool create, got %d", len(overSvc.CreatedNodePools))
 	}
 
-	// Exactly at the cap: 9 + 9 = 18 is accepted.
+	// Exactly at the cap: 3 + 3 = 6 is accepted.
 	edgeNS := "mp-test-tagmerge-edge"
 	createNamespace(t, edgeNS)
-	edgeSvc, edgeR, edgePool := setup(edgeNS, tagSet("cp-", common.MaxAdditionalTags/2), tagSet("pool-", common.MaxAdditionalTags/2))
+	edgeSvc, edgeR, edgePool := setup(edgeNS, tagSet("cp-", common.MaxNodePoolAdditionalTags/2), tagSet("pool-", common.MaxNodePoolAdditionalTags/2))
 	if _, err := edgeR.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(edgePool)}); err != nil {
 		t.Fatalf("Reconcile at the cap returned error: %v", err)
 	}
 	if len(edgeSvc.CreatedNodePools) != 1 {
 		t.Fatalf("expected 1 created node pool at the cap, got %d", len(edgeSvc.CreatedNodePools))
 	}
-	if got := len(edgeSvc.CreatedNodePools[0].Tags); got != common.MaxAdditionalTags {
-		t.Errorf("expected %d merged tags sent to CCE, got %d", common.MaxAdditionalTags, got)
+	if got := len(edgeSvc.CreatedNodePools[0].Tags); got != common.MaxNodePoolAdditionalTags {
+		t.Errorf("expected %d merged tags sent to CCE, got %d", common.MaxNodePoolAdditionalTags, got)
+	}
+}
+
+// TestMachinePoolReconcileReconcilesTagDrift locks B15: node-pool tags are
+// drift-reconciled on reconcile with the control plane's additionalTags merged
+// with the pool's own (the service adds the provider owned/role tags), so a tag
+// change on either side converges instead of being applied at create time only.
+func TestMachinePoolReconcileReconcilesTagDrift(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-tagdrift"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+	cp.Spec.AdditionalTags = common.Tags{"env": "prod", "team": "platform"}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane tags: %v", err)
+	}
+	cp.Status.ClusterID = "cluster-1"
+	cp.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+
+	mp := &clusterv1.MachinePool{
+		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
+		Spec: clusterv1.MachinePoolSpec{
+			ClusterName: "test-cluster",
+			Replicas:    int32Ptr(3),
+			Template: clusterv1.MachineTemplateSpec{
+				Spec: clusterv1.MachineSpec{
+					ClusterName: "test-cluster",
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
+						APIGroup: infrav1beta2.GroupVersion.Group,
+						Kind:     "CCEManagedMachinePool",
+						Name:     "test-cluster-pool-0",
+					},
+				},
+			},
+		},
+	}
+	if err := k8sClient.Create(ctx, mp); err != nil {
+		t.Fatalf("failed to create MachinePool: %v", err)
+	}
+	pool := &infrav1beta2.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:      "test-cluster-pool-0",
+			Namespace: ns,
+			Labels:    map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+		},
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
+			ClusterName:    "test-cluster",
+			NodePoolName:   "pool-0",
+			Flavor:         "c7.large.2",
+			Replicas:       3,
+			AdditionalTags: common.Tags{"pool-tag": "pool-value"},
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create CCEManagedMachinePool: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	r := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	// First reconcile creates the pool; the tag drift call follows.
+	for i := 1; i <= 2; i++ {
+		if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(pool)}); err != nil {
+			t.Fatalf("Reconcile #%d returned error: %v", i, err)
+		}
+	}
+	if len(fakeSvc.ReconcileNodePoolTagsCalls) == 0 {
+		t.Fatal("expected the node-pool tags to be drift-reconciled")
+	}
+	got := fakeSvc.ReconcileNodePoolTagsCalls[len(fakeSvc.ReconcileNodePoolTagsCalls)-1]
+	want := map[string]string{"env": "prod", "team": "platform", "pool-tag": "pool-value"}
+	if len(got) != len(want) {
+		t.Fatalf("merged tags = %v, want %v", got, want)
+	}
+	for k, v := range want {
+		if got[k] != v {
+			t.Errorf("merged tags[%q] = %q, want %q", k, got[k], v)
+		}
 	}
 }

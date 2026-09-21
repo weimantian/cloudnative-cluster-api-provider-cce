@@ -856,3 +856,28 @@ func TestBuildCreateClusterRequestRequiresHostNetwork(t *testing.T) {
 		t.Fatal("expected an error when hostNetwork vpc/subnet are empty")
 	}
 }
+
+// TestTagsEqual locks the drift predicate used by ReconcileNodePoolTags: a
+// node pool is updated only when its current tags differ from the desired set
+// in either direction (a key added/changed, or a key removed from the spec).
+func TestTagsEqual(t *testing.T) {
+	cases := []struct {
+		name string
+		a, b map[string]string
+		want bool
+	}{
+		{"identical", map[string]string{"k": "v"}, map[string]string{"k": "v"}, true},
+		{"both nil", nil, nil, true},
+		{"nil vs empty", nil, map[string]string{}, true},
+		{"added key", map[string]string{}, map[string]string{"k": "v"}, false},
+		{"removed key", map[string]string{"k": "v"}, map[string]string{}, false},
+		{"changed value", map[string]string{"k": "v"}, map[string]string{"k": "v2"}, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := tagsEqual(tc.a, tc.b); got != tc.want {
+				t.Errorf("tagsEqual(%v, %v) = %v, want %v", tc.a, tc.b, got, tc.want)
+			}
+		})
+	}
+}

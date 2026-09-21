@@ -158,8 +158,8 @@ spec:
   availabilityZone: cn-north-4a
   # Replicas is the desired node count (maps to the node pool expected count). It is normally driven by the owning MachinePool.spec.replicas.
   replicas: 1
-  # AdditionalTags is an optional set of tags to add to the CCE node pool (maps to CCE userTags / UserTag), in addition to the provider owned tag cluster-api-provider-cce.cluster.<clusterName>=owned that is always added. The owned tag wins on key collision.
-  additionalTags:         # 写入 CCE 节点池 userTags
+  # AdditionalTags is an optional set of tags to add to the CCE node pool (maps to CCE userTags / UserTag), in addition to the provider owned tag cluster-api-provider-cce.cluster.<clusterName>=owned that is always added. The owned tag wins on key collision. A node pool accepts at most 8 custom tags (region dependent) INCLUDING the two provider tags (owned + role), so at most 6 user tags are allowed. The controller reconciles pool tags on the periodic loop and pushes changes onto existing nodes.
+  additionalTags:         # written to the CCE node-pool userTags
     team: platform
   # ---- all optional fields below (omitted by default; uncomment as needed) ----
   # ProviderIDList is the list of provider IDs of the nodes in the pool, populated by the controller so Cluster API can fill MachinePool.status.nodeRefs (and the deprecated readyReplicas). Each entry has the form huaweicloud:///<serverId>, matching the spec.providerID of the corresponding workload node. The controller owns this field.
