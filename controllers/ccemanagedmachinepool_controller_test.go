@@ -1251,7 +1251,7 @@ func TestMachinePoolReconcileReplicasExternallyManaged(t *testing.T) {
 	// The external autoscaler has scaled the cloud node pool to 5 nodes.
 	fakeSvc := fakes.NewFakeCCEService()
 	fakeSvc.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
-		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", DesiredNodeCount: 5, NodeCount: 5, ActiveNodeCount: 5}}, nil
+		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", NodeCount: 5, ActiveNodeCount: 5}}, nil
 	}
 	r := &CCEManagedMachinePoolReconciler{
 		Client: k8sClient,

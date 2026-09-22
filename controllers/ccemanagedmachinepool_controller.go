@@ -290,7 +290,7 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 	if externallyManaged {
 		recordEvent(r.Recorder, pool, corev1.EventTypeNormal, "ReplicasManagedExternally", "replicas are managed by an external autoscaler; reverse-syncing from the cloud")
 	} else {
-		if err := r.syncReplicasFromOwner(ctx, pool); err != nil {
+		if err := r.syncReplicasFromOwner(pool, mp); err != nil {
 			return ctrl.Result{}, err
 		}
 	}
@@ -751,11 +751,7 @@ func (r *CCEManagedMachinePoolReconciler) findOwnerMachinePool(ctx context.Conte
 // syncReplicasFromOwner copies spec.replicas from the owning CAPI MachinePool
 // onto this infra pool, so `kubectl scale machinepool` drives the CCE node
 // pool size.
-func (r *CCEManagedMachinePoolReconciler) syncReplicasFromOwner(ctx context.Context, pool *infrav1beta2.CCEManagedMachinePool) error {
-	mp, err := r.findOwnerMachinePool(ctx, pool)
-	if err != nil {
-		return err
-	}
+func (r *CCEManagedMachinePoolReconciler) syncReplicasFromOwner(pool *infrav1beta2.CCEManagedMachinePool, mp *clusterv1.MachinePool) error {
 	if mp != nil && mp.Spec.Replicas != nil && *mp.Spec.Replicas != pool.Spec.Replicas {
 		pool.Spec.Replicas = *mp.Spec.Replicas
 	}

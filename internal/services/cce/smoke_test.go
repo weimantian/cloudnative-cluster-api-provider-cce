@@ -128,16 +128,6 @@ func TestSmoke(t *testing.T) {
 		}
 	}()
 
-	// ---- Q7: cluster quota (runtime value beats documentation) ----
-	if cases["quota"] {
-		q, err := svc.ShowQuotas(ctx)
-		if err != nil {
-			t.Errorf("ShowQuotas failed: %v", err)
-		} else {
-			t.Logf("Q7 ShowQuotas: limit=%d used=%d", q.ClusterQuotaLimit, q.ClusterQuotaUsed)
-		}
-	}
-
 	// ---- Q1/Q4: create an EMPTY cluster (Turbo/eni) ----
 	if cases["cluster"] {
 		t.Logf("creating empty Turbo/eni cluster %q (region %s)…", clusterName, region)
@@ -334,11 +324,10 @@ func currentNodeCount(ctx context.Context, svc Service, clusterID, nodePoolID st
 	for _, p := range pools {
 		if p.NodePoolID == nodePoolID {
 			// NodeCount is the ACTUAL current node count (Status.CurrentNode).
-			// DesiredNodeCount is only the spec's initialNodeCount and is
-			// always the target — returning it here made "nodes reached N"
-			// pass instantly without any node ever becoming Active (bug found
-			// in the live drill; nodes were stuck "Installing" but the check
-			// reported success).
+			// The spec's initialNodeCount is always the target — returning it here
+			// made "nodes reached N" pass instantly without any node ever becoming
+			// Active (bug found in the live drill; nodes were stuck "Installing"
+			// but the check reported success).
 			return p.NodeCount, nil
 		}
 	}

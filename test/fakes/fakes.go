@@ -30,7 +30,6 @@ type FakeCCEService struct {
 	CreateClusterFn          func(ctx context.Context, in cceService.CreateClusterInput) (string, error)
 	DeleteClusterFn          func(ctx context.Context, in cceService.DeleteClusterInput) error
 	GetClusterKubeconfigFn   func(ctx context.Context, clusterID string, durationDays int32) (string, error)
-	ShowQuotasFn             func(ctx context.Context) (*cceService.QuotaInfo, error)
 	ListClustersFn           func(ctx context.Context) ([]cceService.ClusterRef, error)
 	CreateNodePoolFn         func(ctx context.Context, in cceService.CreateNodePoolInput) (string, error)
 	ScaleNodePoolFn          func(ctx context.Context, clusterID, nodePoolID string, desiredCount int32) error
@@ -131,9 +130,6 @@ func NewFakeCCEService() *FakeCCEService {
 		f.KubeconfigCalls++
 		return validKubeconfig, nil
 	}
-	f.ShowQuotasFn = func(_ context.Context) (*cceService.QuotaInfo, error) {
-		return &cceService.QuotaInfo{ClusterQuotaLimit: 50, ClusterQuotaUsed: 1}, nil
-	}
 	f.ListClustersFn = func(_ context.Context) ([]cceService.ClusterRef, error) {
 		return []cceService.ClusterRef{}, nil
 	}
@@ -206,7 +202,7 @@ func NewFakeCCEService() *FakeCCEService {
 	}
 	f.DeleteNodePoolFn = func(_ context.Context, _, _ string) error { return nil }
 	f.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
-		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", DesiredNodeCount: 3, NodeCount: 3, ActiveNodeCount: 3}}, nil
+		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", NodeCount: 3, ActiveNodeCount: 3}}, nil
 	}
 	f.ListNodesFn = func(_ context.Context, _, _ string) ([]string, error) {
 		return nil, nil
@@ -429,11 +425,6 @@ func (f *FakeCCEService) DeleteCluster(ctx context.Context, in cceService.Delete
 // GetClusterKubeconfig implements cceService.Service.
 func (f *FakeCCEService) GetClusterKubeconfig(ctx context.Context, clusterID string, durationDays int32) (string, error) {
 	return f.GetClusterKubeconfigFn(ctx, clusterID, durationDays)
-}
-
-// ShowQuotas implements cceService.Service.
-func (f *FakeCCEService) ShowQuotas(ctx context.Context) (*cceService.QuotaInfo, error) {
-	return f.ShowQuotasFn(ctx)
 }
 
 // ListClusters implements cceService.Service.

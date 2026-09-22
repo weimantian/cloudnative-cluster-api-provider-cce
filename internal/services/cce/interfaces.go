@@ -201,8 +201,6 @@ type ExtensionScaleGroupInput struct {
 type NodePoolInfo struct {
 	NodePoolID string
 	Name       string
-	// DesiredNodeCount as reported by CCE (spec.initialNodeCount).
-	DesiredNodeCount int32
 	// NodeCount is status.currentNode (expected total, incl. creating/
 	// deleting) as reported by CCE.
 	NodeCount int32
@@ -239,14 +237,6 @@ type DeleteClusterInput struct {
 	// DeleteELB deletes auto-created ELB / Service / Ingress resources
 	// (official default: block).
 	DeleteELB bool
-	// DeleteEFS deletes SFS Turbo volumes (official default: skip).
-	DeleteEFS bool
-	// DeleteOBS deletes OBS buckets (official default: skip).
-	DeleteOBS bool
-	// DeleteSFS deletes SFS volumes (official default: skip).
-	DeleteSFS bool
-	// DeleteSFS30 deletes SFS 3.0 volumes (official default: skip).
-	DeleteSFS30 bool
 	// OnDemandNodePolicy: delete | reset | retain (official default: delete
 	// on-demand nodes, retain admitted nodes).
 	OnDemandNodePolicy string
@@ -288,14 +278,6 @@ type UpdateNodePoolInput struct {
 	ClusterName string
 }
 
-// QuotaInfo is the cluster quota for the project.
-type QuotaInfo struct {
-	// ClusterQuotaLimit is the max number of clusters (official: per region).
-	ClusterQuotaLimit int32
-	// ClusterQuotaUsed is the number of clusters in use.
-	ClusterQuotaUsed int32
-}
-
 // UpgradeInfo is the platform's upgrade information for a cluster
 // (ShowClusterUpgradeInfo). TargetVersions empty means the platform currently
 // offers no upgrade path from the running version (questionnaire Q11: verified
@@ -332,8 +314,6 @@ type AddonInput struct {
 	// Version is the addon template version (e.g. "1.0.0"); empty means the
 	// latest supported by the cluster.
 	Version string
-	// Values are the per-addon install parameters (optional).
-	Values map[string]interface{}
 }
 
 // PodIdentityAssociationInput declares a CCE pod-identity association
@@ -347,8 +327,6 @@ type PodIdentityAssociationInput struct {
 	// Tags are the resource tags to stamp on the association at create time
 	// (CCE cannot add tags after create). Used to record provider ownership.
 	Tags map[string]string
-	// AssociationID is the pod-identity association ID (for Delete).
-	AssociationID string
 }
 
 // PodIdentityAssociationInfo is a pod-identity association as reported by
@@ -473,8 +451,6 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	DeleteCluster(ctx context.Context, in DeleteClusterInput) error
 	// GetClusterKubeconfig downloads and assembles the cluster kubeconfig.
 	GetClusterKubeconfig(ctx context.Context, clusterID string, durationDays int32) (string, error)
-	// ShowQuotas returns the project cluster quota (ShowQuotas API).
-	ShowQuotas(ctx context.Context) (*QuotaInfo, error)
 	// ListClusters lists all CCE clusters in the region (used by the garbage
 	// collector's orphan sweeper; returns cluster ID, name and tags).
 	ListClusters(ctx context.Context) ([]ClusterRef, error)

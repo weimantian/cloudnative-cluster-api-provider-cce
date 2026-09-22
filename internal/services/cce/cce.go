@@ -502,10 +502,6 @@ func (s *Client) DeleteCluster(_ context.Context, in DeleteClusterInput) error {
 		v := model.GetDeleteClusterRequestDeleteNetEnum().BLOCK
 		req.DeleteNet = &v
 	}
-	if in.DeleteEFS {
-		v := model.GetDeleteClusterRequestDeleteEfsEnum().BLOCK
-		req.DeleteEfs = &v
-	}
 	switch in.OnDemandNodePolicy {
 	case "reset":
 		v := model.GetDeleteClusterRequestOndemandNodePolicyEnum().RESET
@@ -529,22 +525,6 @@ func (s *Client) DeleteCluster(_ context.Context, in DeleteClusterInput) error {
 		// the parameter unset so the platform default applies (verified against
 		// DeleteCluster.txt; the previous "reset" default was reversed).
 	}
-	// delete_obs / delete_sfs / delete_sfs30: official defaults are "skip",
-	// which would leave OBS/SFS volumes behind. The provider always deletes
-	// everything it manages (Q8), so request deletion explicitly when the
-	// caller asks for it (kept minimal: not yet exposed on the input).
-	if in.DeleteOBS {
-		v := model.GetDeleteClusterRequestDeleteObsEnum().BLOCK
-		req.DeleteObs = &v
-	}
-	if in.DeleteSFS {
-		v := model.GetDeleteClusterRequestDeleteSfsEnum().BLOCK
-		req.DeleteSfs = &v
-	}
-	if in.DeleteSFS30 {
-		v := model.GetDeleteClusterRequestDeleteSfs30Enum().BLOCK
-		req.DeleteSfs30 = &v
-	}
 	// Deletion is async (200 = job accepted); the controller polls ShowCluster
 	// until the cluster is gone (verified live against real CCE — Q8).
 	if _, err := s.cce.DeleteCluster(req); err != nil {
@@ -556,29 +536,6 @@ func (s *Client) DeleteCluster(_ context.Context, in DeleteClusterInput) error {
 		return errors.Wrapf(err, "DeleteCluster %s failed", in.ClusterID)
 	}
 	return nil
-}
-
-// ShowQuotas implements Service (official ShowQuotas API; questionnaire Q7:
-// prefer runtime quota values over documentation numbers).
-func (s *Client) ShowQuotas(ctx context.Context) (*QuotaInfo, error) {
-	resp, err := s.cce.ShowQuotas(&model.ShowQuotasRequest{})
-	if err != nil {
-		return nil, errors.Wrap(err, "ShowQuotas failed")
-	}
-	info := &QuotaInfo{}
-	if resp.Quotas != nil {
-		for _, r := range *resp.Quotas {
-			if r.QuotaKey != nil && *r.QuotaKey == "cluster" {
-				if r.QuotaLimit != nil {
-					info.ClusterQuotaLimit = *r.QuotaLimit
-				}
-				if r.Used != nil {
-					info.ClusterQuotaUsed = *r.Used
-				}
-			}
-		}
-	}
-	return info, nil
 }
 
 // ListClusters implements Service. It lists all CCE clusters in the region,
@@ -1335,9 +1292,6 @@ func (s *Client) ListNodePools(_ context.Context, clusterID string) ([]NodePoolI
 				}
 				info.Name = p.Metadata.Name
 			}
-			if p.Spec != nil && p.Spec.InitialNodeCount != nil {
-				info.DesiredNodeCount = *p.Spec.InitialNodeCount
-			}
 			// Node-pool queries return the node template's userTags (SDK
 			// note: 节点池场景 ... 查询时支持返回该字段). Capture them so the
 			// create-conflict adoption path can verify provider ownership.
@@ -1613,7 +1567,6 @@ func (s *Client) CreateAddonInstance(_ context.Context, in AddonInput) (string, 
 		Spec: &model.InstanceRequestSpec{
 			ClusterID:         in.ClusterID,
 			AddonTemplateName: in.Name,
-			Values:            in.Values,
 		},
 	}
 	if in.Version != "" {
@@ -1641,7 +1594,6 @@ func (s *Client) UpdateAddonInstance(_ context.Context, in AddonInput) error {
 			ClusterID:         in.ClusterID,
 			AddonTemplateName: in.Name,
 			Version:           &in.Version,
-			Values:            in.Values,
 		},
 	}
 	if _, err := s.cce.UpdateAddonInstance(&model.UpdateAddonInstanceRequest{
@@ -1695,25 +1647,17 @@ func (s *Client) DeleteAddonInstance(_ context.Context, _, addonID string) error
 }
 
 // RoleTagKey is the reserved tag key marking a resource's role inside the
-// cluster, with dots instead of '/' because CCE tag keys reject '/'. The full
-// role value set is declared up front so a future ECS-based (self-managed)
-// mode can reuse it
-// unchanged; the managed-CCE mode currently sets apiserver on the CCE cluster
-// and node on every node pool. Role is reserved: a user-supplied tag with this
-// key is dropped in favor of the built-in value (same precedence as owned).
+// cluster, with dots instead of '/' because CCE tag keys reject '/'. The
+// managed-CCE mode sets apiserver on the CCE cluster and node on every node
+// pool. Role is reserved: a user-supplied tag with this key is dropped in
+// favor of the built-in value (same precedence as owned).
 const RoleTagKey = "cluster-api-provider-cce.role"
 
-// Role values for the cluster-api-provider-cce.role tag key. apiserver/node
-// are used in the managed-CCE mode today; the rest are reserved for a future
-// ECS-based (self-managed, CAPI KubeadmControlPlane) mode covering the same
-// resource roles.
+// Role values for the cluster-api-provider-cce.role tag key: apiserver
+// (CCE cluster) and node (node pool).
 const (
 	RoleApiserver = "apiserver" // control-plane / API server cost role
 	RoleNode      = "node"      // worker nodes
-	RoleCommon    = "common"    // shared networking resources (future)
-	RolePublic    = "public"    // public subnets (future)
-	RolePrivate   = "private"   // private subnets (future)
-	RoleBastion   = "bastion"   // bastion host (future)
 )
 
 // adoptConflictCandidate verifies provider ownership before a same-name

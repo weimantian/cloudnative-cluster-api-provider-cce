@@ -52,10 +52,6 @@ type ValidateInput struct {
 	ContainerCIDR string
 	ServiceCIDR   string
 	ENISubnetIDs  []string
-	// CloudSubnetCIDRs is an optional map subnetID -> CIDR; when empty the
-	// validator queries the VPC API.
-	CloudSubnetCIDRs map[string]string
-	VPCCloudCIDR     string
 }
 
 // ValidatorInterface is the network validation surface used by controllers;
@@ -115,11 +111,8 @@ func (v *Validator) Validate(ctx context.Context, in ValidateInput) ([]Issue, er
 	}
 
 	// Query cloud-side network facts.
-	vpcCIDR := in.VPCCloudCIDR
+	vpcCIDR := ""
 	subnetCIDRs := map[string]string{}
-	for k, val := range in.CloudSubnetCIDRs {
-		subnetCIDRs[k] = val
-	}
 	if v != nil && v.vpc != nil {
 		cidr, subnets, err := v.fetchNetwork(ctx, in.VPCID)
 		if err != nil {
