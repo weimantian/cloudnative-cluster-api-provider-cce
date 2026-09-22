@@ -119,7 +119,7 @@ Key flows:
 flowchart TB
     subgraph OPS["Ops / Delivery layer"]
         U["User<br/>kubectl · clusterctl · CloudShell"]
-        GH["GitHub Release v0.1.2<br/>clusterctl.yaml · components · cluster-templates"]
+        GH["GitHub Release v0.1.3<br/>clusterctl.yaml · components · cluster-templates"]
         SWR["Public SWR (no auth)<br/>CAPI · cert-manager · cce-provider images"]
     end
 
@@ -169,7 +169,7 @@ Design details: see docs/architecture-design.md (Chinese) and docs/research-sour
 - **Declarative managed clusters** — CCE control plane is fully managed by Huawei Cloud; the provider only translates and reconciles.
 - **CCE Standard + CCE Turbo** — both supported (Turbo recommended by default for the managed-cluster model).
 - **MachinePool ↔ node pool** — scale via `MachinePool.spec.replicas`; no bootstrap provider required for managed node pools.
-- **`clusterctl` compatible** — `metadata.yaml` + `infrastructure-components.yaml` published as [GitHub Release v0.1.2](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.2); `clusterctl describe cluster` / `get kubeconfig` support.
+- **`clusterctl` compatible** — `metadata.yaml` + `infrastructure-components.yaml` published as [GitHub Release v0.1.3](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.3); `clusterctl describe cluster` / `get kubeconfig` support.
 - **GitOps ready** — drive everything from Git via ArgoCD/Flux.
 - **CCE access policies** — declarative `spec.accessPolicies[]` on the control plane maps IAM users/groups/agencies to CCE permission roles (`CCEClusterAdminPolicy` / `CCEAdminPolicy` / `CCEEditPolicy` / `CCEViewPolicy`) scoped to namespaces.
 - **Identity management** — per-cluster `CCEClusterIdentity` (AK/SK Secret or `SecretKey` object reference) and a controller-default identity.
@@ -284,12 +284,12 @@ kubectl get ccemanagedcontrolplane --watch
    > real namespace (`capi-cce-system`); kustomize does not rewrite
    > RoleBinding subjects.
 
-4. **Configure clusterctl and install** (components are published as GitHub Release [v0.1.2](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.2); for local development instead build the image and point clusterctl at a local `file://` source as documented in `scripts/deploy-kind.sh`):
+4. **Configure clusterctl and install** (components are published as GitHub Release [v0.1.3](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.3); for local development instead build the image and point clusterctl at a local `file://` source as documented in `scripts/deploy-kind.sh`):
 
    ```bash
    mkdir -p ~/.cluster-api
    curl -L -o ~/.cluster-api/clusterctl.yaml \
-     https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.2/clusterctl.yaml
+     https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.3/clusterctl.yaml
    clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
    # installs cert-manager + CAPI core + bootstrap-kubeadm + control-plane-kubeadm + infrastructure-cce
    # (way B: all images from public SWR — pre-install cert-manager, see docs/deployment-guide.md)
