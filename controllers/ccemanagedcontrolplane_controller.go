@@ -773,7 +773,15 @@ func (r *CCEManagedControlPlaneReconciler) credentialsSecretToControlPlane(ctx c
 // threshold, and refuses to overwrite a pre-existing Secret the provider
 // does not own (mirrors the ownership guard on the CAPI kubeconfig).
 func (r *CCEManagedControlPlaneReconciler) ensureKubeconfigSecret(ctx context.Context, cp *controlplanev1beta2.CCEManagedControlPlane, cluster *clusterv1.Cluster, svc cceService.Service, clusterID, secretName string, validityDays int32) error {
-	if !kubeconfigNeedsRefresh(ctx, r.Client, cp.Namespace, secretName, kubeconfigRefreshThresholdDays) {
+	// Refresh when the certificate is near expiry OR the control-plane endpoint
+	// changed (e.g. a public EIP was bound after creation): the stored secret
+	// would otherwise keep pointing at the old server.
+	desiredServer := ""
+	if cp.Status.ControlPlaneEndpoint != nil && !cp.Status.ControlPlaneEndpoint.IsZero() {
+		desiredServer = "https://" + cp.Status.ControlPlaneEndpoint.Host + ":" + strconv.Itoa(int(cp.Status.ControlPlaneEndpoint.Port))
+	}
+	if !kubeconfigNeedsRefresh(ctx, r.Client, cp.Namespace, secretName, kubeconfigRefreshThresholdDays) &&
+		kubeconfigSecretHasServer(ctx, r.Client, cp.Namespace, secretName, desiredServer) {
 		return nil
 	}
 	kubeconfig, err := svc.GetClusterKubeconfig(ctx, clusterID, validityDays)

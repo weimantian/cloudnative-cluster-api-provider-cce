@@ -11,6 +11,7 @@ import (
 	"crypto/x509"
 	"encoding/base64"
 	"encoding/pem"
+	"strings"
 	"time"
 
 	corev1 "k8s.io/api/core/v1"
@@ -73,4 +74,19 @@ func kubeconfigClientCertExpiry(data []byte) (time.Time, bool) {
 		return cert.NotAfter, true
 	}
 	return time.Time{}, false
+}
+
+// kubeconfigSecretHasServer reports whether the named Secret's kubeconfig
+// already points at server. An empty server means "no endpoint known yet" and
+// counts as a match (nothing to compare against). A missing/unreadable Secret
+// returns false so the caller regenerates it.
+func kubeconfigSecretHasServer(ctx context.Context, c client.Client, namespace, secretName, server string) bool {
+	if server == "" {
+		return true
+	}
+	secret := &corev1.Secret{}
+	if err := c.Get(ctx, types.NamespacedName{Namespace: namespace, Name: secretName}, secret); err != nil {
+		return false
+	}
+	return strings.Contains(string(secret.Data["value"]), "server: "+server)
 }

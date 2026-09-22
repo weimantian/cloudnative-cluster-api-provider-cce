@@ -23,6 +23,9 @@ spec:
       containers:
         - name: manager
           image: swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller:latest
+          # The image tag is :latest (a moving tag); Always so an upgraded
+          # release is actually pulled instead of reusing the node's cached tag.
+          imagePullPolicy: Always
           imagePullPolicy: IfNotPresent
           args:
             - --leader-elect
