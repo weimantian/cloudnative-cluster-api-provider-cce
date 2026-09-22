@@ -26,7 +26,9 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
+	"net"
 	"os"
 	"strings"
 	"time"
@@ -55,6 +57,11 @@ const (
 )
 
 func main() {
+	sshCIDR := flag.String("ssh-cidr", "", "CIDR allowed to SSH into the bastion (e.g. 203.0.113.10/32); required — no default open access")
+	flag.Parse()
+	if _, _, err := net.ParseCIDR(*sshCIDR); err != nil {
+		fatal("-ssh-cidr must be a valid CIDR (e.g. 203.0.113.10/32)")
+	}
 	ak := envOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
 	sk := envOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
 	region := envDefault("CCE_DEPLOY_REGION", "cn-north-4")
@@ -125,7 +132,7 @@ func main() {
 	sgID := findSecurityGroup(ctx, vpc, vpcID, sgName)
 	if sgID == "" {
 		sgID = createSecurityGroup(ctx, vpc, vpcID, sgName)
-		createSSHRule(ctx, vpc, sgID)
+		createSSHRule(ctx, vpc, sgID, *sshCIDR)
 	}
 	fmt.Printf("Security group: %s\n", sgID)
 
@@ -207,11 +214,10 @@ func createSecurityGroup(ctx context.Context, vpc *vpcv2.VpcClient, vpcID, name 
 	return resp.SecurityGroup.Id
 }
 
-func createSSHRule(ctx context.Context, vpc *vpcv2.VpcClient, sgID string) {
+func createSSHRule(ctx context.Context, vpc *vpcv2.VpcClient, sgID, cidr string) {
 	proto := "tcp"
 	min := int32(22)
 	max := int32(22)
-	cidr := "0.0.0.0/0"
 	if err := retryThrottled("create ssh rule", 3, func() error {
 		_, e := vpc.CreateSecurityGroupRule(&vpcmodel.CreateSecurityGroupRuleRequest{Body: &vpcmodel.CreateSecurityGroupRuleRequestBody{
 			SecurityGroupRule: &vpcmodel.CreateSecurityGroupRuleOption{

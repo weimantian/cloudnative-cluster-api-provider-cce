@@ -25,10 +25,10 @@ func main() {
 	n := 0
 	if resp.Items != nil {
 		for _, cl := range *resp.Items {
-			if cl.Metadata == nil {
+			if cl.Metadata == nil || cl.Metadata.Uid == nil {
 				continue
 			}
-			if !strings.HasPrefix(cl.Metadata.Name, "capi-") {
+			if !strings.HasPrefix(cl.Metadata.Name, "capi-") || strings.HasPrefix(cl.Metadata.Name, "capi-mgmt-") {
 				continue
 			}
 			// delete node pools first

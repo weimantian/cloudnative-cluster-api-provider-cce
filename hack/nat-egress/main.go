@@ -103,7 +103,7 @@ func doCreate(ctx context.Context, region, ak, sk string, natc *natv2.NatClient,
 	if gw := findGatewayByName(ctx, natc, natName); gw != nil && gw.Id != nil {
 		id := *gw.Id
 		fmt.Printf("reusing existing NAT gateway id=%s name=%q status=%s\n", id, natName, statusOf(gw))
-		ensureSnatRule(ctx, natc, id, subnetID)
+		ensureSnatRule(ctx, region, ak, sk, natc, id, subnetID)
 		return
 	}
 
@@ -346,15 +346,27 @@ func listSnatRules(ctx context.Context, c *natv2.NatClient, gatewayID string) []
 	return *resp.SnatRules
 }
 
-func ensureSnatRule(ctx context.Context, c *natv2.NatClient, gatewayID, subnetID string) {
-	// Reuse: reuse whatever EIP is already bound to the first rule.
+func ensureSnatRule(ctx context.Context, region, ak, sk string, c *natv2.NatClient, gatewayID, subnetID string) {
+	eipID := ""
 	for _, r := range listSnatRules(ctx, c, gatewayID) {
 		if r.NetworkId == subnetID {
 			fmt.Printf("SNAT rule already exists id=%s eip=%s\n", r.Id, r.FloatingIpAddress)
 			return
 		}
+		if eipID == "" && r.FloatingIpId != "" {
+			eipID = r.FloatingIpId
+		}
 	}
-	fmt.Println("reused gateway has no SNAT rule for subnet — add one via -mode create with fresh gateway, or check console")
+	if eipID == "" {
+		eipc := newEipClient(region, ak, sk)
+		var err error
+		eipID, _, err = createPublicIP(ctx, eipc, eipNamePrefix)
+		if err != nil {
+			fatalf("create EIP: %v", err)
+		}
+		fmt.Printf("created EIP id=%s\n", eipID)
+	}
+	ensureSnatRuleWithEip(ctx, c, gatewayID, subnetID, eipID)
 }
 
 func ensureSnatRuleWithEip(ctx context.Context, c *natv2.NatClient, gatewayID, subnetID, eipID string) {

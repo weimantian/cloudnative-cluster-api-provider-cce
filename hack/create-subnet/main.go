@@ -24,7 +24,7 @@ Licensed under the MIT No Attribution (MIT-0) License.
 //
 // Usage:
 //
-//	go run ./hack/create-subnet -vpc 9c4c6207-a38a-4c5c-a814-43fd581a53d9
+//	go run ./hack/create-subnet -vpc <vpc-id>
 package main
 
 import (

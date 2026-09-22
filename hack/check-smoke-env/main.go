@@ -23,14 +23,18 @@ func main() {
 	v := vpcv2.NewVpcClient(hc)
 	vres, err := v.ListVpcs(&vpcmodel.ListVpcsRequest{})
 	must(err)
-	for _, vpc := range *vres.Vpcs {
-		fmt.Printf("VPC %s %s cidr=%s\n", vpc.Id, vpc.Name, vpc.Cidr)
+	if vres.Vpcs != nil {
+		for _, vpc := range *vres.Vpcs {
+			fmt.Printf("VPC %s %s cidr=%s\n", vpc.Id, vpc.Name, vpc.Cidr)
+		}
 	}
 	// Subnets
 	sres, err := v.ListSubnets(&vpcmodel.ListSubnetsRequest{})
 	must(err)
-	for _, s := range *sres.Subnets {
-		fmt.Printf("  SUBNET %s %s vpc=%s cidr=%s neutron=%s\n", s.Id, s.Name, s.VpcId, s.Cidr, s.NeutronSubnetId)
+	if sres.Subnets != nil {
+		for _, s := range *sres.Subnets {
+			fmt.Printf("  SUBNET %s %s vpc=%s cidr=%s neutron=%s\n", s.Id, s.Name, s.VpcId, s.Cidr, s.NeutronSubnetId)
+		}
 	}
 	// CCE clusters (leftovers?)
 	cr, _ := cceRegion.SafeValueOf("cn-north-4")
@@ -41,7 +45,7 @@ func main() {
 	n := 0
 	if cres.Items != nil {
 		for _, cl := range *cres.Items {
-			if cl.Metadata != nil {
+			if cl.Metadata != nil && cl.Metadata.Uid != nil && cl.Status != nil && cl.Status.Phase != nil {
 				fmt.Printf("CLUSTER %s %s phase=%v\n", *cl.Metadata.Uid, cl.Metadata.Name, *cl.Status.Phase)
 				n++
 			}

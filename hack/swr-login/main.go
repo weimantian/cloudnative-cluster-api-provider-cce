@@ -71,7 +71,7 @@ func temporaryLogin(swr *swrv2.SwrClient) (login, error) {
 	if resp.Auths == nil {
 		return login{}, fmt.Errorf("CreateSecret returned no auths")
 	}
-	for reg, a := range resp.Auths {
+	for _, a := range resp.Auths {
 		decoded, err := base64.StdEncoding.DecodeString(a.Auth)
 		if err != nil {
 			continue
@@ -80,7 +80,6 @@ func temporaryLogin(swr *swrv2.SwrClient) (login, error) {
 		if len(parts) == 2 {
 			return login{user: parts[0], pass: parts[1]}, nil
 		}
-		_ = reg
 	}
 	return login{}, fmt.Errorf("no usable auth in CreateSecret response")
 }
