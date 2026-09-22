@@ -945,6 +945,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, 
 	}
 
 	// Create missing / upgrade drift.
+	created := map[string]bool{}
 	for _, want := range cp.Spec.Addons {
 		got, exists := cloudByName[want.Name]
 		switch {
@@ -954,7 +955,14 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, 
 			}); err != nil {
 				return err
 			}
+			created[want.Name] = true
 		case want.Version != "" && want.Version != got.Version:
+			// Upgrading drift is declarative, but does not transfer ownership:
+			// an addon that already existed (a platform default, or one managed
+			// elsewhere) stays unmanaged, so removing it from the spec later
+			// does not delete a resource this provider did not create. CCE
+			// addons carry no resource tags, so status.addons is the only
+			// ownership ledger available.
 			if err := svc.UpdateAddonInstance(ctx, cceService.AddonInput{
 				ClusterID: clusterID, AddonID: got.ID, Name: want.Name, Version: want.Version,
 			}); err != nil {
@@ -977,8 +985,14 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, 
 			return err
 		}
 	}
+	// The ownership ledger: only addons this provider created (or already
+	// owned) are recorded. A foreign addon that was merely upgraded above is
+	// not adopted, so a later spec change cannot delete it.
 	var applied []string
 	for _, want := range cp.Spec.Addons {
+		if !managed[want.Name] && !created[want.Name] {
+			continue
+		}
 		applied = append(applied, want.Name)
 	}
 	cp.Status.Addons = applied
@@ -986,8 +1000,13 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAddons(ctx context.Context, 
 }
 
 // reconcilePodIdentityAssociations reconciles the declared pod-identity
-// associations against the cloud: create missing, delete removed.
+// associations against the cloud. Ownership follows the provider owned tag
+// (the upstream reference keys EKS pod-identity ownership on a resource tag):
+// only associations carrying the owned tag are managed — created when
+// declared, deleted when removed. An association created out of band (no owned
+// tag) is never adopted (CCE cannot add tags after create) and never deleted.
 func (r *CCEManagedControlPlaneReconciler) reconcilePodIdentityAssociations(ctx context.Context, svc cceService.Service, clusterID string, cp *controlplanev1beta2.CCEManagedControlPlane) error {
+	log := ctrl.LoggerFrom(ctx)
 	if len(cp.Spec.PodIdentityAssociations) == 0 && !capiconditions.Has(cp, conditions.PodIdentityAssociationsConfiguredCondition) {
 		return nil
 	}
@@ -996,35 +1015,51 @@ func (r *CCEManagedControlPlaneReconciler) reconcilePodIdentityAssociations(ctx 
 		return err
 	}
 	key := func(ns, sa string) string { return ns + "/" + sa }
-	cloudByKey := map[string]cceService.PodIdentityAssociationInfo{}
+	ownedTag := cceService.OwnedTagKey(cp.Spec.ClusterName)
+	presentByKey := map[string]cceService.PodIdentityAssociationInfo{}
+	managedByKey := map[string]cceService.PodIdentityAssociationInfo{}
 	for _, a := range current {
-		cloudByKey[key(a.Namespace, a.ServiceAccount)] = a
-	}
-	specByKey := map[string]controlplanev1beta2.PodIdentityAssociationSpec{}
-	for _, a := range cp.Spec.PodIdentityAssociations {
-		specByKey[key(a.Namespace, a.ServiceAccount)] = a
-	}
-
-	// Create missing.
-	for _, want := range cp.Spec.PodIdentityAssociations {
-		k := key(want.Namespace, want.ServiceAccount)
-		if _, exists := cloudByKey[k]; !exists {
-			if _, err := svc.CreatePodIdentityAssociation(ctx, cceService.PodIdentityAssociationInput{
-				ClusterID:      clusterID,
-				Namespace:      want.Namespace,
-				ServiceAccount: want.ServiceAccount,
-				AgencyName:     want.AgencyName,
-			}); err != nil {
-				return err
-			}
+		k := key(a.Namespace, a.ServiceAccount)
+		presentByKey[k] = a
+		if a.Tags[ownedTag] == "owned" {
+			managedByKey[k] = a
 		}
 	}
-	// Delete removed.
-	for _, got := range current {
-		if _, keep := specByKey[key(got.Namespace, got.ServiceAccount)]; !keep {
-			if err := svc.DeletePodIdentityAssociation(ctx, clusterID, got.ID); err != nil {
-				return err
-			}
+	specByKey := map[string]bool{}
+	for _, a := range cp.Spec.PodIdentityAssociations {
+		specByKey[key(a.Namespace, a.ServiceAccount)] = true
+	}
+
+	// Create missing, stamping the ownership tag.
+	for _, want := range cp.Spec.PodIdentityAssociations {
+		k := key(want.Namespace, want.ServiceAccount)
+		if _, ours := managedByKey[k]; ours {
+			continue
+		}
+		if _, foreign := presentByKey[k]; foreign {
+			// The desired association already exists but is not ours; leave it
+			// alone rather than erroring or adopting a resource we cannot tag.
+			log.V(4).Info("Skipping pod-identity association: an association for this service account exists but is not owned by this provider",
+				"namespace", want.Namespace, "serviceAccount", want.ServiceAccount)
+			continue
+		}
+		if _, err := svc.CreatePodIdentityAssociation(ctx, cceService.PodIdentityAssociationInput{
+			ClusterID:      clusterID,
+			Namespace:      want.Namespace,
+			ServiceAccount: want.ServiceAccount,
+			AgencyName:     want.AgencyName,
+			Tags:           map[string]string{ownedTag: "owned"},
+		}); err != nil {
+			return err
+		}
+	}
+	// Delete removed associations this provider owns.
+	for k, got := range managedByKey {
+		if specByKey[k] {
+			continue
+		}
+		if err := svc.DeletePodIdentityAssociation(ctx, clusterID, got.ID); err != nil {
+			return err
 		}
 	}
 	return nil
@@ -1130,7 +1165,12 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAccessPolicies(ctx context.C
 				return err
 			}
 		case !managed[want.Name]:
-			log.V(4).Info("Skipping access policy: not managed by this provider", "policy", want.Name)
+			// The name resolves to an in-scope policy this provider did not
+			// create. CCE access policies carry no ownership tag, so it cannot be
+			// adopted; skipping it silently while marking the condition True would
+			// claim a policy is configured that never will be (the upstream
+			// reference fails the reconcile on this collision).
+			return errors.Errorf("access policy %q already exists in the scope of cluster %s but is not managed by this provider; remove the conflicting policy or rename the declared one", want.Name, clusterID)
 		case accessPolicyDrifted(got, want):
 			if err := svc.UpdateAccessPolicy(ctx, got.PolicyID, input); err != nil {
 				return err
@@ -1151,11 +1191,10 @@ func (r *CCEManagedControlPlaneReconciler) reconcileAccessPolicies(ctx context.C
 			return err
 		}
 	}
+	// Every declared policy is now either created, owned, or the reconcile
+	// errored above; latch the full declared set as the ownership ledger.
 	var applied []string
 	for _, want := range cp.Spec.AccessPolicies {
-		if _, exists := cloudByName[want.Name]; exists && !managed[want.Name] {
-			continue
-		}
 		applied = append(applied, want.Name)
 	}
 	cp.Status.AccessPolicies = applied

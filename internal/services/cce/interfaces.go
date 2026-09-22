@@ -337,6 +337,9 @@ type PodIdentityAssociationInput struct {
 	Namespace      string
 	ServiceAccount string
 	AgencyName     string
+	// Tags are the resource tags to stamp on the association at create time
+	// (CCE cannot add tags after create). Used to record provider ownership.
+	Tags map[string]string
 	// AssociationID is the pod-identity association ID (for Delete).
 	AssociationID string
 }
@@ -348,6 +351,9 @@ type PodIdentityAssociationInfo struct {
 	Namespace      string
 	ServiceAccount string
 	AgencyName     string
+	// Tags are the association's resource tags as reported by the API; used
+	// to tell provider-owned associations from ones created out of band.
+	Tags map[string]string
 }
 
 // AddonInfo is a CCE addon instance as reported by ListAddonInstances.

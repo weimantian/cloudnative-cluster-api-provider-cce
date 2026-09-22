@@ -1734,6 +1734,11 @@ const (
 // ownedTagKey returns the ownership tag key for a cluster.
 func ownedTagKey(clusterName string) string { return OwnedTagPrefix + "." + clusterName }
 
+// OwnedTagKey returns the provider ownership tag key for a cluster
+// (OwnedTagPrefix + "." + clusterName). Exported so controllers build the same
+// key the service layer uses when stamping/reading resource ownership.
+func OwnedTagKey(clusterName string) string { return ownedTagKey(clusterName) }
+
 // adoptConflictCandidate verifies provider ownership before a same-name
 // resource found after a 409 conflict is adopted. A candidate is adoptable
 // only when it carries the provider owned tag (ownedTagKey(clusterName) ==
@@ -1929,6 +1934,33 @@ func boolPtr(b bool) *bool { return &b }
 
 func int32Ptr(i int32) *int32 { return &i }
 
+// toResourceTags maps a tag map to the CCE SDK resource-tag list; nil for an
+// empty map so the API omits the field.
+func toResourceTags(tags map[string]string) *[]model.ResourceTag {
+	if len(tags) == 0 {
+		return nil
+	}
+	out := make([]model.ResourceTag, 0, len(tags))
+	for k, v := range tags {
+		out = append(out, model.ResourceTag{Key: stringPtr(k), Value: stringPtr(v)})
+	}
+	return &out
+}
+
+// parseResourceTags flattens the API resource-tag list into a tag map.
+func parseResourceTags(tags *[]model.ResourceTag) map[string]string {
+	if tags == nil {
+		return nil
+	}
+	out := make(map[string]string, len(*tags))
+	for _, t := range *tags {
+		if t.Key != nil && t.Value != nil {
+			out[*t.Key] = *t.Value
+		}
+	}
+	return out
+}
+
 // base64StrPtr base64-encodes a PEM string and returns a pointer; nil-safe
 // (empty input -> nil so the CCE API omits the field).
 func base64StrPtr(s string) *string {
@@ -2041,6 +2073,7 @@ func (s *Client) CreatePodIdentityAssociation(_ context.Context, in PodIdentityA
 			Namespace:      in.Namespace,
 			ServiceAccount: in.ServiceAccount,
 			AgencyName:     in.AgencyName,
+			Tags:           toResourceTags(in.Tags),
 		},
 	})
 	if err != nil {
@@ -2074,6 +2107,7 @@ func (s *Client) ListPodIdentityAssociations(_ context.Context, clusterID string
 			if a.AgencyName != nil {
 				info.AgencyName = *a.AgencyName
 			}
+			info.Tags = parseResourceTags(a.Tags)
 			out = append(out, info)
 		}
 	}

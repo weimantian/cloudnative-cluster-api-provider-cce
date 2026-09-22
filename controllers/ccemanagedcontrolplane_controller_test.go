@@ -318,7 +318,8 @@ func TestControlPlaneReconcileUpgradeCompletes(t *testing.T) {
 }
 
 // TestControlPlaneReconcileAddons verifies declarative addon management:
-// create missing, upgrade version drift, delete those no longer listed.
+// create missing, upgrade version drift, and delete only what this provider
+// created — a merely-upgraded pre-existing addon is not adopted (M2).
 func TestControlPlaneReconcileAddons(t *testing.T) {
 	ctx := context.Background()
 	ns := "cp-test-addons"
@@ -373,12 +374,15 @@ func TestControlPlaneReconcileAddons(t *testing.T) {
 	if c := capiconditions.Get(got, conditions.AddonsConfiguredCondition); c == nil || c.Status != metav1.ConditionTrue {
 		t.Errorf("expected AddonsConfigured=True, got %v", c)
 	}
-	if len(got.Status.Addons) != 2 || got.Status.Addons[0] != "coredns" || got.Status.Addons[1] != "metrics-server" {
-		t.Errorf("expected status.addons [coredns metrics-server], got %v", got.Status.Addons)
+	// Only the addon this provider created is latched as owned; the pre-existing
+	// coredns it merely upgraded is not adopted (M2).
+	if len(got.Status.Addons) != 1 || got.Status.Addons[0] != "metrics-server" {
+		t.Errorf("expected status.addons [metrics-server], got %v", got.Status.Addons)
 	}
 
-	// Emptying the spec removes the addons this provider applied, and only
-	// those: old-addon (never declared) survives.
+	// Emptying the spec removes only the addon this provider created
+	// (metrics-server). coredns was merely upgraded, not created, so it is not
+	// owned and must survive (M2); old-addon was never declared at all.
 	fakeSvc.Addons = []cceService.AddonInfo{
 		{ID: "addon-id-coredns", Name: "coredns", Version: "1.2.0", Status: "running"},
 		{ID: "addon-id-metrics-server", Name: "metrics-server", Version: "1.0.0", Status: "running"},
@@ -400,8 +404,11 @@ func TestControlPlaneReconcileAddons(t *testing.T) {
 	for _, id := range fakeSvc.AddonDeleteCalls {
 		deleted[id] = true
 	}
-	if !deleted["addon-id-coredns"] || !deleted["addon-id-metrics-server"] {
-		t.Errorf("expected coredns+metrics-server deleted after emptying spec, got %v", fakeSvc.AddonDeleteCalls)
+	if !deleted["addon-id-metrics-server"] {
+		t.Errorf("expected metrics-server deleted after emptying spec, got %v", fakeSvc.AddonDeleteCalls)
+	}
+	if deleted["addon-id-coredns"] {
+		t.Errorf("a merely-upgraded foreign addon must not be deleted, got %v", fakeSvc.AddonDeleteCalls)
 	}
 	if deleted["addon-id-old"] {
 		t.Errorf("undeclared old-addon must not be deleted, got %v", fakeSvc.AddonDeleteCalls)
@@ -409,7 +416,9 @@ func TestControlPlaneReconcileAddons(t *testing.T) {
 }
 
 // TestControlPlaneReconcilePodIdentity verifies declarative pod-identity
-// association management: create missing, delete removed.
+// association management (create missing, delete removed) and the ownership
+// boundary: only associations carrying the provider owned tag are managed; a
+// foreign untagged association is never touched.
 func TestControlPlaneReconcilePodIdentity(t *testing.T) {
 	ctx := context.Background()
 	ns := "cp-test-podid"
@@ -427,9 +436,12 @@ func TestControlPlaneReconcilePodIdentity(t *testing.T) {
 	}
 
 	fakeSvc := fakes.NewFakeCCEService()
-	// Cloud already has one association that is no longer in spec -> delete.
+	// An owned association no longer in spec -> deleted; a foreign (untagged)
+	// association -> never touched.
 	fakeSvc.PodIdentities = []cceService.PodIdentityAssociationInfo{
-		{ID: "podid-old", Namespace: "kube-system", ServiceAccount: "old-sa", AgencyName: "old-agency"},
+		{ID: "podid-old", Namespace: "kube-system", ServiceAccount: "old-sa", AgencyName: "old-agency",
+			Tags: map[string]string{cceService.OwnedTagKey("test-cluster"): "owned"}},
+		{ID: "podid-foreign", Namespace: "kube-system", ServiceAccount: "foreign-sa", AgencyName: "foreign-agency"},
 	}
 	r := &CCEManagedControlPlaneReconciler{
 		Client: k8sClient,
@@ -449,8 +461,11 @@ func TestControlPlaneReconcilePodIdentity(t *testing.T) {
 	if created.Namespace != "default" || created.ServiceAccount != "app-sa" || created.AgencyName != "app-agency" {
 		t.Errorf("unexpected create input: %+v", created)
 	}
+	if created.Tags[cceService.OwnedTagKey("test-cluster")] != "owned" {
+		t.Errorf("created association must carry the provider owned tag, got %v", created.Tags)
+	}
 	if len(fakeSvc.PodIdentityDelete) != 1 || fakeSvc.PodIdentityDelete[0] != "podid-old" {
-		t.Errorf("expected delete podid-old, got %v", fakeSvc.PodIdentityDelete)
+		t.Errorf("expected only the owned association deleted, got %v", fakeSvc.PodIdentityDelete)
 	}
 
 	got := &controlplanev1beta2.CCEManagedControlPlane{}
@@ -594,7 +609,8 @@ func TestControlPlaneReconcilePodIdentityEmptySpecCleanup(t *testing.T) {
 	}
 
 	fakeSvc.PodIdentities = []cceService.PodIdentityAssociationInfo{
-		{ID: "podid-app-sa", Namespace: "default", ServiceAccount: "app-sa", AgencyName: "app-agency"},
+		{ID: "podid-app-sa", Namespace: "default", ServiceAccount: "app-sa", AgencyName: "app-agency",
+			Tags: map[string]string{cceService.OwnedTagKey("test-cluster"): "owned"}},
 	}
 	latest := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), latest); err != nil {
@@ -1489,5 +1505,94 @@ func TestControlPlaneReconcileResetsBackoffOnSuccess(t *testing.T) {
 	}
 	if got := errorBackoff.failures(key); got != 0 {
 		t.Errorf("clean reconcile must reset the backoff counter, got %d", got)
+	}
+}
+
+// TestControlPlaneReconcilePodIdentityForeignNotAdopted covers the ownership
+// boundary for a collision: a declared service account whose association
+// already exists but is not owned by the provider must be neither adopted (CCE
+// cannot add tags after create) nor deleted.
+func TestControlPlaneReconcilePodIdentityForeignNotAdopted(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-podid-foreign"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	cp.Spec.PodIdentityAssociations = []controlplanev1beta2.PodIdentityAssociationSpec{
+		{Namespace: "default", ServiceAccount: "app-sa", AgencyName: "app-agency"},
+	}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to update control plane spec: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	// Same namespace/service account, but no owned tag: foreign.
+	fakeSvc.PodIdentities = []cceService.PodIdentityAssociationInfo{
+		{ID: "podid-foreign", Namespace: "default", ServiceAccount: "app-sa", AgencyName: "other-agency"},
+	}
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if len(fakeSvc.PodIdentityCreate) != 0 {
+		t.Errorf("a foreign association must not be adopted (no create), got %+v", fakeSvc.PodIdentityCreate)
+	}
+	if len(fakeSvc.PodIdentityDelete) != 0 {
+		t.Errorf("a foreign association must never be deleted, got %v", fakeSvc.PodIdentityDelete)
+	}
+}
+
+// TestControlPlaneReconcileAccessPolicyForeignCollision covers M1: a declared
+// policy whose name resolves to an in-scope policy this provider does not own
+// cannot be applied. The reconcile must fail loudly (condition False) rather
+// than skip it while reporting the condition True.
+func TestControlPlaneReconcileAccessPolicyForeignCollision(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-accesspolicy-collision"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+
+	cp.Spec.AccessPolicies = []controlplanev1beta2.AccessPolicySpec{
+		{Name: "shared", PolicyType: "CCEViewPolicy", PrincipalType: "user", PrincipalIds: []string{"user-1"}},
+	}
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set access policies: %v", err)
+	}
+
+	fakeSvc := fakes.NewFakeCCEService()
+	// Same name, in scope (this cluster), but not in status.accessPolicies.
+	fakeSvc.AccessPolicies = []cceService.AccessPolicyInfo{
+		{PolicyID: "pol-foreign", Name: "shared", ClusterIDs: []string{"cluster-1"}, PolicyType: "CCEAdminPolicy", PrincipalType: "user", PrincipalIDs: []string{"user-9"}, Namespaces: []string{"*"}},
+	}
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err == nil {
+		t.Fatal("expected the reconcile to fail on a foreign same-name policy instead of skipping silently")
+	}
+	if len(fakeSvc.AccessPolicyCreate) != 0 || len(fakeSvc.AccessPolicyUpdate) != 0 || len(fakeSvc.AccessPolicyDelete) != 0 {
+		t.Errorf("a foreign policy must not be created/updated/deleted, create=%v update=%v delete=%v",
+			fakeSvc.AccessPolicyCreate, fakeSvc.AccessPolicyUpdate, fakeSvc.AccessPolicyDelete)
+	}
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	if c := capiconditions.Get(got, conditions.AccessPoliciesConfiguredCondition); c == nil || c.Status != metav1.ConditionFalse {
+		t.Errorf("expected AccessPoliciesConfigured=False on the collision, got %v", c)
 	}
 }
