@@ -649,6 +649,104 @@ func TestMachinePoolReconcileDelete(t *testing.T) {
 	}
 }
 
+// TestMachinePoolReconcileDeleteKeepsPollAlive covers R2-5: the node-pool
+// delete path stamps the keep-alive annotation (nodePoolDeletePollAnnotation)
+// and returns a positive requeue while the CCE node pool still exists, so the
+// informer watch keeps re-driving the reconcile even if the workqueue dedup
+// coalesces the delayed requeue away (observed live). Once the pool is gone
+// from the cloud, a repeated reconcile must not re-issue the delete — the ID
+// is cleared and the finalizer released instead.
+func TestMachinePoolReconcileDeleteKeepsPollAlive(t *testing.T) {
+	ctx := context.Background()
+	ns := "mp-test-delete-poll"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	cp.Status.ClusterID = "cluster-1"
+	cp.Status.Ready = true
+	if err := k8sClient.Status().Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set control plane status: %v", err)
+	}
+
+	pool := &infrav1beta2.CCEManagedMachinePool{
+		ObjectMeta: metav1.ObjectMeta{
+			Name:       "test-cluster-pool-0",
+			Namespace:  ns,
+			Labels:     map[string]string{clusterv1.ClusterNameLabel: "test-cluster"},
+			Finalizers: []string{MachinePoolFinalizer},
+		},
+		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
+			ClusterName:  "test-cluster",
+			NodePoolName: "pool-0",
+			Flavor:       "c7.large.2",
+			Replicas:     3,
+		},
+	}
+	if err := k8sClient.Create(ctx, pool); err != nil {
+		t.Fatalf("failed to create machine pool: %v", err)
+	}
+	pool.Status.NodePoolID = "nodepool-1"
+	if err := k8sClient.Status().Update(ctx, pool); err != nil {
+		t.Fatalf("failed to set pool status: %v", err)
+	}
+
+	deleteCalls := 0
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeSvc.DeleteNodePoolFn = func(_ context.Context, _, _ string) error {
+		deleteCalls++
+		return nil
+	}
+	// The pool still exists in the cloud (async delete in progress).
+	fakeSvc.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
+		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", NodeCount: 3, ActiveNodeCount: 3}}, nil
+	}
+	r := &CCEManagedMachinePoolReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	// First delete reconcile: DeleteNodePool once + keep-alive annotation +
+	// positive requeue while the pool still exists.
+	res, err := r.reconcileDelete(ctx, cluster, pool)
+	if err != nil {
+		t.Fatalf("first reconcileDelete returned error: %v", err)
+	}
+	if deleteCalls != 1 {
+		t.Fatalf("expected 1 DeleteNodePool call, got %d", deleteCalls)
+	}
+	if res.RequeueAfter <= 0 {
+		t.Errorf("expected a positive requeue while the pool still exists, got %+v", res)
+	}
+	got := &infrav1beta2.CCEManagedMachinePool{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(pool), got); err != nil {
+		t.Fatalf("failed to get machine pool: %v", err)
+	}
+	if got.Annotations[nodePoolDeletePollAnnotation] == "" {
+		t.Fatal("expected the keep-alive delete poll annotation to be stamped")
+	}
+
+	// The pool is now gone from the cloud: a repeated reconcile must not
+	// re-issue the delete — it clears the ID and releases the finalizer.
+	fakeSvc.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
+		return []cceService.NodePoolInfo{}, nil
+	}
+	if _, err := r.reconcileDelete(ctx, cluster, pool); err != nil {
+		t.Fatalf("second reconcileDelete returned error: %v", err)
+	}
+	if deleteCalls != 1 {
+		t.Errorf("DeleteNodePool must not be re-issued once the pool is gone, got %d calls", deleteCalls)
+	}
+	if pool.Status.NodePoolID != "" {
+		t.Errorf("expected NodePoolID cleared, got %q", pool.Status.NodePoolID)
+	}
+	if hasFinalizer(pool.Finalizers, MachinePoolFinalizer) {
+		t.Error("expected finalizer removed after pool deletion")
+	}
+}
+
 // TestControlPlaneReconcileCredentialsFailure verifies that a missing
 // credentials Secret surfaces as CredentialsReady=False (persisted), not a
 // silent env fallback.

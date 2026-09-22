@@ -88,27 +88,47 @@ func quota(n int) Tags {
 	return tags
 }
 
-// TestTagsValidateMaxAdditionalTagsBoundary locks the tag budget: Validate
-// accepts exactly MaxAdditionalTags user tags and rejects one more. The helper
-// is shared by the cluster additionalTags and the node-pool additionalTags
-// webhooks, so both resource shapes hit the same boundary.
+// TestTagsValidateMaxAdditionalTagsBoundary locks the tag budget on BOTH
+// resource shapes at their own boundary: the cluster path (Validate) accepts
+// exactly MaxAdditionalTags (18) user tags, while the node-pool path
+// (ValidateNodePool) accepts only MaxNodePoolAdditionalTags (6) — the lower
+// node-pool userTags cap minus the two provider-owned tags. The two caps are
+// distinct, so each must be exercised through its own validator.
 func TestTagsValidateMaxAdditionalTagsBoundary(t *testing.T) {
-	for _, shape := range []string{"cluster", "node-pool"} {
-		t.Run("accepts exactly MaxAdditionalTags/"+shape, func(t *testing.T) {
-			if errs := quota(MaxAdditionalTags).Validate(field.NewPath("spec", "additionalTags")); len(errs) != 0 {
-				t.Fatalf("expected exactly %d tags to be accepted, got %v", MaxAdditionalTags, errs)
-			}
-		})
-		t.Run("rejects MaxAdditionalTags+1/"+shape, func(t *testing.T) {
-			errs := quota(MaxAdditionalTags + 1).Validate(field.NewPath("spec", "additionalTags"))
-			if len(errs) == 0 {
-				t.Fatalf("expected %d tags to be rejected", MaxAdditionalTags+1)
-			}
-			if got := errs.ToAggregate().Error(); !strings.Contains(got, "at most") {
-				t.Errorf("expected a too-many error, got %v", errs)
-			}
-		})
+	// The derived node-pool cap must stay consistent with the platform limit:
+	// MaxNodePoolTags (8) minus the two provider tags = 6.
+	if MaxNodePoolAdditionalTags != MaxNodePoolTags-2 {
+		t.Fatalf("MaxNodePoolAdditionalTags (%d) must equal MaxNodePoolTags-2 (%d)", MaxNodePoolAdditionalTags, MaxNodePoolTags-2)
 	}
+	if MaxNodePoolAdditionalTags != 6 {
+		t.Fatalf("MaxNodePoolAdditionalTags must be 6, got %d", MaxNodePoolAdditionalTags)
+	}
+
+	t.Run("cluster", func(t *testing.T) {
+		if errs := quota(MaxAdditionalTags).Validate(field.NewPath("spec", "additionalTags")); len(errs) != 0 {
+			t.Fatalf("expected exactly %d cluster tags to be accepted, got %v", MaxAdditionalTags, errs)
+		}
+		errs := quota(MaxAdditionalTags + 1).Validate(field.NewPath("spec", "additionalTags"))
+		if len(errs) == 0 {
+			t.Fatalf("expected %d cluster tags to be rejected", MaxAdditionalTags+1)
+		}
+		if got := errs.ToAggregate().Error(); !strings.Contains(got, "at most") {
+			t.Errorf("expected a too-many error, got %v", errs)
+		}
+	})
+
+	t.Run("node-pool", func(t *testing.T) {
+		if errs := quota(MaxNodePoolAdditionalTags).ValidateNodePool(field.NewPath("spec", "additionalTags")); len(errs) != 0 {
+			t.Fatalf("expected exactly %d node-pool tags to be accepted, got %v", MaxNodePoolAdditionalTags, errs)
+		}
+		errs := quota(MaxNodePoolAdditionalTags + 1).ValidateNodePool(field.NewPath("spec", "additionalTags"))
+		if len(errs) == 0 {
+			t.Fatalf("expected %d node-pool tags to be rejected", MaxNodePoolAdditionalTags+1)
+		}
+		if got := errs.ToAggregate().Error(); !strings.Contains(got, "at most") {
+			t.Errorf("expected a too-many error, got %v", errs)
+		}
+	})
 }
 
 // TestTagsValidateNodePoolReservedPrefixes locks the node-pool UserTag
