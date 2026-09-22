@@ -92,7 +92,7 @@
 | `cert-manager-webhook:v1.21.1` | quay.io/jetstack | cert-manager webhook |
 | `capi-cce-tools:latest` | 本地打包 | 跳板机工具：kubectl v1.30 + clusterctl v1.14 |
 
-> 当前 `cluster-api-cce-controller:latest` digest `bf345563`（含 kubeconfig 端点覆盖 + 429 退避修复 + 集群/节点池 `additionalTags` + 删除/退避与标签所有权审计修复 + 第 2 轮质量审计全量整改（R2-1…R2-15）与旁支项收口，并含公网 EIP 自动绑定（endpointAccess.public））。
+> 当前 `cluster-api-cce-controller:latest` digest `26a89378`（含 kubeconfig 端点覆盖 + 429 退避修复 + 集群/节点池 `additionalTags` + 删除/退避与标签所有权审计修复 + 第 2 轮质量审计全量整改（R2-1…R2-15）与旁支项收口，并含公网 EIP 自动绑定（endpointAccess.public））。
 > 完整路径示例：`swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller:latest`。
 
 ---
