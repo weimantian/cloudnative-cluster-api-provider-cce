@@ -881,3 +881,34 @@ func TestTagsEqual(t *testing.T) {
 		})
 	}
 }
+
+// TestNodePoolTagUpdateNeeded locks the drift decision used by
+// ReconcileNodePoolTags: a node pool is updated (found && drifted) only when
+// it exists and its current tags differ from the desired set; a missing pool
+// or an in-sync pool must not trigger an update.
+func TestNodePoolTagUpdateNeeded(t *testing.T) {
+	want := map[string]string{"owned": "owned", "role": "node", "env": "prod"}
+	pools := []NodePoolInfo{
+		{NodePoolID: "pool-a", Tags: map[string]string{"owned": "owned", "role": "node", "env": "prod"}},
+		{NodePoolID: "pool-b", Tags: map[string]string{"owned": "owned", "role": "node", "env": "dev"}},
+	}
+	cases := []struct {
+		name       string
+		nodePoolID string
+		wantFound  bool
+		wantDrift  bool
+	}{
+		{"missing pool", "pool-missing", false, false},
+		{"tags equal", "pool-a", true, false},
+		{"tags drifted", "pool-b", true, true},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			found, drifted := nodePoolTagUpdateNeeded(pools, tc.nodePoolID, want)
+			if found != tc.wantFound || drifted != tc.wantDrift {
+				t.Errorf("nodePoolTagUpdateNeeded(%q) = (found=%v, drifted=%v), want (found=%v, drifted=%v)",
+					tc.nodePoolID, found, drifted, tc.wantFound, tc.wantDrift)
+			}
+		})
+	}
+}

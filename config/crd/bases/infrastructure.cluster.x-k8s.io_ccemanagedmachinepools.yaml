@@ -98,10 +98,11 @@ spec:
                   support random AZ via API).
                 type: string
               billingMode:
-                description: 'BillingMode: 0=on-demand, 1=subscription.'
+                description: |-
+                  BillingMode: 0=on-demand (the only supported mode; subscription billing
+                  is rejected by the webhook).
                 enum:
                 - 0
-                - 1
                 format: int32
                 type: integer
               clusterName:

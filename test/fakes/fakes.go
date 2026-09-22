@@ -37,7 +37,7 @@ type FakeCCEService struct {
 	UpdateNodePoolFn         func(ctx context.Context, in cceService.UpdateNodePoolInput) error
 	DeleteNodePoolFn         func(ctx context.Context, clusterID, nodePoolID string) error
 	ListNodePoolsFn          func(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error)
-	ReconcileNodePoolTagsFn  func(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string) (bool, error)
+	ReconcileNodePoolTagsFn  func(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string, pools []cceService.NodePoolInfo) (bool, error)
 	ListNodesFn              func(ctx context.Context, clusterID, nodePoolID string) ([]string, error)
 	ListNodesWithStatusFn    func(ctx context.Context, clusterID string) ([]cceService.NodeInfo, error)
 	ResetNodeFn              func(ctx context.Context, clusterID string, nodeIDs []string) error
@@ -177,7 +177,7 @@ func NewFakeCCEService() *FakeCCEService {
 		f.UpdateNodePoolCalls = append(f.UpdateNodePoolCalls, in)
 		return nil
 	}
-	f.ReconcileNodePoolTagsFn = func(_ context.Context, _, _, _ string, userTags map[string]string) (bool, error) {
+	f.ReconcileNodePoolTagsFn = func(_ context.Context, _, _, _ string, userTags map[string]string, _ []cceService.NodePoolInfo) (bool, error) {
 		f.ReconcileNodePoolTagsCalls = append(f.ReconcileNodePoolTagsCalls, userTags)
 		return true, nil
 	}
@@ -507,8 +507,8 @@ func (f *FakeCCEService) ListNodePools(ctx context.Context, clusterID string) ([
 }
 
 // ReconcileNodePoolTags implements cceService.Service.
-func (f *FakeCCEService) ReconcileNodePoolTags(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string) (bool, error) {
-	return f.ReconcileNodePoolTagsFn(ctx, clusterID, nodePoolID, clusterName, userTags)
+func (f *FakeCCEService) ReconcileNodePoolTags(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string, pools []cceService.NodePoolInfo) (bool, error) {
+	return f.ReconcileNodePoolTagsFn(ctx, clusterID, nodePoolID, clusterName, userTags, pools)
 }
 
 // ListNodes implements cceService.Service.

@@ -227,12 +227,6 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 			conditions.NodePoolCreationFailedReason, err.Error())
 		return ctrl.Result{}, err
 	}
-	if err != nil {
-		conditions.MarkFalse(pool,
-			conditions.NodePoolReadyCondition,
-			conditions.NodePoolCreationFailedReason, err.Error())
-		return ctrl.Result{}, err
-	}
 
 	// Ensure the node pool exists.
 	clusterID := cp.Status.ClusterID
@@ -376,13 +370,23 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 		log.Info("Node pool attributes updated and rolled onto existing nodes", "nodePoolID", pool.Status.NodePoolID)
 	}
 
+	// List the node pools once: the same list drives both the tag drift
+	// reconcile and the status refresh below (avoids a duplicate cloud read).
+	pools, err := svc.ListNodePools(ctx, clusterID)
+	if err != nil {
+		conditions.MarkFalse(pool,
+			conditions.NodePoolReadyCondition,
+			conditions.NodePoolCreationFailedReason, err.Error())
+		return ctrl.Result{}, err
+	}
+
 	// Drift-reconcile the node-pool tags on the periodic reconcile: desired is
 	// the control plane's additionalTags merged with the pool's own (the
 	// service adds the provider ownership + role tags). Mirrors the
 	// cluster-level tag reconciliation — a tag removed from the spec is
 	// dropped, and the service pushes the change onto existing nodes too.
 	if drifted, err := svc.ReconcileNodePoolTags(ctx, clusterID, pool.Status.NodePoolID, pool.Spec.ClusterName,
-		mergedTags(cp.Spec.AdditionalTags, pool.Spec.AdditionalTags)); err != nil {
+		mergedTags(cp.Spec.AdditionalTags, pool.Spec.AdditionalTags), pools); err != nil {
 		conditions.MarkFalse(pool,
 			conditions.NodePoolReadyCondition,
 			conditions.NodePoolCreationFailedReason, err.Error())
@@ -393,13 +397,6 @@ func (r *CCEManagedMachinePoolReconciler) reconcileNormal(ctx context.Context, c
 
 	// Refresh observed state from the cloud (Active node count is a
 	// verification item — questionnaire Q3).
-	pools, err := svc.ListNodePools(ctx, clusterID)
-	if err != nil {
-		conditions.MarkFalse(pool,
-			conditions.NodePoolReadyCondition,
-			conditions.NodePoolCreationFailedReason, err.Error())
-		return ctrl.Result{}, err
-	}
 	// Replicas should reflect the ACTUAL node count, not the desired target
 	// (spec.initialNodeCount) — status.currentNode is the expected total,
 	// status.activeNode is the ready count (official NodePoolStatus). Mark a
@@ -516,9 +513,6 @@ func (r *CCEManagedMachinePoolReconciler) reconcileDelete(ctx context.Context, c
 				return ctrl.Result{}, err
 			}
 			svc, err := r.newCCEService(region, resolved)
-			if err != nil {
-				return ctrl.Result{}, err
-			}
 			if err != nil {
 				return ctrl.Result{}, err
 			}

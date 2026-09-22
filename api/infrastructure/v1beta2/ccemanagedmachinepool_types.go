@@ -66,8 +66,9 @@ type CCEManagedMachinePoolSpec struct {
 	// +optional
 	ProviderIDList []string `json:"providerIDList,omitempty"`
 
-	// BillingMode: 0=on-demand, 1=subscription.
-	// +kubebuilder:validation:Enum=0;1
+	// BillingMode: 0=on-demand (the only supported mode; subscription billing
+	// is rejected by the webhook).
+	// +kubebuilder:validation:Enum=0
 	// +optional
 	BillingMode int32 `json:"billingMode,omitempty"`
 

@@ -279,6 +279,13 @@ type UpdateNodePoolInput struct {
 	LabelPolicyOnExistingNodes string
 	// UserTagsPolicyOnExistingNodes: "refresh" | "ignore" for user tags.
 	UserTagsPolicyOnExistingNodes string
+	// UserTags is the desired user-tag set. When non-nil, UpdateNodePool
+	// performs a tag-only update: it pushes nodeTemplate.userTags (owned + role
+	// + user, never empty) onto existing nodes and leaves the node count and
+	// security groups untouched. nil leaves the tags untouched.
+	UserTags map[string]string
+	// ClusterName is the owning cluster name (used to derive the owned tag).
+	ClusterName string
 }
 
 // QuotaInfo is the cluster quota for the project.
@@ -509,7 +516,9 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	// desired set (provider ownership + role tags plus the merged user tags) and
 	// reports whether an update was issued. It is declarative: tags removed from
 	// the desired set are dropped, and the change is pushed onto existing nodes.
-	ReconcileNodePoolTags(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string) (bool, error)
+	// pools is the caller's already-fetched node-pool list (shared with the
+	// status refresh to avoid a duplicate cloud read).
+	ReconcileNodePoolTags(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string, pools []NodePoolInfo) (bool, error)
 	// ListNodes lists the provider IDs of the nodes belonging to the given node
 	// pool (empty nodePoolID matches nodes in no pool). Each entry has the form
 	// huaweicloud:///<serverId>, matching the spec.providerID of the

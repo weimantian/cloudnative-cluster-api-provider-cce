@@ -128,12 +128,6 @@ func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 			reterr = err
 		}
 	}()
-
-	if cluster == nil {
-		log.Info("Cluster controller has not yet set OwnerRef")
-		return ctrl.Result{}, nil
-	}
-
 	if annotations.IsPaused(cluster, cceCluster) {
 		log.Info("CCECluster is paused")
 		return ctrl.Result{}, nil
@@ -172,6 +166,18 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 			conditions.NetworkValidationFailedReason, credErr.Error())
 		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 	}
+	// Read the control plane once and reuse it for tag propagation, the
+	// network-validation inputs, and the cluster-ID backfill below (avoids
+	// three duplicate Get(CP) reads per reconcile). The credential resolution
+	// above reads the CP once more for its identityRef chain; that read must
+	// stay separate because it feeds the credential chain before this point.
+	cp := &controlplanev1beta2.CCEManagedControlPlane{}
+	cpFound := false
+	if cluster.Spec.ControlPlaneRef.Name != "" {
+		if err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err == nil {
+			cpFound = true
+		}
+	}
 	if creds != nil {
 		resolved, rerr := credentials.Resolve(ctx, r.CredentialProvider, cceCluster.Spec.Region, agency, creds.AccessKey, creds.SecretKey)
 		if rerr != nil {
@@ -194,11 +200,8 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 			// Stamp cluster-level additionalTags on the provider-managed network
 			// resources. Sourced from the owning control plane, if present.
 			var cpTags map[string]string
-			if cluster.Spec.ControlPlaneRef.Name != "" {
-				cp := &controlplanev1beta2.CCEManagedControlPlane{}
-				if err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err == nil {
-					cpTags = map[string]string(cp.Spec.AdditionalTags)
-				}
+			if cpFound {
+				cpTags = map[string]string(cp.Spec.AdditionalTags)
 			}
 			svc.SetAdditionalTags(cpTags)
 			if rerr := r.reconcileManagedNetwork(ctx, cceCluster, cluster.Name, svc); rerr != nil {
@@ -218,16 +221,14 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 				conditions.NetworkValidationFailedReason, verr.Error())
 			return ctrl.Result{RequeueAfter: requeueAfterForError(key, verr)}, nil
 		}
-		// Read the container/service CIDR from the control plane spec.
+		// Read the container/service CIDR from the control plane spec (the CP
+		// was already fetched once above).
 		containerMode, containerCIDR, serviceCIDR, eniSubnets := "", "", "", []string{}
-		if cluster.Spec.ControlPlaneRef.Name != "" {
-			cp := &controlplanev1beta2.CCEManagedControlPlane{}
-			if err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err == nil {
-				containerMode = cp.Spec.ContainerNetwork.Mode
-				containerCIDR = cp.Spec.ContainerNetwork.CIDR
-				serviceCIDR = cp.Spec.ServiceNetwork.CIDR
-				eniSubnets = cp.Spec.ContainerNetwork.ENISubnets
-			}
+		if cpFound {
+			containerMode = cp.Spec.ContainerNetwork.Mode
+			containerCIDR = cp.Spec.ContainerNetwork.CIDR
+			serviceCIDR = cp.Spec.ServiceNetwork.CIDR
+			eniSubnets = cp.Spec.ContainerNetwork.ENISubnets
 		}
 		issues, verr := validator.Validate(ctx, network.ValidateInput{
 			VPCID:         effectiveVPCID(cceCluster),
@@ -271,12 +272,10 @@ func (r *CCEClusterReconciler) reconcileNormal(ctx context.Context, cluster *clu
 	conditions.MarkTrue(cceCluster, clusterv1.ReadyCondition, "InfrastructureReady", "CCE infrastructure is ready")
 	cceCluster.Status.Initialization.Provisioned = true
 
-	// Backfill the CCE cluster ID from the control plane when available.
-	if cluster.Spec.ControlPlaneRef.Name != "" {
-		cp := &controlplanev1beta2.CCEManagedControlPlane{}
-		if err := r.Get(ctx, types.NamespacedName{Namespace: cceCluster.Namespace, Name: cluster.Spec.ControlPlaneRef.Name}, cp); err == nil && cp.Status.ClusterID != "" {
-			cceCluster.Status.ClusterID = cp.Status.ClusterID
-		}
+	// Backfill the CCE cluster ID from the control plane when available (the CP
+	// was already fetched once above).
+	if cpFound && cp.Status.ClusterID != "" {
+		cceCluster.Status.ClusterID = cp.Status.ClusterID
 	}
 
 	cceCluster.Status.Ready = true

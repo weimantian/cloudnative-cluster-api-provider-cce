@@ -977,10 +977,9 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 	if in.RootVolumeSize <= 0 {
 		return "", errors.New("CreateNodePool: rootVolume size must be >= 40 GiB")
 	}
+	// Only on-demand billing (billingMode=0) is reachable: the webhook rejects
+	// billingMode=1 (subscription) before CreateNodePool is ever called.
 	billingMode := model.GetNodeTemplateBillingModeEnum().E_0
-	if in.BillingMode == 1 {
-		billingMode = model.GetNodeTemplateBillingModeEnum().E_1
-	}
 	template := &model.NodeTemplate{
 		Flavor:      stringPtr(in.Flavor),
 		BillingMode: &billingMode,
@@ -1196,19 +1195,24 @@ func (s *Client) UpdateNodePool(_ context.Context, in UpdateNodePoolInput) error
 	if in.IgnoreInitialNodeCount {
 		spec.IgnoreInitialNodeCount = boolPtr(true)
 	}
-	// Always send customSecurityGroups (empty slice = reset to default SG).
-	spec.CustomSecurityGroups = &in.CustomSecurityGroups
-	if in.Autoscaling != nil {
-		spec.Autoscaling = toNodePoolAutoscaling(in.Autoscaling)
-	}
-	if in.TaintPolicyOnExistingNodes != "" {
-		spec.TaintPolicyOnExistingNodes = stringPtr(in.TaintPolicyOnExistingNodes)
-	}
-	if in.LabelPolicyOnExistingNodes != "" {
-		spec.LabelPolicyOnExistingNodes = stringPtr(in.LabelPolicyOnExistingNodes)
-	}
-	if in.UserTagsPolicyOnExistingNodes != "" {
+	// A tag-only update (UserTags set) leaves the node count and security
+	// groups untouched: it only pushes the desired user tags onto existing
+	// nodes. The attribute-update path always sends customSecurityGroups
+	// (an empty slice resets to the node default security group).
+	if in.UserTags != nil {
+		spec.NodeTemplate = &model.NodeSpecUpdate{UserTags: toUserTags(in.ClusterName, in.UserTags)}
 		spec.UserTagsPolicyOnExistingNodes = stringPtr(in.UserTagsPolicyOnExistingNodes)
+	} else {
+		spec.CustomSecurityGroups = &in.CustomSecurityGroups
+		if in.Autoscaling != nil {
+			spec.Autoscaling = toNodePoolAutoscaling(in.Autoscaling)
+		}
+		if in.TaintPolicyOnExistingNodes != "" {
+			spec.TaintPolicyOnExistingNodes = stringPtr(in.TaintPolicyOnExistingNodes)
+		}
+		if in.LabelPolicyOnExistingNodes != "" {
+			spec.LabelPolicyOnExistingNodes = stringPtr(in.LabelPolicyOnExistingNodes)
+		}
 	}
 	if _, err := s.cce.UpdateNodePool(&model.UpdateNodePoolRequest{
 		ClusterId:  in.ClusterID,
@@ -1220,66 +1224,51 @@ func (s *Client) UpdateNodePool(_ context.Context, in UpdateNodePoolInput) error
 	return nil
 }
 
-// updateNodePoolTags pushes the desired user tags (provider ownership + role
-// tags plus the merged user tags) onto an existing node pool. It sends only the
-// tag portion of the update — never the node count or the security groups,
-// which the attribute-update path owns — and always sets
-// userTagsPolicyOnExistingNodes=refresh so the change also reaches nodes that
-// already exist (official cce_02_0356; the create-time default is "ignore").
-//
-// The desired set is never empty: CCE treats an empty userTags array as "delete
-// all node-pool tags".
-func (s *Client) updateNodePoolTags(_ context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string) error {
-	spec := &model.NodePoolSpecUpdate{
-		IgnoreInitialNodeCount:        boolPtr(true),
-		UserTagsPolicyOnExistingNodes: stringPtr("refresh"),
-		NodeTemplate:                  &model.NodeSpecUpdate{UserTags: toUserTags(clusterName, userTags)},
+// nodePoolTagUpdateNeeded reports whether a node pool with nodePoolID exists in
+// pools and, if so, whether its current tags have drifted from want (so an
+// update must be issued). A missing pool yields (false, false) — absence is
+// the caller's concern (its own recreate path handles an out-of-band delete).
+func nodePoolTagUpdateNeeded(pools []NodePoolInfo, nodePoolID string, want map[string]string) (found, drifted bool) {
+	for i := range pools {
+		if pools[i].NodePoolID != nodePoolID {
+			continue
+		}
+		return true, !tagsEqual(pools[i].Tags, want)
 	}
-	if _, err := s.cce.UpdateNodePool(&model.UpdateNodePoolRequest{
-		ClusterId:  clusterID,
-		NodepoolId: nodePoolID,
-		Body:       &model.NodePoolUpdate{Spec: spec},
-	}); err != nil {
-		return errors.Wrapf(err, "UpdateNodePool(userTags) %s failed", nodePoolID)
-	}
-	return nil
+	return false, false
 }
 
 // ReconcileNodePoolTags converges an existing node pool's user tags to the
-// desired set, mirroring ReconcileClusterTags: it reads the pool's current
-// nodeTemplate.userTags via ListNodePools and only calls the update API when
-// the pool actually drifted. The desired set is declarative — a tag removed
-// from the spec is dropped from the pool (and, with the refresh policy, from
-// existing nodes), matching what the upstream reference provider does for its
-// managed node groups. Returns true when an update was issued, and
-// (false, nil) when the pool is absent — absence is the caller's concern.
-func (s *Client) ReconcileNodePoolTags(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string) (bool, error) {
-	pools, err := s.ListNodePools(ctx, clusterID)
-	if err != nil {
-		return false, err
-	}
+// desired set, mirroring ReconcileClusterTags: it compares the pool's current
+// nodeTemplate.userTags (from the caller's already-fetched pool list) against
+// the desired set and only calls UpdateNodePool when the pool actually drifted.
+// The desired set is declarative — a tag removed from the spec is dropped from
+// the pool (and, with the refresh policy, from existing nodes), matching what
+// the upstream reference provider does for its managed node groups. Returns
+// true when an update was issued, and (false, nil) when the pool is absent —
+// absence is the caller's concern.
+func (s *Client) ReconcileNodePoolTags(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string, pools []NodePoolInfo) (bool, error) {
 	want := map[string]string{}
 	for _, t := range *toUserTags(clusterName, userTags) {
 		if t.Key != nil && t.Value != nil {
 			want[*t.Key] = *t.Value
 		}
 	}
-	for i := range pools {
-		if pools[i].NodePoolID != nodePoolID {
-			continue
-		}
-		if tagsEqual(pools[i].Tags, want) {
-			return false, nil
-		}
-		if err := s.updateNodePoolTags(ctx, clusterID, nodePoolID, clusterName, userTags); err != nil {
-			return false, err
-		}
-		return true, nil
+	found, drifted := nodePoolTagUpdateNeeded(pools, nodePoolID, want)
+	if !found || !drifted {
+		return false, nil
 	}
-	// A pool missing from the list is not an error: the caller's own
-	// existence check (and recreate path) handles a pool deleted out of
-	// band. Returning an error here would abort the reconcile before it.
-	return false, nil
+	if err := s.UpdateNodePool(ctx, UpdateNodePoolInput{
+		ClusterID:                     clusterID,
+		NodePoolID:                    nodePoolID,
+		ClusterName:                   clusterName,
+		IgnoreInitialNodeCount:        true,
+		UserTagsPolicyOnExistingNodes: "refresh",
+		UserTags:                      userTags,
+	}); err != nil {
+		return false, err
+	}
+	return true, nil
 }
 
 // tagsEqual reports whether two tag sets carry exactly the same keys and values.
