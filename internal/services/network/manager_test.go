@@ -12,28 +12,8 @@ import (
 	vpcmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/tags"
 )
-
-// TestHasOwnedTag verifies the owned-tag adoption marker detection.
-func TestHasOwnedTag(t *testing.T) {
-	cases := []struct {
-		name string
-		tags common.Tags
-		want bool
-	}{
-		{name: "owned", tags: common.Tags{"cluster-api-provider-cce.cluster.foo": "owned"}, want: true},
-		{name: "shared value", tags: common.Tags{"cluster-api-provider-cce.cluster.foo": "shared"}, want: false},
-		{name: "unrelated", tags: common.Tags{"foo": "owned"}, want: false},
-		{name: "empty", tags: nil, want: false},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := HasOwnedTag(tc.tags, "foo"); got != tc.want {
-				t.Errorf("HasOwnedTag(%v, foo) = %v, want %v", tc.tags, got, tc.want)
-			}
-		})
-	}
-}
 
 // TestIsManaged verifies the three-state model: create (vpc.id empty),
 // adopt (vpc.id + owned tag), BYO (vpc.id + no tag).
@@ -56,13 +36,6 @@ func TestIsManaged(t *testing.T) {
 				t.Errorf("IsManaged(%v, foo) = %v, want %v", tc.spec, tc.want, got)
 			}
 		})
-	}
-}
-
-// TestOwnedTagKey verifies the owned tag key construction.
-func TestOwnedTagKey(t *testing.T) {
-	if got := ownedTagKey("my-cluster"); got != "cluster-api-provider-cce.cluster.my-cluster" {
-		t.Errorf("ownedTagKey(my-cluster) = %q, want %q", got, "cluster-api-provider-cce.cluster.my-cluster")
 	}
 }
 
@@ -97,20 +70,20 @@ func TestSecurityGroupRuleExists(t *testing.T) {
 
 func TestManagerResourceTagList(t *testing.T) {
 	m := &Manager{additionalTags: map[string]string{"env": "prod", "cost-center": "cc-42"}}
-	tags := m.resourceTagList("demo")
-	owned := ownedTagKey("demo")
-	if len(tags) != 3 {
-		t.Fatalf("expected owned + 2 user tags, got %v", tags)
+	list := m.resourceTagList("demo")
+	owned := tags.OwnedTagKey("demo")
+	if len(list) != 3 {
+		t.Fatalf("expected owned + 2 user tags, got %v", list)
 	}
-	if tags[0] != owned+"*owned" {
-		t.Errorf("owned tag must come first, got %q", tags[0])
+	if list[0] != owned+"*owned" {
+		t.Errorf("owned tag must come first, got %q", list[0])
 	}
 	seen := map[string]bool{}
-	for _, tg := range tags[1:] {
+	for _, tg := range list[1:] {
 		seen[tg] = true
 	}
 	if !seen["env*prod"] || !seen["cost-center*cc-42"] {
-		t.Errorf("expected env/cost-center star tags, got %v", tags)
+		t.Errorf("expected env/cost-center star tags, got %v", list)
 	}
 
 	// A user tag colliding with the owned key is dropped.

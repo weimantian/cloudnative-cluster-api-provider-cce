@@ -4,7 +4,7 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-package network
+package throttle
 
 import (
 	"context"
@@ -14,9 +14,10 @@ import (
 	"golang.org/x/time/rate"
 )
 
-// Client-side throttling for the managed-network clients (VPC/NAT/EIP), using
-// a token-bucket limiter split by HTTP method so that status polling
-// (GET) is never delayed by the far stricter write limit Huawei Cloud enforces.
+// Client-side throttling for the Huawei Cloud clients (CCE + managed-network
+// VPC/NAT/EIP), using a token-bucket limiter split by HTTP method so that
+// status polling (GET) is never delayed by the far stricter write limit Huawei
+// Cloud enforces.
 //
 // Rates:
 //   - reads (GET/HEAD) share a generous bucket (20 ops/s, burst 100) so the
@@ -24,8 +25,14 @@ import (
 //   - writes (everything else: Create/Delete) are clamped to the observed
 //     APIGW.0308 limit of 10 requests/minute (one token every 6s, burst 10).
 //     The burst covers a single managed-network create (VPC + 2 subnets + NAT
-//   - EIP + SNAT ≈ 6 writes), which are issued serially with polling gaps in
+//     + EIP + SNAT ≈ 6 writes), which are issued serially with polling gaps in
 //     between, so the burst is effectively never exhausted in normal use.
+//
+// The limiter is process-level shared: every client draws from the same
+// read/write buckets via Shared(), so the aggregate write budget stays at the
+// 10 writes/min platform cap instead of being per-client (per-client buckets
+// would let several clients collectively exceed the cap the limiter exists to
+// respect).
 const (
 	readThrottleRate  = 20.0 // operations per second
 	readThrottleBurst = 100
@@ -34,10 +41,16 @@ const (
 	writeThrottleBurst    = 10
 )
 
+// shared is the process-wide limiter shared by every Huawei Cloud client.
+var shared = NewOperationLimiter()
+
+// Shared returns the process-wide OperationLimiter shared by all clients, so
+// the read/write budget is a single global bucket rather than per-client.
+func Shared() *OperationLimiter { return shared }
+
 // OperationLimiter is a token-bucket limiter with independent read and write
 // buckets. It is safe for concurrent use; the underlying rate.Limiter handles
-// its own locking. Exported so other services (e.g. cce client) can share the
-// same throttle budget.
+// its own locking.
 type OperationLimiter struct {
 	read  *rate.Limiter
 	write *rate.Limiter

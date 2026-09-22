@@ -41,6 +41,7 @@ import (
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
 	iamService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/iam"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/tags"
 )
 
 // ControlPlaneFinalizer ensures the CCE cluster is deleted before the object.
@@ -1014,7 +1015,7 @@ func (r *CCEManagedControlPlaneReconciler) reconcilePodIdentityAssociations(ctx 
 		return err
 	}
 	key := func(ns, sa string) string { return ns + "/" + sa }
-	ownedTag := cceService.OwnedTagKey(cp.Spec.ClusterName)
+	ownedTag := tags.OwnedTagKey(cp.Spec.ClusterName)
 	presentByKey := map[string]cceService.PodIdentityAssociationInfo{}
 	managedByKey := map[string]cceService.PodIdentityAssociationInfo{}
 	for _, a := range current {

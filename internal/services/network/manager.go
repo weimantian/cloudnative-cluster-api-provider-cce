@@ -30,6 +30,8 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/hwsdk"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/tags"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/throttle"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/wait"
 )
 
@@ -39,23 +41,6 @@ const (
 	defaultVPCCIDR   = "10.0.0.0/16"
 	eipBandwidthSize = 5
 )
-
-// ownedTagPrefix mirrors cceService.OwnedTagPrefix ("cluster-api-provider-cce.cluster").
-// Kept local to avoid a network -> cce import for a single constant.
-const ownedTagPrefix = "cluster-api-provider-cce.cluster"
-
-// HasOwnedTag reports whether tags carry the provider owned tag for
-// clusterName (cluster-api-provider-cce.cluster.<name>=owned), the
-// adoption marker.
-func HasOwnedTag(tags common.Tags, clusterName string) bool {
-	return tags[ownedTagPrefix+"."+clusterName] == "owned"
-}
-
-// ownedTagKey returns the provider owned tag key for clusterName
-// (cluster-api-provider-cce.cluster.<name>).
-func ownedTagKey(clusterName string) string {
-	return ownedTagPrefix + "." + clusterName
-}
 
 // IsManaged reports whether the network spec asks the provider to own the
 // VPC/subnets/NAT. Two managed forms:
@@ -70,7 +55,7 @@ func IsManaged(spec *common.NetworkSpec, clusterName string) bool {
 	if spec.VPC.ID == "" {
 		return spec.VPC.ResourceID != "" || spec.VPC.CIDR != ""
 	}
-	return HasOwnedTag(spec.VPC.Tags, clusterName)
+	return tags.IsOwned(spec.VPC.Tags, clusterName)
 }
 
 // ManagerInterface is the managed-network surface used by controllers; tests
@@ -129,7 +114,7 @@ func NewManager(regionID string, creds *credentials.Credentials) (*Manager, erro
 		return nil, errors.Wrap(err, "failed to build network credentials")
 	}
 	httpConfig := config.DefaultHttpConfig()
-	httpConfig.WithHttpRoundTripper(NewThrottleRoundTripper(http.DefaultTransport, NewOperationLimiter()))
+	httpConfig.WithHttpRoundTripper(throttle.NewThrottleRoundTripper(http.DefaultTransport, throttle.Shared()))
 
 	vpcHC, err := vpcv2.VpcClientBuilder().WithRegion(region).WithCredential(cred).WithHttpConfig(httpConfig).SafeBuild()
 	if err != nil {
@@ -164,14 +149,14 @@ func (m *Manager) SetAdditionalTags(tags map[string]string) {
 // managed resource: the owned tag first, then the cluster-level additional
 // tags (a user tag with the owned key is skipped — owned always wins).
 func (m *Manager) resourceTagList(clusterName string) []string {
-	tags := []string{ownedTagKey(clusterName) + "*owned"}
-	owned := ownedTagKey(clusterName)
+	list := []string{tags.OwnedTagKey(clusterName) + "*owned"}
+	owned := tags.OwnedTagKey(clusterName)
 	for k, v := range m.additionalTags {
 		if k != owned {
-			tags = append(tags, k+"*"+v)
+			list = append(list, k+"*"+v)
 		}
 	}
-	return tags
+	return list
 }
 
 // ---- ownership verification for name-based adoption ----
@@ -230,18 +215,18 @@ func (m *Manager) verifyNatGatewayOwned(id, name, clusterName string) error {
 // requireOwned is the single fail-closed decision point for adoption: an
 // unreadable tag list and a missing owned tag both yield an explicit conflict
 // error naming the resource type, name and ID.
-func requireOwned(resourceType, name, id string, tags common.Tags, readErr error, clusterName string) error {
+func requireOwned(resourceType, name, id string, resourceTags common.Tags, readErr error, clusterName string) error {
 	if readErr != nil {
 		return errors.Wrapf(readErr, "%s %q (%s) already exists but its ownership tags could not be read; refusing to adopt", resourceType, name, id)
 	}
-	if !HasOwnedTag(tags, clusterName) {
+	if !tags.IsOwned(resourceTags, clusterName) {
 		return errors.Errorf("%s %q (%s) already exists but is not owned by this provider; refusing to adopt", resourceType, name, id)
 	}
 	return nil
 }
 
 // tagsFromResourceTag converts a VPC v2 tag list (VPC/subnet/security group)
-// into the common.Tags shape used by HasOwnedTag.
+// into the common.Tags shape used by tags.IsOwned.
 func tagsFromResourceTag(list *[]vpcmodel.ResourceTag) common.Tags {
 	if list == nil {
 		return nil
@@ -269,7 +254,7 @@ func (m *Manager) ReconcileVpc(ctx context.Context, spec *common.NetworkSpec, cl
 	if spec.VPC.ID != "" {
 		// vpc.id set: BYO (no owned tag) is a no-op; adopted (owned tag) is
 		// referenced and its subnets/NAT are still reconciled below.
-		if !HasOwnedTag(spec.VPC.Tags, clusterName) {
+		if !tags.IsOwned(spec.VPC.Tags, clusterName) {
 			return nil
 		}
 		spec.VPC.ResourceID = spec.VPC.ID
@@ -306,7 +291,7 @@ func (m *Manager) ReconcileSecurityGroup(ctx context.Context, spec *common.Netwo
 
 // DeleteNetwork implements ManagerInterface.
 func (m *Manager) DeleteNetwork(ctx context.Context, spec *common.NetworkSpec, clusterName string) error {
-	if spec.VPC.ID != "" && !HasOwnedTag(spec.VPC.Tags, clusterName) {
+	if spec.VPC.ID != "" && !tags.IsOwned(spec.VPC.Tags, clusterName) {
 		return nil // BYO: referenced, never deleted.
 	}
 	// managed (vpc.id empty) or adopted (vpc.id + owned tag): both are torn
@@ -780,14 +765,14 @@ func (m *Manager) createEip(ctx context.Context, name, clusterName string) (stri
 	// {Key,Value} structured — key ≤128, official 2026-08-05). The GC sweeper
 	// relies on this owned tag to find orphaned EIPs. Cluster-level additional
 	// tags are stamped too (one call each; owned always wins).
-	tags := []eipmodel.ResourceTagOption{{Key: ownedTagKey(clusterName), Value: "owned"}}
-	owned := ownedTagKey(clusterName)
+	list := []eipmodel.ResourceTagOption{{Key: tags.OwnedTagKey(clusterName), Value: "owned"}}
+	owned := tags.OwnedTagKey(clusterName)
 	for k, v := range m.additionalTags {
 		if k != owned {
-			tags = append(tags, eipmodel.ResourceTagOption{Key: k, Value: v})
+			list = append(list, eipmodel.ResourceTagOption{Key: k, Value: v})
 		}
 	}
-	for _, t := range tags {
+	for _, t := range list {
 		tag := t
 		if _, err := m.eip.CreatePublicipTag(&eipmodel.CreatePublicipTagRequest{
 			PublicipId: eipID,

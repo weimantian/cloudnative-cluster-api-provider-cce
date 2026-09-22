@@ -4,7 +4,7 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
-package network
+package throttle
 
 import (
 	"context"
@@ -14,6 +14,20 @@ import (
 
 	"golang.org/x/time/rate"
 )
+
+// TestSharedSingleton verifies Shared() returns the same process-wide instance
+// every time, while NewOperationLimiter() builds a fresh, distinct limiter.
+func TestSharedSingleton(t *testing.T) {
+	first := Shared()
+	if first != Shared() {
+		t.Error("Shared() must return the same process-wide instance")
+	}
+	a := NewOperationLimiter()
+	b := NewOperationLimiter()
+	if a == b {
+		t.Error("NewOperationLimiter() must return distinct instances")
+	}
+}
 
 // TestOperationLimiterDefaults verifies the limiter is wired with the intended
 // read/write rates and bursts.

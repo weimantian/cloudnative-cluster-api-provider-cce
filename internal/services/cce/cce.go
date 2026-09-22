@@ -37,7 +37,8 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/hwsdk"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
-	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/tags"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/throttle"
 )
 
 // Client is the default CCE SDK-backed implementation of Service.
@@ -88,7 +89,7 @@ func NewClient(regionID string, creds *credentials.Credentials) (*Client, error)
 		WithCredential(cred).
 		WithHttpConfig(
 			config.DefaultHttpConfig().WithHttpRoundTripper(
-				network.NewThrottleRoundTripper(http.DefaultTransport, network.NewOperationLimiter()),
+				throttle.NewThrottleRoundTripper(http.DefaultTransport, throttle.Shared()),
 			),
 		).
 		SafeBuild()
@@ -268,7 +269,7 @@ func (s *Client) ReconcileClusterTags(ctx context.Context, clusterID, clusterNam
 
 	var toDelete []model.ResourceDeleteTag
 	var toCreate []model.ResourceTag
-	for _, w := range planClusterTags(cur, want, ownedTagKey(clusterName)) {
+	for _, w := range planClusterTags(cur, want, tags.OwnedTagKey(clusterName)) {
 		if w.Delete != nil {
 			toDelete = append(toDelete, *w.Delete)
 		}
@@ -1691,13 +1692,6 @@ func (s *Client) DeleteAddonInstance(_ context.Context, _, addonID string) error
 	return nil
 }
 
-// OwnedTagPrefix is the provider ownership tag key prefix (owned-tag model).
-// NOTE: CCE tag keys cannot contain "/" (official ResourceTag key charset is
-// letters/digits/space/_.:=+-@, max 128), so the key uses "." separators
-// instead of the slash form. Used for idempotent addressing and future
-// external-resource GC.
-const OwnedTagPrefix = "cluster-api-provider-cce.cluster"
-
 // RoleTagKey is the reserved tag key marking a resource's role inside the
 // cluster, with dots instead of '/' because CCE tag keys reject '/'. The full
 // role value set is declared up front so a future ECS-based (self-managed)
@@ -1720,25 +1714,17 @@ const (
 	RoleBastion   = "bastion"   // bastion host (future)
 )
 
-// ownedTagKey returns the ownership tag key for a cluster.
-func ownedTagKey(clusterName string) string { return OwnedTagPrefix + "." + clusterName }
-
-// OwnedTagKey returns the provider ownership tag key for a cluster
-// (OwnedTagPrefix + "." + clusterName). Exported so controllers build the same
-// key the service layer uses when stamping/reading resource ownership.
-func OwnedTagKey(clusterName string) string { return ownedTagKey(clusterName) }
-
 // adoptConflictCandidate verifies provider ownership before a same-name
 // resource found after a 409 conflict is adopted. A candidate is adoptable
-// only when it carries the provider owned tag (ownedTagKey(clusterName) ==
-// "owned"); a foreign same-name resource must never be adopted, because the
+// only when it carries the provider owned tag (tags.IsOwned is true); a
+// foreign same-name resource must never be adopted, because the
 // provider would then reconcile — and could scale or delete — a resource it
 // does not own. It fails closed: when ownership cannot be confirmed (no tags,
 // or a wrong/foreign key), it returns an explicit conflict error naming the
 // resource instead of adopting it. kind is the human-readable resource kind
 // ("cluster", "node pool") used in that error.
-func adoptConflictCandidate(kind, name, id string, tags map[string]string, clusterName string) (string, error) {
-	if tags[ownedTagKey(clusterName)] != "owned" {
+func adoptConflictCandidate(kind, name, id string, resourceTags map[string]string, clusterName string) (string, error) {
+	if !tags.IsOwned(resourceTags, clusterName) {
 		return "", errors.Errorf("%s %q (%s) already exists but is not owned by this provider; refusing to adopt", kind, name, id)
 	}
 	return id, nil
@@ -2216,34 +2202,34 @@ func logConfigType(t string) *model.ClusterLogConfigLogConfigsType {
 	// cost role), plus user tags. Internal tags (owned + role) are reserved and
 	// win over any colliding user tag.
 	func toClusterTags(clusterName string, userTags map[string]string) *[]model.ResourceTag {
-		tags := []model.ResourceTag{
-			{Key: stringPtr(ownedTagKey(clusterName)), Value: stringPtr("owned")},
+		out := []model.ResourceTag{
+			{Key: stringPtr(tags.OwnedTagKey(clusterName)), Value: stringPtr("owned")},
 			{Key: stringPtr(RoleTagKey), Value: stringPtr(RoleApiserver)},
 		}
 		for k, v := range userTags {
 			if skipReservedTagKey(k, clusterName) {
 				continue
 			}
-			tags = append(tags, model.ResourceTag{Key: stringPtr(k), Value: stringPtr(v)})
+			out = append(out, model.ResourceTag{Key: stringPtr(k), Value: stringPtr(v)})
 		}
-		return &tags
+		return &out
 	}
 
 	// toUserTags builds the CCE node pool userTags array (owned tag, built-in
 	// role=node, plus user tags). Internal tags (owned + role) are reserved and
 	// win over any colliding user tag.
 	func toUserTags(clusterName string, userTags map[string]string) *[]model.UserTag {
-		tags := []model.UserTag{
-			{Key: stringPtr(ownedTagKey(clusterName)), Value: stringPtr("owned")},
+		out := []model.UserTag{
+			{Key: stringPtr(tags.OwnedTagKey(clusterName)), Value: stringPtr("owned")},
 			{Key: stringPtr(RoleTagKey), Value: stringPtr(RoleNode)},
 		}
 		for k, v := range userTags {
 			if skipReservedTagKey(k, clusterName) {
 				continue
 			}
-			tags = append(tags, model.UserTag{Key: stringPtr(k), Value: stringPtr(v)})
+			out = append(out, model.UserTag{Key: stringPtr(k), Value: stringPtr(v)})
 		}
-		return &tags
+		return &out
 	}
 
 	// skipReservedTagKey reports whether a user-supplied tag key is managed
@@ -2251,5 +2237,5 @@ func logConfigType(t string) *model.ClusterLogConfigLogConfigsType {
 	// be dropped in favor of the built-in value (owned and role are written
 	// after user tags and therefore win).
 	func skipReservedTagKey(userKey, clusterName string) bool {
-		return userKey == ownedTagKey(clusterName) || userKey == RoleTagKey
+		return userKey == tags.OwnedTagKey(clusterName) || userKey == RoleTagKey
 	}

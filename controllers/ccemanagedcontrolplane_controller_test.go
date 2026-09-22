@@ -26,6 +26,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 	iamService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/iam"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/tags"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
 
@@ -440,7 +441,7 @@ func TestControlPlaneReconcilePodIdentity(t *testing.T) {
 	// association -> never touched.
 	fakeSvc.PodIdentities = []cceService.PodIdentityAssociationInfo{
 		{ID: "podid-old", Namespace: "kube-system", ServiceAccount: "old-sa", AgencyName: "old-agency",
-			Tags: map[string]string{cceService.OwnedTagKey("test-cluster"): "owned"}},
+			Tags: map[string]string{tags.OwnedTagKey("test-cluster"): "owned"}},
 		{ID: "podid-foreign", Namespace: "kube-system", ServiceAccount: "foreign-sa", AgencyName: "foreign-agency"},
 	}
 	r := &CCEManagedControlPlaneReconciler{
@@ -461,7 +462,7 @@ func TestControlPlaneReconcilePodIdentity(t *testing.T) {
 	if created.Namespace != "default" || created.ServiceAccount != "app-sa" || created.AgencyName != "app-agency" {
 		t.Errorf("unexpected create input: %+v", created)
 	}
-	if created.Tags[cceService.OwnedTagKey("test-cluster")] != "owned" {
+	if created.Tags[tags.OwnedTagKey("test-cluster")] != "owned" {
 		t.Errorf("created association must carry the provider owned tag, got %v", created.Tags)
 	}
 	if len(fakeSvc.PodIdentityDelete) != 1 || fakeSvc.PodIdentityDelete[0] != "podid-old" {
@@ -610,7 +611,7 @@ func TestControlPlaneReconcilePodIdentityEmptySpecCleanup(t *testing.T) {
 
 	fakeSvc.PodIdentities = []cceService.PodIdentityAssociationInfo{
 		{ID: "podid-app-sa", Namespace: "default", ServiceAccount: "app-sa", AgencyName: "app-agency",
-			Tags: map[string]string{cceService.OwnedTagKey("test-cluster"): "owned"}},
+			Tags: map[string]string{tags.OwnedTagKey("test-cluster"): "owned"}},
 	}
 	latest := &controlplanev1beta2.CCEManagedControlPlane{}
 	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), latest); err != nil {

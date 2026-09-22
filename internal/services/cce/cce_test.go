@@ -13,6 +13,7 @@ import (
 	"testing"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/tags"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/model"
 )
 
@@ -248,7 +249,7 @@ func TestOwnedTagKeyCCEConstraints(t *testing.T) {
 	// starting with "_sys_"). The original slash-form key is invalid for
 	// CCE (verified live: CCE_CM.0004 "Tag's parameters is invalid").
 	for _, name := range []string{"cce-e2e-demo", "my-cluster", "a_very_long_cluster_name_with-many_chars1234567890"} {
-		key := ownedTagKey(name)
+		key := tags.OwnedTagKey(name)
 		if strings.Contains(key, "/") {
 			t.Errorf("ownedTagKey(%q) = %q: must not contain '/', CCE tag keys reject it", name, key)
 		}
@@ -268,15 +269,15 @@ func TestOwnedTagKeyCCEConstraints(t *testing.T) {
 
 	// The owned tag must be first and the value "owned"; the built-in role tag
 	// (apiserver for a cluster) comes second; user tags follow.
-	tags := toClusterTags("demo", map[string]string{"env": "test"})
-	if tags == nil || len(*tags) != 3 {
-		t.Fatalf("expected owned + role + 1 user tag, got %v", tags)
+	clusterTags := toClusterTags("demo", map[string]string{"env": "test"})
+	if clusterTags == nil || len(*clusterTags) != 3 {
+		t.Fatalf("expected owned + role + 1 user tag, got %v", clusterTags)
 	}
-	owned := (*tags)[0]
-	if owned.Key == nil || *owned.Key != ownedTagKey("demo") || owned.Value == nil || *owned.Value != "owned" {
+	owned := (*clusterTags)[0]
+	if owned.Key == nil || *owned.Key != tags.OwnedTagKey("demo") || owned.Value == nil || *owned.Value != "owned" {
 		t.Errorf("unexpected owned tag: key=%v value=%v", owned.Key, owned.Value)
 	}
-	role := (*tags)[1]
+	role := (*clusterTags)[1]
 	if role.Key == nil || *role.Key != RoleTagKey || role.Value == nil || *role.Value != RoleApiserver {
 		t.Errorf("unexpected role tag: key=%v value=%v", role.Key, role.Value)
 	}
@@ -302,13 +303,13 @@ func TestRoleTagReservedAndValues(t *testing.T) {
 		if tg.Key != nil && *tg.Key == RoleTagKey && (tg.Value == nil || *tg.Value != RoleNode) {
 			t.Errorf("role tag must be node on a node pool, got %v", tg)
 		}
-		if tg.Key != nil && *tg.Key == ownedTagKey("demo") && (tg.Value == nil || *tg.Value != "owned") {
+		if tg.Key != nil && *tg.Key == tags.OwnedTagKey("demo") && (tg.Value == nil || *tg.Value != "owned") {
 			t.Errorf("owned tag must survive, got %v", tg)
 		}
 	}
 	// A user tag whose key equals the owned key of another cluster is not
 	// special-cased (only this cluster's owned key is reserved).
-	other := toUserTags("demo", map[string]string{ownedTagKey("other-cluster"): "x"})
+	other := toUserTags("demo", map[string]string{tags.OwnedTagKey("other-cluster"): "x"})
 	if other == nil || len(*other) != 3 {
 		t.Fatalf("expected owned + role + 1 foreign-owned user tag, got %v", other)
 	}
@@ -412,7 +413,7 @@ func TestPaginateAllErrorStopsIteration(t *testing.T) {
 }
 
 func TestClusterTagsDiff(t *testing.T) {
-	owned := ownedTagKey("demo")
+	owned := tags.OwnedTagKey("demo")
 	cur := map[string]string{
 		owned:        "owned",
 		RoleTagKey:   "apiserver",
@@ -476,7 +477,7 @@ func TestAdoptConflictCandidateOwnership(t *testing.T) {
 			kind:        "cluster",
 			resName:     "demo",
 			clusterName: "demo",
-			tags:        map[string]string{ownedTagKey("demo"): "owned", RoleTagKey: "apiserver"},
+			tags:        map[string]string{tags.OwnedTagKey("demo"): "owned", RoleTagKey: "apiserver"},
 			wantID:      "cluster-id-1",
 		},
 		{
@@ -484,7 +485,7 @@ func TestAdoptConflictCandidateOwnership(t *testing.T) {
 			kind:        "node pool",
 			resName:     "pool-0",
 			clusterName: "demo",
-			tags:        map[string]string{ownedTagKey("demo"): "owned", RoleTagKey: "node"},
+			tags:        map[string]string{tags.OwnedTagKey("demo"): "owned", RoleTagKey: "node"},
 			wantID:      "pool-id-1",
 		},
 		{
@@ -500,7 +501,7 @@ func TestAdoptConflictCandidateOwnership(t *testing.T) {
 			kind:        "cluster",
 			resName:     "demo",
 			clusterName: "demo",
-			tags:        map[string]string{ownedTagKey("demo"): "shared"},
+			tags:        map[string]string{tags.OwnedTagKey("demo"): "shared"},
 			wantErr:     true,
 		},
 		{
@@ -508,7 +509,7 @@ func TestAdoptConflictCandidateOwnership(t *testing.T) {
 			kind:        "node pool",
 			resName:     "pool-0",
 			clusterName: "demo",
-			tags:        map[string]string{ownedTagKey("other-cluster"): "owned"},
+			tags:        map[string]string{tags.OwnedTagKey("other-cluster"): "owned"},
 			wantErr:     true,
 		},
 		{
@@ -734,7 +735,7 @@ func TestToAccessPolicyInfoClusters(t *testing.T) {
 // must be freed first or reconciliation never converges. Also covers
 // add/remove/unchanged and the protected internal keys.
 func TestPlanClusterTagsOrder(t *testing.T) {
-	owned := ownedTagKey("demo")
+	owned := tags.OwnedTagKey("demo")
 	cur := map[string]string{
 		owned:      "owned",
 		RoleTagKey: "apiserver",

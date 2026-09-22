@@ -18,27 +18,6 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
 )
 
-// TestOwnedClusterName verifies the owned-tag -> cluster-name extraction.
-func TestOwnedClusterName(t *testing.T) {
-	cases := []struct {
-		name string
-		tags map[string]string
-		want string
-	}{
-		{name: "owned tag", tags: map[string]string{"cluster-api-provider-cce.cluster.foo": "owned"}, want: "foo"},
-		{name: "non-owned value", tags: map[string]string{"cluster-api-provider-cce.cluster.foo": "shared"}, want: ""},
-		{name: "unrelated tag", tags: map[string]string{"foo": "bar"}, want: ""},
-		{name: "empty", tags: nil, want: ""},
-	}
-	for _, tc := range cases {
-		t.Run(tc.name, func(t *testing.T) {
-			if got := ownedClusterName(tc.tags); got != tc.want {
-				t.Errorf("ownedClusterName(%v) = %q, want %q", tc.tags, got, tc.want)
-			}
-		})
-	}
-}
-
 // TestGarbageCollectorSweep verifies the orphaned-cluster sweeper: owned-tagged
 // CCE clusters whose Cluster CR no longer exists are deleted; tracked clusters
 // and non-owned clusters are left alone.

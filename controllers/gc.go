@@ -21,6 +21,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/tags"
 )
 
 // GarbageCollector periodically sweeps the CCE account for orphaned clusters:
@@ -140,7 +141,7 @@ func (g *GarbageCollector) sweep(ctx context.Context) {
 
 	skipCount := 0
 	for _, c := range clusters {
-		name := ownedClusterName(c.Tags)
+		name := tags.OwnedClusterName(c.Tags)
 		if name == "" {
 			continue // not provider-owned; leave it alone
 		}
@@ -238,7 +239,7 @@ func (g *GarbageCollector) sweepEips(ctx context.Context, svc cceService.Service
 		return
 	}
 	for _, e := range eips {
-		name := ownedClusterName(e.Tags)
+		name := tags.OwnedClusterName(e.Tags)
 		if name == "" {
 			continue
 		}
@@ -264,7 +265,7 @@ func (g *GarbageCollector) sweepVolumes(ctx context.Context, svc cceService.Serv
 		return
 	}
 	for _, v := range vols {
-		name := ownedClusterName(v.Tags)
+		name := tags.OwnedClusterName(v.Tags)
 		if name == "" {
 			continue
 		}
@@ -291,7 +292,7 @@ func (g *GarbageCollector) sweepVpcs(ctx context.Context, svc cceService.Service
 		return
 	}
 	for _, v := range vpcs {
-		name := ownedClusterName(v.Tags)
+		name := tags.OwnedClusterName(v.Tags)
 		if name == "" {
 			continue
 		}
@@ -317,7 +318,7 @@ func (g *GarbageCollector) sweepNatGateways(ctx context.Context, svc cceService.
 		return
 	}
 	for _, gw := range gateways {
-		name := ownedClusterName(gw.Tags)
+		name := tags.OwnedClusterName(gw.Tags)
 		if name == "" {
 			continue
 		}
@@ -329,17 +330,6 @@ func (g *GarbageCollector) sweepNatGateways(ctx context.Context, svc cceService.
 			g.Log.Error(err, "garbage collector: failed to delete orphaned NAT gateway", "gatewayID", gw.ID)
 		}
 	}
-}
-
-// ownedClusterName returns the cluster name if tags carry the provider's owned
-// tag (cluster-api-provider-cce.cluster.<name>=owned), else "".
-func ownedClusterName(tags map[string]string) string {
-	for k, v := range tags {
-		if v == "owned" && strings.HasPrefix(k, cceService.OwnedTagPrefix+".") {
-			return strings.TrimPrefix(k, cceService.OwnedTagPrefix+".")
-		}
-	}
-	return ""
 }
 
 var _ manager.LeaderElectionRunnable = (*GarbageCollector)(nil)
