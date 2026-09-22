@@ -92,7 +92,7 @@
 | `cert-manager-webhook:v1.21.1` | quay.io/jetstack | cert-manager webhook |
 | `capi-cce-tools:latest` | 本地打包 | 跳板机工具：kubectl v1.30 + clusterctl v1.14 |
 
-> 当前 `cluster-api-cce-controller:latest` digest `25ca2648`（含 kubeconfig 端点覆盖 + 429 退避修复 + 集群/节点池 `additionalTags` + 删除/退避与标签所有权审计修复 + 第 2 轮质量审计全量整改（R2-1…R2-15）与旁支项收口）。
+> 当前 `cluster-api-cce-controller:latest` digest `436078ab`（含 kubeconfig 端点覆盖 + 429 退避修复 + 集群/节点池 `additionalTags` + 删除/退避与标签所有权审计修复 + 第 2 轮质量审计全量整改（R2-1…R2-15）与旁支项收口）。
 > 完整路径示例：`swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller:latest`。
 
 ---
@@ -225,7 +225,7 @@ kubectl get nodes    # 应看到 2 个 Ready 节点
 # 1. 下载现成的 clusterctl.yaml（4 个 provider 已配好，指向 GitHub release）
 mkdir -p /root/.cluster-api
 curl -L -o /root/.cluster-api/clusterctl.yaml \
-  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/clusterctl.yaml
+  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/clusterctl.yaml
 
 # 2. clusterctl init（自动装 cert-manager + CAPI + bootstrap + control-plane + cce）
 export KUBECONFIG=/root/capi-mgmt-kubeconfig.yaml
@@ -244,11 +244,11 @@ clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm -
 # 1. 下载现成的 clusterctl.yaml（4 个 provider 已配好，指向 GitHub release）
 mkdir -p /root/.cluster-api
 curl -L -o /root/.cluster-api/clusterctl.yaml \
-  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/clusterctl.yaml
+  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/clusterctl.yaml
 
 # 2. 安装 cert-manager（SWR 镜像，现成 yaml，无需 sed）
 curl -L -o /root/cert-manager.yaml \
-  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cert-manager.yaml
+  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/cert-manager.yaml
 kubectl apply -f /root/cert-manager.yaml
 kubectl -n cert-manager rollout status deploy/cert-manager deploy/cert-manager-cainjector deploy/cert-manager-webhook --timeout=180s
 
@@ -278,15 +278,15 @@ kubectl get certificate -n capi-cce-system serving-cert   # Ready=True
 
 ```bash
 # 1. 下载集群 B 模板（已发布到 GitHub）
-curl -L -o /root/cluster-template.yaml          https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template.yaml
-curl -L -o /root/cluster-template-standard.yaml https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template-standard.yaml
-curl -L -o /root/cluster-template-turbo.yaml    https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template-turbo.yaml
+curl -L -o /root/cluster-template.yaml          https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/cluster-template.yaml
+curl -L -o /root/cluster-template-standard.yaml https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/cluster-template-standard.yaml
+curl -L -o /root/cluster-template-turbo.yaml    https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/cluster-template-turbo.yaml
 
 # 2. 安装模板到 clusterctl overrides
-mkdir -p ~/.cluster-api/overrides/infrastructure-cce/v0.1.0
-cp /root/cluster-template.yaml          ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template.yaml
-cp /root/cluster-template-standard.yaml ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-standard.yaml
-cp /root/cluster-template-turbo.yaml    ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-turbo.yaml
+mkdir -p ~/.cluster-api/overrides/infrastructure-cce/v0.1.1
+cp /root/cluster-template.yaml          ~/.cluster-api/overrides/infrastructure-cce/v0.1.1/cluster-template.yaml
+cp /root/cluster-template-standard.yaml ~/.cluster-api/overrides/infrastructure-cce/v0.1.1/cluster-template-standard.yaml
+cp /root/cluster-template-turbo.yaml    ~/.cluster-api/overrides/infrastructure-cce/v0.1.1/cluster-template-turbo.yaml
 
 # 生成（默认 Turbo 多 pool；--worker-machine-count=1 → 3 个 pool 各 1 节点 = 3 节点 3 AZ）
 clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 --worker-machine-count=1 > my-cluster.yaml

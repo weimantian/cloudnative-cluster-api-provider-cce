@@ -111,7 +111,7 @@ cloudnative-cluster-api-provider-cce/
 flowchart TB
     subgraph OPS["运维 / 交付层"]
         U["用户<br/>kubectl · clusterctl · CloudShell"]
-        GH["GitHub Release v0.1.0<br/>clusterctl.yaml · 组件 · 集群模板"]
+        GH["GitHub Release v0.1.1<br/>clusterctl.yaml · 组件 · 集群模板"]
         SWR["Public SWR（免认证）<br/>CAPI · cert-manager · cce-provider 镜像"]
     end
 
@@ -161,7 +161,7 @@ flowchart TB
 - **声明式管理托管集群**——CCE 控制面完全由华为云托管,Provider 只负责翻译与调谐。
 - **CCE Standard + CCE Turbo 双支持**——两者都支持(默认推荐 Turbo 的托管集群模型)。
 - **MachinePool ↔ 节点池**——通过 `MachinePool.spec.replicas` 扩缩容;托管节点池无需 bootstrap provider。
-- **兼容 `clusterctl`**——`metadata.yaml` + `infrastructure-components.yaml` 已发布为 [GitHub Release v0.1.0](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.0),支持 `clusterctl describe cluster` / `get kubeconfig`。
+- **兼容 `clusterctl`**——`metadata.yaml` + `infrastructure-components.yaml` 已发布为 [GitHub Release v0.1.1](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.1),支持 `clusterctl describe cluster` / `get kubeconfig`。
 - **GitOps 就绪**——通过 ArgoCD/Flux 从 Git 全流程驱动。
 - **CCE 访问策略**——在控制面用声明式 `spec.accessPolicies[]` 将 IAM 用户/组/委托映射到 CCE 权限角色(`CCEClusterAdminPolicy` / `CCEAdminPolicy` / `CCEEditPolicy` / `CCEViewPolicy`),并可限定到命名空间。
 - **身份管理**——按集群 `CCEClusterIdentity`(AK/SK Secret 或 `SecretKey` 对象引用)与控制器默认身份,支持三种身份模式。
@@ -265,12 +265,12 @@ kubectl get ccemanagedcontrolplane --watch
 
    > RBAC 注意:leader-election RoleBinding 的 subject.namespace 必须是真实命名空间(`capi-cce-system`);kustomize 不会改写 RoleBinding 的 subjects。
 
-4. **配置 clusterctl 并安装**(组件已发布为 [GitHub Release v0.1.0](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.0);本地开发则按 `scripts/deploy-kind.sh` 构建镜像并用本地 `file://` 源):
+4. **配置 clusterctl 并安装**(组件已发布为 [GitHub Release v0.1.1](https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/tag/v0.1.1);本地开发则按 `scripts/deploy-kind.sh` 构建镜像并用本地 `file://` 源):
 
    ```bash
    mkdir -p ~/.cluster-api
    curl -L -o ~/.cluster-api/clusterctl.yaml \
-     https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/clusterctl.yaml
+     https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/clusterctl.yaml
    clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm --infrastructure cce
    # 会安装 cert-manager + CAPI 核心 + bootstrap-kubeadm + control-plane-kubeadm + infrastructure-cce
    # (方式 B:全部镜像走 public SWR,先装 cert-manager,见 docs/deployment-guide.md)

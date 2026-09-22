@@ -90,7 +90,7 @@ The following **8 images** are pre-built / mirrored to **public SWR** (`swr.cn-n
 | `cert-manager-webhook:v1.21.1` | quay.io/jetstack | cert-manager webhook |
 | `capi-cce-tools:latest` | Packaged locally | Bastion tools: kubectl v1.30 + clusterctl v1.14 |
 
-> The current `cluster-api-cce-controller:latest` digest is `25ca2648` (includes kubeconfig endpoint override + 429 back-off fix + cluster/node-pool `additionalTags` + the delete/backoff and tag-ownership audit fixes + the full round-2 quality-audit remediation (R2-1..R2-15) and its follow-up items).
+> The current `cluster-api-cce-controller:latest` digest is `436078ab` (includes kubeconfig endpoint override + 429 back-off fix + cluster/node-pool `additionalTags` + the delete/backoff and tag-ownership audit fixes + the full round-2 quality-audit remediation (R2-1..R2-15) and its follow-up items).
 > Full path example: `swr.cn-north-4.myhuaweicloud.com/capi_cce/cluster-api-cce-controller:latest`.
 
 ---
@@ -221,7 +221,7 @@ kubectl get nodes    # expect 2 Ready nodes
 # 1. Download the ready-made clusterctl.yaml (all 4 providers configured, pointing at the GitHub release)
 mkdir -p /root/.cluster-api
 curl -L -o /root/.cluster-api/clusterctl.yaml \
-  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/clusterctl.yaml
+  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/clusterctl.yaml
 
 # 2. clusterctl init (installs cert-manager + CAPI + bootstrap + control-plane + cce automatically)
 export KUBECONFIG=/root/capi-mgmt-kubeconfig.yaml
@@ -240,11 +240,11 @@ clusterctl init --core cluster-api --bootstrap kubeadm --control-plane kubeadm -
 # 1. Download the ready-made clusterctl.yaml (all 4 providers configured, pointing at the GitHub release)
 mkdir -p /root/.cluster-api
 curl -L -o /root/.cluster-api/clusterctl.yaml \
-  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/clusterctl.yaml
+  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/clusterctl.yaml
 
 # 2. Install cert-manager (SWR images, ready-made yaml, no sed needed)
 curl -L -o /root/cert-manager.yaml \
-  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cert-manager.yaml
+  https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/cert-manager.yaml
 kubectl apply -f /root/cert-manager.yaml
 kubectl -n cert-manager rollout status deploy/cert-manager deploy/cert-manager-cainjector deploy/cert-manager-webhook --timeout=180s
 
@@ -270,15 +270,15 @@ kubectl get certificate -n capi-cce-system serving-cert   # Ready=True
 
 ```bash
 # 1. Download the cluster B templates (published to GitHub)
-curl -L -o /root/cluster-template.yaml          https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template.yaml
-curl -L -o /root/cluster-template-standard.yaml https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template-standard.yaml
-curl -L -o /root/cluster-template-turbo.yaml    https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.0/cluster-template-turbo.yaml
+curl -L -o /root/cluster-template.yaml          https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/cluster-template.yaml
+curl -L -o /root/cluster-template-standard.yaml https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/cluster-template-standard.yaml
+curl -L -o /root/cluster-template-turbo.yaml    https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/cluster-template-turbo.yaml
 
 # 2. Install the templates into the clusterctl overrides
-mkdir -p ~/.cluster-api/overrides/infrastructure-cce/v0.1.0
-cp /root/cluster-template.yaml          ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template.yaml
-cp /root/cluster-template-standard.yaml ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-standard.yaml
-cp /root/cluster-template-turbo.yaml    ~/.cluster-api/overrides/infrastructure-cce/v0.1.0/cluster-template-turbo.yaml
+mkdir -p ~/.cluster-api/overrides/infrastructure-cce/v0.1.1
+cp /root/cluster-template.yaml          ~/.cluster-api/overrides/infrastructure-cce/v0.1.1/cluster-template.yaml
+cp /root/cluster-template-standard.yaml ~/.cluster-api/overrides/infrastructure-cce/v0.1.1/cluster-template-standard.yaml
+cp /root/cluster-template-turbo.yaml    ~/.cluster-api/overrides/infrastructure-cce/v0.1.1/cluster-template-turbo.yaml
 
 # Generate (default Turbo multi-pool; --worker-machine-count=1 → 1 node per pool × 3 pools = 3 nodes in 3 AZs)
 clusterctl generate cluster my-cce-cluster --kubernetes-version v1.35.0 --worker-machine-count=1 > my-cluster.yaml
