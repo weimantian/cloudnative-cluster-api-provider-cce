@@ -67,10 +67,6 @@ type Subnet struct {
 	// +optional
 	CIDR string `json:"cidr,omitempty"`
 
-	// VPCID of the VPC the subnet belongs to (only used when creating).
-	// +optional
-	VPCID string `json:"vpcId,omitempty"`
-
 	// AvailabilityZone of the subnet (only used when creating).
 	// +optional
 	AvailabilityZone string `json:"availabilityZone,omitempty"`

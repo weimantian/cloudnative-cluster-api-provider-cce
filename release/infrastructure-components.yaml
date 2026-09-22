@@ -455,10 +455,6 @@ spec:
                             Managed Turbo clusters derive the ENI neutron_subnet_id from
                             subnets of Type eni.
                           type: string
-                        vpcId:
-                          description: VPCID of the VPC the subnet belongs to (only
-                            used when creating).
-                          type: string
                       type: object
                     type: array
                   vpc:
@@ -937,10 +933,6 @@ spec:
                                     Type of the subnet: node (default) or eni (Turbo container subnet).
                                     Managed Turbo clusters derive the ENI neutron_subnet_id from
                                     subnets of Type eni.
-                                  type: string
-                                vpcId:
-                                  description: VPCID of the VPC the subnet belongs
-                                    to (only used when creating).
                                   type: string
                               type: object
                             type: array
