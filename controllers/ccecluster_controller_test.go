@@ -23,6 +23,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/network"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/test/fakes"
+	sdkerr "github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
 	"github.com/pkg/errors"
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/types"
@@ -163,7 +164,7 @@ func TestCCEClusterReconcileManagedNetwork(t *testing.T) {
 
 // TestCCEClusterReconcileManagedSecurityGroup verifies the managed security
 // group step: when spec.network.securityGroup is set, the manager creates it
-	// and the SecurityGroupsReady condition is reported.
+// and the SecurityGroupsReady condition is reported.
 func TestCCEClusterReconcileManagedSecurityGroup(t *testing.T) {
 	ctx := context.Background()
 	ns := "ccecluster-test-managed-sg"
@@ -392,5 +393,43 @@ func TestCCEClusterDeleteManagedNetwork(t *testing.T) {
 		}
 	} else if !apierrors.IsNotFound(err) {
 		t.Fatalf("failed to get CCECluster after deletion: %v", err)
+	}
+}
+
+// TestCCEClusterReconcileResetsBackoffOnSuccess covers §3.2: the cluster
+// controller reset the shared backoff only when RequeueAfter was 0, which
+// steady-state success never is, so a primed failure counter was never
+// cleared and the next transient failure waited the full backoffMax. A clean
+// reconcile must now clear it.
+func TestCCEClusterReconcileResetsBackoffOnSuccess(t *testing.T) {
+	ctx := context.Background()
+	ns := "ccecluster-test-backoff-reset"
+	createNamespace(t, ns)
+
+	cluster, _, _ := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+
+	key := client.ObjectKeyFromObject(cluster)
+	resetBackoff(key)
+	defer resetBackoff(key)
+	// Simulate a burst of create-time throttles (counter climbs to the cap).
+	for i := 0; i < 6; i++ {
+		requeueAfterForError(key, &sdkerr.ServiceResponseError{StatusCode: 429})
+	}
+	if got := errorBackoff.failures(key); got == 0 {
+		t.Fatal("expected the primed failure counter to be non-zero")
+	}
+
+	r := &CCEClusterReconciler{
+		Client: k8sClient,
+		NetworkValidatorFactory: func(_ string, _ *credentials.Credentials) (network.ValidatorInterface, error) {
+			return fakes.NewFakeNetworkValidator(), nil
+		},
+	}
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: key}); err != nil {
+		t.Fatalf("clean reconcile failed: %v", err)
+	}
+	if got := errorBackoff.failures(key); got != 0 {
+		t.Errorf("clean reconcile must reset the backoff counter, got %d", got)
 	}
 }

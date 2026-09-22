@@ -91,8 +91,16 @@ func (r *CCEClusterReconciler) newNetworkService(regionID string, creds *credent
 // per-reconcile CCEClusterScope.
 func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
 	log := ctrl.LoggerFrom(ctx)
+	// A tuned backoff result (throttle/quota/permission) is returned with a nil
+	// error so controller-runtime does not override the delay, and it increments
+	// the failure counter — that must not be mistaken for a clean reconcile. Any
+	// reconcile that completes without an error and without such a backoff resets
+	// the counter. (The old RequeueAfter==0 gate never fired: steady-state success
+	// returns a non-zero RequeueAfter, so a stale capped counter could make the
+	// next transient failure wait the full backoffMax.)
+	failuresBefore := errorBackoff.failures(req.NamespacedName)
 	defer func() {
-		if reterr == nil && res.RequeueAfter == 0 {
+		if reterr == nil && errorBackoff.failures(req.NamespacedName) == failuresBefore {
 			resetBackoff(req.NamespacedName)
 		}
 	}()
