@@ -20,6 +20,7 @@ import (
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/rest"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/client"
@@ -166,7 +167,7 @@ func newTestCluster(t *testing.T, ns string) (*clusterv1.Cluster, *infrav1beta2.
 // markInfrastructureProvisioned sets Cluster.Status.Initialization.
 func markInfrastructureProvisioned(t *testing.T, cluster *clusterv1.Cluster) {
 	t.Helper()
-	cluster.Status.Initialization.InfrastructureProvisioned = boolPtr(true)
+	cluster.Status.Initialization.InfrastructureProvisioned = ptr.To(true)
 	if err := k8sClient.Status().Update(context.Background(), cluster); err != nil {
 		t.Fatalf("failed to set infrastructure provisioned: %v", err)
 	}
@@ -206,8 +207,6 @@ func hasFinalizer(finalizers []string, name string) bool {
 	}
 	return false
 }
-
-func boolPtr(b bool) *bool { return &b }
 
 // createStaticIdentity creates a CCEClusterStaticIdentity plus its Secret in
 // the controller namespace (capi-cce-system), for tests that provision

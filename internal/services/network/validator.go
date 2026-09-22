@@ -20,9 +20,9 @@ package network
 
 import (
 	"context"
-	"net/netip"
 	"strconv"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
@@ -109,7 +109,7 @@ func (v *Validator) Validate(ctx context.Context, in ValidateInput) ([]Issue, er
 		issues = append(issues, Issue{Field: "containerNetwork.cidr", Message: "invalid CIDR: " + in.ContainerCIDR})
 	}
 	// eni mode requires at least one ENI subnet (official: eniNetwork.subnets).
-	if in.ContainerMode == "eni" && len(in.ENISubnetIDs) == 0 {
+	if in.ContainerMode == common.ModeENI && len(in.ENISubnetIDs) == 0 {
 		issues = append(issues, Issue{Field: "containerNetwork.eniSubnets",
 			Message: "eni mode requires at least one ENI subnet"})
 	}
@@ -164,13 +164,13 @@ func (v *Validator) Validate(ctx context.Context, in ValidateInput) ([]Issue, er
 	}
 
 	// 4. Container CIDR (vpc-router/overlay) must not overlap service CIDR.
-	if in.ContainerMode != "eni" && in.ContainerCIDR != "" && in.ServiceCIDR != "" && cidrsOverlap(in.ContainerCIDR, in.ServiceCIDR) {
+	if in.ContainerMode != common.ModeENI && in.ContainerCIDR != "" && in.ServiceCIDR != "" && cidrsOverlap(in.ContainerCIDR, in.ServiceCIDR) {
 		issues = append(issues, Issue{Field: "containerNetwork.cidr",
 			Message: "container CIDR overlaps the service CIDR (official hard constraint)"})
 	}
 	// 4b. Container CIDR must not overlap the VPC CIDR or any subnet CIDR
 	// (official hard constraint for vpc-router/overlay modes).
-	if in.ContainerMode != "eni" && in.ContainerCIDR != "" {
+	if in.ContainerMode != common.ModeENI && in.ContainerCIDR != "" {
 		if vpcCIDR != "" && cidrsOverlap(in.ContainerCIDR, vpcCIDR) {
 			issues = append(issues, Issue{Field: "containerNetwork.cidr",
 				Message: "container CIDR overlaps the VPC CIDR (official hard constraint)"})
@@ -184,7 +184,7 @@ func (v *Validator) Validate(ctx context.Context, in ValidateInput) ([]Issue, er
 	}
 
 	// 5. eni subnet count limit + recommendation to separate from node subnets.
-	if in.ContainerMode == "eni" {
+	if in.ContainerMode == common.ModeENI {
 		if len(in.ENISubnetIDs) > maxENISubnets {
 			issues = append(issues, Issue{Field: "containerNetwork.eniSubnets",
 				Message: "too many eni subnets (max " + strconv.Itoa(maxENISubnets) + " per official limit)"})
@@ -237,8 +237,8 @@ func (v *Validator) fetchNetwork(ctx context.Context, vpcID string) (string, map
 
 // cidrsOverlap reports whether two CIDR prefixes overlap.
 func cidrsOverlap(a, b string) bool {
-	pa, errA := netip.ParsePrefix(a)
-	pb, errB := netip.ParsePrefix(b)
+	pa, errA := common.ParseCIDR(a)
+	pb, errB := common.ParseCIDR(b)
 	if errA != nil || errB != nil {
 		return false
 	}
@@ -249,6 +249,6 @@ func cidrsOverlap(a, b string) bool {
 
 // validCIDR reports whether s is a parseable CIDR prefix.
 func validCIDR(s string) bool {
-	_, err := netip.ParsePrefix(s)
+	_, err := common.ParseCIDR(s)
 	return err == nil
 }

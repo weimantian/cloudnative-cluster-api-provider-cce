@@ -9,6 +9,7 @@ package cce
 import (
 	"errors"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/utils/ptr"
 	"strings"
 	"testing"
 
@@ -146,8 +147,8 @@ func TestAssembleKubeconfigInsecureSkipTLSVerify(t *testing.T) {
 		insecure *bool
 		want     bool
 	}{
-		{name: "externalCluster", insecure: boolPtr(true), want: true},
-		{name: "externalClusterTLSVerify", insecure: boolPtr(false), want: false},
+		{name: "externalCluster", insecure: ptr.To(true), want: true},
+		{name: "externalClusterTLSVerify", insecure: ptr.To(false), want: false},
 		{name: "internalCluster", insecure: nil, want: false},
 	}
 
@@ -333,7 +334,7 @@ func TestPaginateAllSinglePage(t *testing.T) {
 	calls := 0
 	got, err := paginateAll(1000, func(_ *string) ([]int, *string, error) {
 		calls++
-		return []int{1, 2, 3}, stringPtr("3"), nil
+		return []int{1, 2, 3}, ptr.To("3"), nil
 	})
 	if err != nil {
 		t.Fatalf("paginateAll: %v", err)
@@ -358,9 +359,9 @@ func TestPaginateAllMultiPage(t *testing.T) {
 	got, err := paginateAll(1000, func(marker *string) ([]int, *string, error) {
 		calls++
 		if marker == nil {
-			return page1, stringPtr("999"), nil
+			return page1, ptr.To("999"), nil
 		}
-		return page2, stringPtr("1001"), nil
+		return page2, ptr.To("1001"), nil
 	})
 	if err != nil {
 		t.Fatalf("paginateAll: %v", err)

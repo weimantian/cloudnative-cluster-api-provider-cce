@@ -16,6 +16,7 @@ import (
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/runtime"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capiconditions "sigs.k8s.io/cluster-api/util/conditions"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -54,11 +55,11 @@ func TestMachinePoolReconcileAutoscalingGate(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
 			Spec: clusterv1.MachinePoolSpec{
 				ClusterName: "test-cluster",
-				Replicas:    int32Ptr(3),
+				Replicas:    ptr.To(int32(3)),
 				Template: clusterv1.MachineTemplateSpec{
 					Spec: clusterv1.MachineSpec{
 						ClusterName: "test-cluster",
-						Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+						Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("")},
 						InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 							APIGroup: infrav1beta2.GroupVersion.Group,
 							Kind:     "CCEManagedMachinePool",
@@ -131,11 +132,11 @@ func TestMachinePoolReconcileAutoscalingGate(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns2},
 		Spec: clusterv1.MachinePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    int32Ptr(3),
+			Replicas:    ptr.To(int32(3)),
 			Template: clusterv1.MachineTemplateSpec{
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "test-cluster",
-					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
@@ -203,12 +204,12 @@ func TestMachinePoolReconcileSuccess(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
 		Spec: clusterv1.MachinePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    int32Ptr(3),
+			Replicas:    ptr.To(int32(3)),
 			Template: clusterv1.MachineTemplateSpec{
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "test-cluster",
 					Bootstrap: clusterv1.Bootstrap{
-						DataSecretName: stringPtr(""),
+						DataSecretName: ptr.To(""),
 					},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 						APIGroup: infrav1beta2.GroupVersion.Group,
@@ -310,11 +311,11 @@ func TestMachinePoolAutoBindClusterSecurityGroup(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
 		Spec: clusterv1.MachinePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    int32Ptr(3),
+			Replicas:    ptr.To(int32(3)),
 			Template: clusterv1.MachineTemplateSpec{
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "test-cluster",
-					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
@@ -395,11 +396,11 @@ func TestMachinePoolReconcileSecurityGroupDrift(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
 		Spec: clusterv1.MachinePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    int32Ptr(3),
+			Replicas:    ptr.To(int32(3)),
 			Template: clusterv1.MachineTemplateSpec{
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "test-cluster",
-					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
@@ -548,10 +549,6 @@ func TestMachinePoolReconcileWaitsForControlPlane(t *testing.T) {
 		t.Error("expected no node pool creation while control plane not ready")
 	}
 }
-
-func int32Ptr(i int32) *int32 { return &i }
-
-func stringPtr(s string) *string { return &s }
 
 // tagSet builds n valid, distinct user tags with the given key prefix.
 func tagSet(prefix string, n int) common.Tags {
@@ -808,11 +805,11 @@ func TestMachinePoolReconcileSyncsReplicasFromOwner(t *testing.T) {
 		},
 		Spec: clusterv1.MachinePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    int32Ptr(5),
+			Replicas:    ptr.To(int32(5)),
 			Template: clusterv1.MachineTemplateSpec{
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "test-cluster",
-					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
@@ -943,11 +940,11 @@ func TestMachinePoolScaleTriggeredByWatch(t *testing.T) {
 		},
 		Spec: clusterv1.MachinePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    int32Ptr(3),
+			Replicas:    ptr.To(int32(3)),
 			Template: clusterv1.MachineTemplateSpec{
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "test-cluster",
-					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
@@ -1074,11 +1071,11 @@ func TestMachinePoolReconcileWithIdentity(t *testing.T) {
 		},
 		Spec: clusterv1.MachinePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    int32Ptr(3),
+			Replicas:    ptr.To(int32(3)),
 			Template: clusterv1.MachineTemplateSpec{
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "test-cluster",
-					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
@@ -1215,12 +1212,12 @@ func TestMachinePoolReconcileReplicasExternallyManaged(t *testing.T) {
 		},
 		Spec: clusterv1.MachinePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    int32Ptr(3),
+			Replicas:    ptr.To(int32(3)),
 			Template: clusterv1.MachineTemplateSpec{
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "test-cluster",
 					Bootstrap: clusterv1.Bootstrap{
-						DataSecretName: stringPtr(""),
+						DataSecretName: ptr.To(""),
 					},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 						APIGroup: infrav1beta2.GroupVersion.Group,
@@ -1308,11 +1305,11 @@ func TestMachinePoolReconcileNodeRepair(t *testing.T) {
 		},
 		Spec: clusterv1.MachinePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    int32Ptr(1),
+			Replicas:    ptr.To(int32(1)),
 			Template: clusterv1.MachineTemplateSpec{
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "test-cluster",
-					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
@@ -1396,11 +1393,11 @@ func TestMachinePoolReconcileObservedGenerationUpdates(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
 		Spec: clusterv1.MachinePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    int32Ptr(1),
+			Replicas:    ptr.To(int32(1)),
 			Template: clusterv1.MachineTemplateSpec{
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "test-cluster",
-					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",
@@ -1477,11 +1474,11 @@ func TestMachinePoolReconcileMergedTagCap(t *testing.T) {
 			ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
 			Spec: clusterv1.MachinePoolSpec{
 				ClusterName: "test-cluster",
-				Replicas:    int32Ptr(3),
+				Replicas:    ptr.To(int32(3)),
 				Template: clusterv1.MachineTemplateSpec{
 					Spec: clusterv1.MachineSpec{
 						ClusterName: "test-cluster",
-						Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+						Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("")},
 						InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 							APIGroup: infrav1beta2.GroupVersion.Group,
 							Kind:     "CCEManagedMachinePool",
@@ -1577,11 +1574,11 @@ func TestMachinePoolReconcileReconcilesTagDrift(t *testing.T) {
 		ObjectMeta: metav1.ObjectMeta{Name: "test-cluster-pool-0", Namespace: ns},
 		Spec: clusterv1.MachinePoolSpec{
 			ClusterName: "test-cluster",
-			Replicas:    int32Ptr(3),
+			Replicas:    ptr.To(int32(3)),
 			Template: clusterv1.MachineTemplateSpec{
 				Spec: clusterv1.MachineSpec{
 					ClusterName: "test-cluster",
-					Bootstrap:   clusterv1.Bootstrap{DataSecretName: stringPtr("")},
+					Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To("")},
 					InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 						APIGroup: infrav1beta2.GroupVersion.Group,
 						Kind:     "CCEManagedMachinePool",

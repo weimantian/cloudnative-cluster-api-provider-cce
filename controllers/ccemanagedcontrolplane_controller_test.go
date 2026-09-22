@@ -14,6 +14,7 @@ import (
 	corev1 "k8s.io/api/core/v1"
 	metav1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 	"k8s.io/apimachinery/pkg/types"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	capiconditions "sigs.k8s.io/cluster-api/util/conditions"
 	ctrl "sigs.k8s.io/controller-runtime"
@@ -1317,8 +1318,8 @@ func TestToCreateClusterInputDataPlaneV2(t *testing.T) {
 		want bool
 	}{
 		{"nil defaults to false", nil, false},
-		{"true maps to true", boolPtr(true), true},
-		{"explicit false maps to false", boolPtr(false), false},
+		{"true maps to true", ptr.To(true), true},
+		{"explicit false maps to false", ptr.To(false), false},
 	}
 	for _, tc := range cases {
 		t.Run(tc.name, func(t *testing.T) {

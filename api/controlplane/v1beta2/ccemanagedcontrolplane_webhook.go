@@ -8,7 +8,6 @@ package v1beta2
 
 import (
 	"context"
-	"net"
 	"regexp"
 	"strconv"
 
@@ -18,6 +17,8 @@ import (
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 )
 
 const (
@@ -59,17 +60,17 @@ func (c *CCEManagedControlPlane) Default(_ context.Context, obj *CCEManagedContr
 // clusters unusable through ClusterClass.
 func applyControlPlaneDefaults(spec *CCEManagedControlPlaneSpec) {
 	if spec.ContainerNetwork.Mode == "" {
-		spec.ContainerNetwork.Mode = "eni"
+		spec.ContainerNetwork.Mode = common.ModeENI
 	}
 	if spec.Category == "" {
-		if spec.ContainerNetwork.Mode == "eni" {
+		if spec.ContainerNetwork.Mode == common.ModeENI {
 			spec.Category = "Turbo"
 		} else {
 			spec.Category = "CCE"
 		}
 	}
 	if spec.Flavor == "" {
-		spec.Flavor = "cce.s1.small"
+		spec.Flavor = common.DefaultFlavor
 	}
 }
 
@@ -185,18 +186,18 @@ func (c *CCEManagedControlPlane) validate() error {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "category"), c.Spec.Category, "must be CCE or Turbo"))
 	}
 	// eni mode implies Turbo (official SDK comment).
-	if c.Spec.ContainerNetwork.Mode == "eni" && c.Spec.Category == "CCE" {
+	if c.Spec.ContainerNetwork.Mode == common.ModeENI && c.Spec.Category == "CCE" {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "containerNetwork", "mode"),
-			"eni", "eni mode requires category Turbo"))
+			common.ModeENI, "eni mode requires category Turbo"))
 	}
 	// vpc-router mode requires category CCE (Turbo only supports eni).
-	if c.Spec.ContainerNetwork.Mode == "vpc-router" && c.Spec.Category == "Turbo" {
+	if c.Spec.ContainerNetwork.Mode == common.ModeVPCRouter && c.Spec.Category == "Turbo" {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "containerNetwork", "mode"),
-			"vpc-router", "vpc-router mode requires category CCE"))
+			common.ModeVPCRouter, "vpc-router mode requires category CCE"))
 	}
 	// eni mode requires ENI subnets (official: eniNetwork must set subnets or
 	// eniSubnetId — our CRD exposes subnets via eniSubnets).
-	if c.Spec.ContainerNetwork.Mode == "eni" && len(c.Spec.ContainerNetwork.ENISubnets) == 0 {
+	if c.Spec.ContainerNetwork.Mode == common.ModeENI && len(c.Spec.ContainerNetwork.ENISubnets) == 0 {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "containerNetwork", "eniSubnets"),
 			"eni mode requires at least one ENI subnet (official eniNetwork.subnets)"))
 	}
@@ -205,7 +206,7 @@ func (c *CCEManagedControlPlane) validate() error {
 	// eni (Turbo) and vpc-router (Standard) network models — the CCE console
 	// emits the same eni.dataplane-v2 override for either. The container
 	// tunnel model (overlay_l2) has no such switch.
-	if ipv6Enabled(c.Spec.EnableDataPlaneV2) && c.Spec.ContainerNetwork.Mode != "eni" && c.Spec.ContainerNetwork.Mode != "vpc-router" {
+	if ipv6Enabled(c.Spec.EnableDataPlaneV2) && c.Spec.ContainerNetwork.Mode != common.ModeENI && c.Spec.ContainerNetwork.Mode != common.ModeVPCRouter {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "enableDataPlaneV2"), "true",
 			"DataPlane V2 requires containerNetwork.mode=eni (Turbo) or vpc-router (Standard)"))
 	}
@@ -226,7 +227,7 @@ func (c *CCEManagedControlPlane) validate() error {
 	}
 	// CIDR format check: ContainerNetwork.CIDR must be a valid IPv4/IPv6 CIDR.
 	if c.Spec.ContainerNetwork.CIDR != "" {
-		if _, _, err := net.ParseCIDR(c.Spec.ContainerNetwork.CIDR); err != nil {
+		if _, err := common.ParseCIDR(c.Spec.ContainerNetwork.CIDR); err != nil {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "containerNetwork", "cidr"),
 				c.Spec.ContainerNetwork.CIDR, "must be a valid IPv4/IPv6 CIDR (e.g. 10.0.0.0/16)"))
 		}
@@ -251,7 +252,7 @@ func (c *CCEManagedControlPlane) validate() error {
 	}
 	// Service network CIDR format.
 	if c.Spec.ServiceNetwork.CIDR != "" {
-		if _, _, err := net.ParseCIDR(c.Spec.ServiceNetwork.CIDR); err != nil {
+		if _, err := common.ParseCIDR(c.Spec.ServiceNetwork.CIDR); err != nil {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "serviceNetwork", "cidr"),
 				c.Spec.ServiceNetwork.CIDR, "must be a valid IPv4/IPv6 CIDR (e.g. 10.247.0.0/16)"))
 		}
@@ -263,7 +264,7 @@ func (c *CCEManagedControlPlane) validate() error {
 	}
 	// IPv6 service network CIDR format.
 	if c.Spec.ServiceNetwork.IPv6CIDR != "" {
-		if _, _, err := net.ParseCIDR(c.Spec.ServiceNetwork.IPv6CIDR); err != nil {
+		if _, err := common.ParseCIDR(c.Spec.ServiceNetwork.IPv6CIDR); err != nil {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "serviceNetwork", "ipv6CIDR"),
 				c.Spec.ServiceNetwork.IPv6CIDR, "must be a valid IPv6 CIDR (e.g. fd00::/112)"))
 		}
@@ -272,7 +273,7 @@ func (c *CCEManagedControlPlane) validate() error {
 	// primary CIDR (official: container CIDRs must be unique per VPC).
 	for i, cidr := range c.Spec.ContainerNetwork.CIDRs {
 		p := field.NewPath("spec", "containerNetwork", "cidrs").Index(i)
-		if _, _, err := net.ParseCIDR(cidr); err != nil {
+		if _, err := common.ParseCIDR(cidr); err != nil {
 			allErrs = append(allErrs, field.Invalid(p, cidr, "must be a valid IPv4/IPv6 CIDR"))
 		}
 		if c.Spec.ContainerNetwork.CIDR != "" && cidr == c.Spec.ContainerNetwork.CIDR {
@@ -282,7 +283,7 @@ func (c *CCEManagedControlPlane) validate() error {
 	// Endpoint access whitelist CIDRs must be valid.
 	for i, cidr := range c.Spec.EndpointAccess.CIDRs {
 		p := field.NewPath("spec", "endpointAccess", "cidrs").Index(i)
-		if _, _, err := net.ParseCIDR(cidr); err != nil {
+		if _, err := common.ParseCIDR(cidr); err != nil {
 			allErrs = append(allErrs, field.Invalid(p, cidr, "must be a valid IPv4/IPv6 CIDR"))
 		}
 	}

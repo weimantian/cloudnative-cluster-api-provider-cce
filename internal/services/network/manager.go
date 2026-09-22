@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/netip"
+	"k8s.io/utils/ptr"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
@@ -388,7 +389,7 @@ func (m *Manager) ensureVpc(ctx context.Context, spec *common.NetworkSpec, clust
 	// live: ShowVpcTags splits on '*' — the equal sign is NOT a separator).
 	resTags := m.resourceTagList(clusterName)
 	resp, err := m.vpc.CreateVpc(&vpcmodel.CreateVpcRequest{Body: &vpcmodel.CreateVpcRequestBody{
-		Vpc: &vpcmodel.CreateVpcOption{Name: strPtr(name), Cidr: strPtr(cidr), Description: strPtr(spec.VPC.Description), Tags: &resTags},
+		Vpc: &vpcmodel.CreateVpcOption{Name: strPtrOrNil(name), Cidr: strPtrOrNil(cidr), Description: strPtrOrNil(spec.VPC.Description), Tags: &resTags},
 	}})
 	if err != nil {
 		return errors.Wrapf(err, "CreateVpc %q failed", name)
@@ -453,7 +454,7 @@ func (m *Manager) ensureSubnets(ctx context.Context, spec *common.NetworkSpec, c
 				Cidr:             s.CIDR,
 				VpcId:            spec.VPC.ResourceID,
 				GatewayIp:        gatewayIP(s.CIDR),
-				AvailabilityZone: strPtr(s.AvailabilityZone),
+				AvailabilityZone: strPtrOrNil(s.AvailabilityZone),
 				Tags:             &subTags,
 			},
 		}})
@@ -536,7 +537,7 @@ func (m *Manager) ensureSnatRules(ctx context.Context, spec *common.NetworkSpec,
 				SnatRule: &natmodel.CreateNatGatewaySnatRuleOption{
 					NatGatewayId: ng.ResourceID,
 					NetworkId:    &s.ResourceID,
-					SourceType:   int32Ptr(0),
+					SourceType:   ptr.To(int32(0)),
 					FloatingIpId: ng.EIPResourceID,
 				},
 			},
@@ -573,7 +574,7 @@ func (m *Manager) ensureSecurityGroup(ctx context.Context, spec *common.NetworkS
 			Body: &vpcmodel.CreateSecurityGroupRequestBody{
 				SecurityGroup: &vpcmodel.CreateSecurityGroupOption{
 					Name:  name,
-					VpcId: strPtr(vpcID),
+					VpcId: strPtrOrNil(vpcID),
 				},
 			},
 		})
@@ -615,10 +616,10 @@ func (m *Manager) ensureSecurityGroupRule(ctx context.Context, sgID, direction s
 	opt := &vpcmodel.CreateSecurityGroupRuleOption{
 		SecurityGroupId: sgID,
 		Direction:       direction,
-		Description:     strPtr(rule.Description),
-		Protocol:        strPtr(rule.Protocol),
-		RemoteIpPrefix:  strPtr(rule.RemoteIPPrefix),
-		RemoteGroupId:   strPtr(rule.RemoteGroupID),
+		Description:     strPtrOrNil(rule.Description),
+		Protocol:        strPtrOrNil(rule.Protocol),
+		RemoteIpPrefix:  strPtrOrNil(rule.RemoteIPPrefix),
+		RemoteGroupId:   strPtrOrNil(rule.RemoteGroupID),
 	}
 	if rule.PortRangeMin != 0 || rule.PortRangeMax != 0 {
 		min := rule.PortRangeMin
@@ -679,7 +680,7 @@ func (m *Manager) listSubnets(ctx context.Context, vpcID string) []vpcmodel.Subn
 // findSecurityGroupByName returns the security group ID with the given name
 // in the given VPC, or "" when none matches (or the VPC filter is empty).
 func (m *Manager) findSecurityGroupByName(ctx context.Context, name, vpcID string) string {
-	resp, err := m.vpc.ListSecurityGroups(&vpcmodel.ListSecurityGroupsRequest{VpcId: strPtr(vpcID)})
+	resp, err := m.vpc.ListSecurityGroups(&vpcmodel.ListSecurityGroupsRequest{VpcId: strPtrOrNil(vpcID)})
 	if err != nil || resp.SecurityGroups == nil {
 		return ""
 	}
@@ -749,7 +750,7 @@ func (m *Manager) createEip(ctx context.Context, name, clusterName string) (stri
 	shareType := eipmodel.GetCreatePublicipBandwidthOptionShareTypeEnum().PER
 	size := int32(eipBandwidthSize)
 	bandwidth := eipmodel.CreatePublicipBandwidthOption{ShareType: shareType, Name: &name, Size: &size}
-	publicip := eipmodel.CreatePublicipOption{Type: "5_bgp", Alias: &name}
+	publicip := eipmodel.CreatePublicipOption{Type: common.DefaultEIPType, Alias: &name}
 	resp, err := m.eip.CreatePublicip(&eipmodel.CreatePublicipRequest{Body: &eipmodel.CreatePublicipRequestBody{
 		Bandwidth: &bandwidth,
 		Publicip:  &publicip,
@@ -937,7 +938,7 @@ func firstSlash24(vpcCIDR string) string {
 	if vpcCIDR == "" {
 		vpcCIDR = defaultVPCCIDR
 	}
-	p, err := netip.ParsePrefix(vpcCIDR)
+	p, err := common.ParseCIDR(vpcCIDR)
 	if err != nil {
 		return vpcCIDR
 	}
@@ -950,7 +951,7 @@ func firstSlash24(vpcCIDR string) string {
 
 // gatewayIP derives the subnet gateway IP (network address + 1) from a CIDR.
 func gatewayIP(cidr string) string {
-	p, err := netip.ParsePrefix(cidr)
+	p, err := common.ParseCIDR(cidr)
 	if err != nil {
 		return ""
 	}
@@ -986,11 +987,12 @@ func joinErrors(errs []error) error {
 	}
 }
 
-func strPtr(s string) *string {
+// strPtrOrNil returns a pointer to s, or nil when s is empty, so the SDK
+// omits the field (unlike ptr.To, which would emit an empty value).
+func strPtrOrNil(s string) *string {
 	if s == "" {
 		return nil
 	}
 	return &s
 }
 
-func int32Ptr(i int32) *int32 { return &i }

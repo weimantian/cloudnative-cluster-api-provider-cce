@@ -23,6 +23,10 @@ import (
 // stable across reconciles so temporary credentials are traceable.
 const agencySessionName = "cce-cluster-api"
 
+// defaultSessionDuration is the STS AssumeAgency temporary-credential TTL
+// in seconds.
+const defaultSessionDuration = 3600
+
 // provider is the STS-backed implementation of Provider. The getAccountID and
 // assumeAgency fields are function seams, overridable in tests.
 type provider struct {
@@ -102,7 +106,7 @@ func assumeAgency(ctx context.Context, region, agencyURN, accessKey, secretKey s
 	if err != nil {
 		return nil, errors.Wrap(err, "failed to build STS client")
 	}
-	duration := int32(3600)
+	duration := int32(defaultSessionDuration)
 	resp, err := sts.NewStsClient(hcClient).AssumeAgency(&model.AssumeAgencyRequest{
 		Body: &model.AssumeAgencyReqBody{
 			AgencyUrn:         agencyURN,

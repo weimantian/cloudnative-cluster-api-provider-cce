@@ -33,9 +33,7 @@ func (t *CCEManagedMachinePoolTemplate) Default(_ context.Context, obj *CCEManag
 	// NodePoolName is NOT defaulted from the template name: the topology
 	// controller generates the pool object name; NodePoolName is set via a
 	// patch/naming strategy. Only the pure spec default is applied here.
-	if obj.Spec.Template.Spec.UpdateConfig.MaxUnavailable == 0 {
-		obj.Spec.Template.Spec.UpdateConfig.MaxUnavailable = 1
-	}
+	applyMachinePoolDefaults(&obj.Spec.Template.Spec)
 	return nil
 }
 

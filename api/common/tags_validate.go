@@ -70,7 +70,7 @@ func (t Tags) Validate(fldPath *field.Path) field.ErrorList {
 			errs = append(errs, field.Invalid(p, k, "tag key cannot be empty"))
 			continue
 		}
-		if utf8.RuneCountInString(k) > 128 {
+		if utf8.RuneCountInString(k) > MaxTagKeyLength {
 			errs = append(errs, field.Invalid(p, k, "tag key cannot be longer than 128 characters"))
 		}
 		if k != strings.TrimSpace(k) {
@@ -84,7 +84,7 @@ func (t Tags) Validate(fldPath *field.Path) field.ErrorList {
 				"tag key may only contain letters, digits, spaces and _ . : = + - @ (no '/')"))
 		}
 
-		if utf8.RuneCountInString(v) > 255 {
+		if utf8.RuneCountInString(v) > MaxTagValueLength {
 			errs = append(errs, field.Invalid(p.Child("value"), v, "tag value cannot be longer than 255 characters"))
 		}
 		if !tagValueRe.MatchString(v) {

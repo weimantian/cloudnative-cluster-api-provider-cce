@@ -34,6 +34,7 @@ import (
 	"sync"
 	"testing"
 	"time"
+	"k8s.io/utils/ptr"
 
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
@@ -651,7 +652,7 @@ func TestSmokeUpgrade(t *testing.T) {
 					Strategy: &model.UpgradeStrategy{
 						InPlaceRollingUpdate: &model.InPlaceRollingUpdate{},
 					},
-					IsOnlyUpgrade: boolPtr(false),
+					IsOnlyUpgrade: ptr.To(false),
 				},
 			},
 		},
@@ -1000,7 +1001,7 @@ func TestSmokeUpgradeInfo(t *testing.T) {
 					ClusterUpgradeAction: &model.ClusterUpgradeAction{
 						TargetVersion: target,
 						Strategy:      &model.UpgradeStrategy{InPlaceRollingUpdate: &model.InPlaceRollingUpdate{}},
-						IsOnlyUpgrade: boolPtr(false),
+						IsOnlyUpgrade: ptr.To(false),
 					},
 				},
 			},
@@ -1044,7 +1045,7 @@ func createPublicIP(ctx context.Context, regionID, ak, sk, name string) (string,
 	}
 	c := eipv2.NewEipClient(hc)
 	shareType := eipmodel.GetCreatePublicipBandwidthOptionShareTypeEnum().PER
-	bandwidth := eipmodel.CreatePublicipBandwidthOption{ShareType: shareType, Name: &name, Size: int32Ptr(5)}
+	bandwidth := eipmodel.CreatePublicipBandwidthOption{ShareType: shareType, Name: &name, Size: ptr.To(int32(5))}
 	publicip := eipmodel.CreatePublicipOption{Type: "5_bgp", Alias: &name}
 	resp, err := c.CreatePublicip(&eipmodel.CreatePublicipRequest{Body: &eipmodel.CreatePublicipRequestBody{
 		Bandwidth: &bandwidth,

@@ -19,6 +19,9 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 )
 
+// pageSize is the ListAgenciesV5 pagination page size.
+const pageSize = 200
+
 // Client is the IAM v5 SDK-backed implementation of Service.
 type Client struct {
 	iam *iamv5.IamClient
@@ -86,7 +89,7 @@ func (c *Client) EnsureAgency(ctx context.Context, agencyName, trustPolicy strin
 func (c *Client) agencyExists(ctx context.Context, agencyName string) (bool, error) {
 	var marker *string
 	for {
-		limit := int32(200)
+		limit := int32(pageSize)
 		resp, err := c.iam.ListAgenciesV5(&model.ListAgenciesV5Request{Limit: &limit, Marker: marker})
 		if err != nil {
 			return false, errors.Wrap(err, "ListAgenciesV5 failed")

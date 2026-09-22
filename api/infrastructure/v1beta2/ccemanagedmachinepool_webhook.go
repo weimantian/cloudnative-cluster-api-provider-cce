@@ -30,6 +30,22 @@ var ValidFlavors []string
 // c7.xlarge.4, c6sne.large.2 (family[.variant].size.vcpus).
 var flavorPattern = regexp.MustCompile(`^[a-z][a-z0-9]*(\.[a-z0-9]+)?\.[0-9]+(\.[0-9]+)?$`)
 
+// Node-pool admission limits (official CCE constraints).
+const (
+	// maxTaints is the maximum number of taints per node pool.
+	maxTaints = 20
+	// maxSecurityGroups is the maximum number of security groups a Turbo
+	// node pool may bind.
+	maxSecurityGroups = 5
+	// minRootVolumeGiB/maxRootVolumeGiB bound the node root volume size.
+	minRootVolumeGiB = 40
+	maxRootVolumeGiB = 1024
+	// maxUnavailableLimit is the upper bound for the rolling-update batch size.
+	maxUnavailableLimit = 20
+	// defaultMaxUnavailable is the default rolling-update batch size.
+	defaultMaxUnavailable = 1
+)
+
 // SetupWebhookWithManager registers the CCEManagedMachinePool webhook.
 func (m *CCEManagedMachinePool) SetupWebhookWithManager(mgr ctrl.Manager) error {
 	return builder.WebhookManagedBy(mgr, &CCEManagedMachinePool{}).
@@ -48,11 +64,19 @@ func (m *CCEManagedMachinePool) Default(_ context.Context, obj *CCEManagedMachin
 	if obj.Spec.NodePoolName == "" {
 		obj.Spec.NodePoolName = obj.Name
 	}
-	// Default the rolling-update batch size to 1 (official range [1,20]).
-	if obj.Spec.UpdateConfig.MaxUnavailable == 0 {
-		obj.Spec.UpdateConfig.MaxUnavailable = 1
-	}
+	applyMachinePoolDefaults(&obj.Spec)
 	return nil
+}
+
+// applyMachinePoolDefaults fills the spec defaults shared by the
+// CCEManagedMachinePool and its ClusterClass template, so the two admission
+// paths cannot diverge. NodePoolName is deliberately NOT defaulted here: it
+// is derived from the object name, which the template omits.
+func applyMachinePoolDefaults(spec *CCEManagedMachinePoolSpec) {
+	// Default the rolling-update batch size to 1 (official range [1,20]).
+	if spec.UpdateConfig.MaxUnavailable == 0 {
+		spec.UpdateConfig.MaxUnavailable = defaultMaxUnavailable
+	}
 }
 
 var _ admission.Validator[*CCEManagedMachinePool] = &CCEManagedMachinePool{}
@@ -100,12 +124,12 @@ func (m *CCEManagedMachinePool) validate() error {
 		allErrs = append(allErrs, field.NotSupported(field.NewPath("spec", "flavor"), m.Spec.Flavor, ValidFlavors))
 	}
 	// Official constraint: max 20 taints.
-	if len(m.Spec.Taints) > 20 {
-		allErrs = append(allErrs, field.TooMany(field.NewPath("spec", "taints"), len(m.Spec.Taints), 20))
+	if len(m.Spec.Taints) > maxTaints {
+		allErrs = append(allErrs, field.TooMany(field.NewPath("spec", "taints"), len(m.Spec.Taints), maxTaints))
 	}
 	// Official constraint: Turbo >= 1.21 node pools bind max 5 security groups.
-	if len(m.Spec.SecurityGroups) > 5 {
-		allErrs = append(allErrs, field.TooMany(field.NewPath("spec", "securityGroups"), len(m.Spec.SecurityGroups), 5))
+	if len(m.Spec.SecurityGroups) > maxSecurityGroups {
+		allErrs = append(allErrs, field.TooMany(field.NewPath("spec", "securityGroups"), len(m.Spec.SecurityGroups), maxSecurityGroups))
 	}
 	// Subscription billing (billingMode=1) requires periodType/periodNum which
 	// the CRD does not expose — reject it explicitly instead of letting the
@@ -145,12 +169,12 @@ func (m *CCEManagedMachinePool) validate() error {
 	if m.Spec.RootVolume == nil {
 		allErrs = append(allErrs, field.Required(field.NewPath("spec", "rootVolume"),
 			"rootVolume is required (official size range 40-1024 GiB)"))
-	} else if m.Spec.RootVolume.Size < 40 || m.Spec.RootVolume.Size > 1024 {
+	} else if m.Spec.RootVolume.Size < minRootVolumeGiB || m.Spec.RootVolume.Size > maxRootVolumeGiB {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "rootVolume", "size"),
 			m.Spec.RootVolume.Size, "root volume size must be within [40, 1024] GiB"))
 	}
 	// Official UpgradeNodePool (同步节点池) constraint: maxUnavailable in [1,20].
-	if mu := m.Spec.UpdateConfig.MaxUnavailable; mu != 0 && (mu < 1 || mu > 20) {
+	if mu := m.Spec.UpdateConfig.MaxUnavailable; mu != 0 && (mu < defaultMaxUnavailable || mu > maxUnavailableLimit) {
 		allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "updateConfig", "maxUnavailable"),
 			mu, "maxUnavailable must be within [1, 20]"))
 	}

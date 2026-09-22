@@ -8,13 +8,14 @@ package v1beta2
 
 import (
 	"context"
-	"net"
 
 	apierrors "k8s.io/apimachinery/pkg/api/errors"
 	"k8s.io/apimachinery/pkg/util/validation/field"
 	ctrl "sigs.k8s.io/controller-runtime"
 	"sigs.k8s.io/controller-runtime/pkg/builder"
 	"sigs.k8s.io/controller-runtime/pkg/webhook/admission"
+
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 )
 
 // SetupWebhookWithManager registers the CCECluster webhook.
@@ -78,7 +79,7 @@ func (c *CCECluster) validate() error {
 	}
 	// VPC CIDR format (only meaningful when the VPC is to be created).
 	if c.Spec.Network.VPC.CIDR != "" {
-		if _, _, err := net.ParseCIDR(c.Spec.Network.VPC.CIDR); err != nil {
+		if _, err := common.ParseCIDR(c.Spec.Network.VPC.CIDR); err != nil {
 			allErrs = append(allErrs, field.Invalid(field.NewPath("spec", "network", "vpc", "cidr"),
 				c.Spec.Network.VPC.CIDR, "must be a valid IPv4/IPv6 CIDR (e.g. 10.0.0.0/16)"))
 		}
@@ -89,7 +90,7 @@ func (c *CCECluster) validate() error {
 			continue
 		}
 		p := field.NewPath("spec", "network", "subnets").Index(i).Child("cidr")
-		if _, _, err := net.ParseCIDR(sn.CIDR); err != nil {
+		if _, err := common.ParseCIDR(sn.CIDR); err != nil {
 			allErrs = append(allErrs, field.Invalid(p, sn.CIDR, "must be a valid IPv4/IPv6 CIDR"))
 		}
 	}

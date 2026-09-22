@@ -30,10 +30,12 @@ import (
 	"github.com/pkg/errors"
 	"k8s.io/client-go/tools/clientcmd"
 	clientcmdapi "k8s.io/client-go/tools/clientcmd/api"
+	"k8s.io/utils/ptr"
 	"net/http"
 	"strings"
 	"sync"
 
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/hwsdk"
 	clouderrors "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/errors"
@@ -204,12 +206,12 @@ func clusterTagsDiff(cur, want map[string]string, ownedKey string) (d struct {
 }) {
 	for k, v := range want {
 		if cv, ok := cur[k]; !ok || cv != v {
-			d.add = append(d.add, model.ResourceTag{Key: stringPtr(k), Value: stringPtr(v)})
+			d.add = append(d.add, model.ResourceTag{Key: ptr.To(k), Value: ptr.To(v)})
 		}
 	}
 	for k := range cur {
 		if _, ok := want[k]; !ok && k != ownedKey {
-			d.del = append(d.del, model.ResourceDeleteTag{Key: stringPtr(k)})
+			d.del = append(d.del, model.ResourceDeleteTag{Key: ptr.To(k)})
 		}
 	}
 	return d
@@ -311,35 +313,35 @@ func buildCreateClusterRequest(in CreateClusterInput) (*model.CreateClusterReque
 		// category: empty is derived from the network mode per official docs
 		// ("容器网络参数设置为eni模式时,默认为Turbo;否则默认为CCE").
 		Category:    clusterCategory(in.Category, in.ContainerNetworkMode),
-		BillingMode: int32Ptr(in.BillingMode),
+		BillingMode: ptr.To(in.BillingMode),
 		ContainerNetwork: &model.ContainerNetwork{
 			Mode: model.GetContainerNetworkModeEnum().OVERLAY_L2, // replaced below
 		},
 	}
 	if in.AgencyName != "" {
-		spec.AgencyName = stringPtr(in.AgencyName)
+		spec.AgencyName = ptr.To(in.AgencyName)
 	}
 	// flavor/version: official defaults apply only when UNCONFIGURED — an
 	// explicit empty string would be rejected, so omit the fields when empty.
 	if in.Flavor != "" {
-		spec.Flavor = stringPtr(in.Flavor)
+		spec.Flavor = ptr.To(in.Flavor)
 	}
 	if in.Version != "" {
 		// CCE CreateCluster accepts vMAJOR.MINOR (e.g. "v1.35"), not the full
 		// semver (e.g. "v1.35.0") that the webhook enforces; strip the patch.
-		spec.Version = stringPtr(cceClusterVersion(in.Version))
+		spec.Version = ptr.To(cceClusterVersion(in.Version))
 	}
 	// containerNetwork mode mapping (official enum: overlay_l2/vpc-router/eni).
 	switch in.ContainerNetworkMode {
-	case "vpc-router":
+	case common.ModeVPCRouter:
 		spec.ContainerNetwork.Mode = model.GetContainerNetworkModeEnum().VPC_ROUTER
-	case "eni":
+	case common.ModeENI:
 		spec.ContainerNetwork.Mode = model.GetContainerNetworkModeEnum().ENI
 	default:
 		spec.ContainerNetwork.Mode = model.GetContainerNetworkModeEnum().OVERLAY_L2
 	}
 	if in.ContainerNetworkCIDR != "" {
-		spec.ContainerNetwork.Cidr = stringPtr(in.ContainerNetworkCIDR)
+		spec.ContainerNetwork.Cidr = ptr.To(in.ContainerNetworkCIDR)
 	}
 	if len(in.ContainerNetworkCIDRs) > 0 {
 		cidrs := make([]model.ContainerCidr, 0, len(in.ContainerNetworkCIDRs))
@@ -351,10 +353,10 @@ func buildCreateClusterRequest(in CreateClusterInput) (*model.CreateClusterReque
 	if in.ServiceCIDR != "" || in.ServiceIPv6CIDR != "" {
 		sn := &model.ServiceNetwork{}
 		if in.ServiceCIDR != "" {
-			sn.IPv4CIDR = stringPtr(in.ServiceCIDR)
+			sn.IPv4CIDR = ptr.To(in.ServiceCIDR)
 		}
 		if in.ServiceIPv6CIDR != "" {
-			sn.IPv6CIDR = stringPtr(in.ServiceIPv6CIDR)
+			sn.IPv6CIDR = ptr.To(in.ServiceIPv6CIDR)
 		}
 		spec.ServiceNetwork = sn
 	}
@@ -387,7 +389,7 @@ func buildCreateClusterRequest(in CreateClusterInput) (*model.CreateClusterReque
 	if in.EnableDataPlaneV2 {
 		// DataPlane V2 is a per-component configuration item (eni group →
 		// dataplane-v2=true); CCE only accepts it at cluster creation.
-		group := "eni"
+		group := common.ModeENI
 		itemName := "dataplane-v2"
 		var itemValue interface{} = true
 		items := []model.ConfigurationItem{{Name: &itemName, Value: &itemValue}}
@@ -401,7 +403,7 @@ func buildCreateClusterRequest(in CreateClusterInput) (*model.CreateClusterReque
 		}
 	}
 	if in.Authentication != nil && in.Authentication.Mode != "" {
-		auth := &model.Authentication{Mode: stringPtr(in.Authentication.Mode)}
+		auth := &model.Authentication{Mode: ptr.To(in.Authentication.Mode)}
 		if in.Authentication.AuthenticatingProxy != nil {
 			p := in.Authentication.AuthenticatingProxy
 			auth.AuthenticatingProxy = &model.AuthenticatingProxy{
@@ -637,7 +639,7 @@ func (s *Client) ListEips(ctx context.Context) ([]EipRef, error) {
 	return paginateAll(1000, func(marker *string) ([]EipRef, *string, error) {
 		resp, err := s.eip.ListPublicips(&eipmodel.ListPublicipsRequest{
 			Marker: marker,
-			Limit:  int32Ptr(1000),
+			Limit:  ptr.To(int32(1000)),
 		})
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "ListPublicips failed")
@@ -677,7 +679,7 @@ func (s *Client) ListVolumes(ctx context.Context) ([]VolumeRef, error) {
 	return paginateAll(1000, func(marker *string) ([]VolumeRef, *string, error) {
 		resp, err := s.evs.ListVolumes(&evsmodel.ListVolumesRequest{
 			Marker: marker,
-			Limit:  int32Ptr(1000),
+			Limit:  ptr.To(int32(1000)),
 		})
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "ListVolumes failed")
@@ -689,7 +691,7 @@ func (s *Client) ListVolumes(ctx context.Context) ([]VolumeRef, error) {
 		var lastID *string
 		for _, v := range *resp.Volumes {
 			refs = append(refs, VolumeRef{ID: v.Id, Name: v.Name, Tags: v.Tags})
-			lastID = stringPtr(v.Id)
+			lastID = ptr.To(v.Id)
 		}
 		return refs, lastID, nil
 	})
@@ -713,7 +715,7 @@ func (s *Client) ListVpcs(ctx context.Context) ([]VpcRef, error) {
 	return paginateAll(1000, func(marker *string) ([]VpcRef, *string, error) {
 		resp, err := s.vpc.ListVpcs(&vpcmodel.ListVpcsRequest{
 			Marker: marker,
-			Limit:  int32Ptr(1000),
+			Limit:  ptr.To(int32(1000)),
 		})
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "ListVpcs failed")
@@ -731,7 +733,7 @@ func (s *Client) ListVpcs(ctx context.Context) ([]VpcRef, error) {
 				}
 			}
 			refs = append(refs, ref)
-			lastID = stringPtr(v.Id)
+			lastID = ptr.To(v.Id)
 		}
 		return refs, lastID, nil
 	})
@@ -752,7 +754,7 @@ func (s *Client) ListNatGateways(ctx context.Context) ([]NatGatewayRef, error) {
 	return paginateAll(2000, func(marker *string) ([]NatGatewayRef, *string, error) {
 		resp, err := s.nat.ListNatGateways(&natmodel.ListNatGatewaysRequest{
 			Marker: marker,
-			Limit:  int32Ptr(2000),
+			Limit:  ptr.To(int32(2000)),
 		})
 		if err != nil {
 			return nil, nil, errors.Wrap(err, "ListNatGateways failed")
@@ -944,7 +946,7 @@ func (s *Client) GetClusterKubeconfig(ctx context.Context, clusterID string, dur
 	}
 	resp, err := s.cce.CreateKubernetesClusterCert(&model.CreateKubernetesClusterCertRequest{
 		ClusterId: clusterID,
-		Body:      &model.ClusterCertDuration{Duration: int32Ptr(durationDays)},
+		Body:      &model.ClusterCertDuration{Duration: ptr.To(durationDays)},
 	})
 	if err != nil {
 		return "", errors.Wrap(err, "CreateKubernetesClusterCert failed")
@@ -982,36 +984,36 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 	// billingMode=1 (subscription) before CreateNodePool is ever called.
 	billingMode := model.GetNodeTemplateBillingModeEnum().E_0
 	template := &model.NodeTemplate{
-		Flavor:      stringPtr(in.Flavor),
+		Flavor:      ptr.To(in.Flavor),
 		BillingMode: &billingMode,
-		RootVolume:  &model.Volume{Size: in.RootVolumeSize, Volumetype: defaultString(in.RootVolumeType, "GPSSD")},
+		RootVolume:  &model.Volume{Size: in.RootVolumeSize, Volumetype: defaultString(in.RootVolumeType, defaultVolumeType)},
 	}
 	if in.OS != "" {
-		template.Os = stringPtr(in.OS)
+		template.Os = ptr.To(in.OS)
 	}
 	// Only set AZ when explicitly provided (empty AZ is rejected by CCE:
 	// verified "Az [] is not in available az list").
 	if in.AvailabilityZone != "" {
-		template.Az = stringPtr(in.AvailabilityZone)
+		template.Az = ptr.To(in.AvailabilityZone)
 	}
 	if len(in.DataVolumes) > 0 {
 		volumes := make([]model.Volume, 0, len(in.DataVolumes))
 		for _, v := range in.DataVolumes {
-			volumes = append(volumes, model.Volume{Size: v.Size, Volumetype: defaultString(v.Type, "GPSSD")})
+			volumes = append(volumes, model.Volume{Size: v.Size, Volumetype: defaultString(v.Type, defaultVolumeType)})
 		}
 		template.DataVolumes = &volumes
 	}
 	if in.SSHKey != "" {
-		template.Login = &model.Login{SshKey: stringPtr(in.SSHKey)}
+		template.Login = &model.Login{SshKey: ptr.To(in.SSHKey)}
 	}
 	if in.EcsGroupId != "" {
-		template.EcsGroupId = stringPtr(in.EcsGroupId)
+		template.EcsGroupId = ptr.To(in.EcsGroupId)
 	}
 	if in.FaultDomain != "" {
-		template.FaultDomain = stringPtr(in.FaultDomain)
+		template.FaultDomain = ptr.To(in.FaultDomain)
 	}
 	if in.DedicatedHostId != "" {
-		template.DedicatedHostId = stringPtr(in.DedicatedHostId)
+		template.DedicatedHostId = ptr.To(in.DedicatedHostId)
 	}
 	if len(in.Taints) > 0 {
 		taints, terr := parseTaints(in.Taints)
@@ -1033,7 +1035,7 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 		marketType := model.GetNodeExtendParamMarketTypeEnum().SPOT
 		extend.MarketType = &marketType
 		if in.SpotPrice != "" {
-			extend.SpotPrice = stringPtr(in.SpotPrice)
+			extend.SpotPrice = ptr.To(in.SpotPrice)
 		}
 	}
 	if in.PreInstall != "" || in.PostInstall != "" {
@@ -1044,10 +1046,10 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 			extend = &model.NodeExtendParam{}
 		}
 		if in.PreInstall != "" {
-			extend.AlphaCcePreInstall = stringPtr(in.PreInstall)
+			extend.AlphaCcePreInstall = ptr.To(in.PreInstall)
 		}
 		if in.PostInstall != "" {
-			extend.AlphaCcePostInstall = stringPtr(in.PostInstall)
+			extend.AlphaCcePostInstall = ptr.To(in.PostInstall)
 		}
 	}
 	if extend != nil {
@@ -1063,18 +1065,18 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 		// reach the internet directly — public-subnet parity, avoiding a
 		// NAT gateway. Bandwidth defaults to PER/bandwidth when unset.
 		bw := &model.NodeBandwidth{
-			Size:      int32Ptr(in.PublicIPBandwidthSize),
-			Sharetype: stringPtr(defaultString(in.PublicIPShareType, "PER")),
-			Chargemode: stringPtr(defaultString(in.PublicIPChargeMode, "bandwidth")),
+			Size:      ptr.To(in.PublicIPBandwidthSize),
+			Sharetype: ptr.To(defaultString(in.PublicIPShareType, "PER")),
+			Chargemode: ptr.To(defaultString(in.PublicIPChargeMode, "bandwidth")),
 		}
 		template.PublicIP = &model.NodeEipSpec{
-			Iptype:    "5_bgp",
+			Iptype:    common.DefaultEIPType,
 			Bandwidth: bw,
 		}
 	}
 	spec := &model.NodePoolSpec{
 		NodeTemplate:     template,
-		InitialNodeCount: int32Ptr(in.InitialNodeCount),
+		InitialNodeCount: ptr.To(in.InitialNodeCount),
 	}
 	if len(in.SecurityGroups) > 0 || len(in.CustomSecurityGroups) > 0 {
 		groups := in.SecurityGroups
@@ -1090,10 +1092,10 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 		groups := make([]model.ExtensionScaleGroup, 0, len(in.ExtensionScaleGroups))
 		for _, g := range in.ExtensionScaleGroups {
 			groups = append(groups, model.ExtensionScaleGroup{
-				Metadata: &model.ExtensionScaleGroupMetadata{Name: stringPtr(g.Name)},
+				Metadata: &model.ExtensionScaleGroupMetadata{Name: ptr.To(g.Name)},
 				Spec: &model.ExtensionScaleGroupSpec{
-					Flavor: stringPtr(g.Flavor),
-					Az:     stringPtr(g.AvailabilityZone),
+					Flavor: ptr.To(g.Flavor),
+					Az:     ptr.To(g.AvailabilityZone),
 				},
 			})
 		}
@@ -1194,7 +1196,7 @@ func (s *Client) UpdateNodePool(_ context.Context, in UpdateNodePoolInput) error
 		InitialNodeCount: in.InitialNodeCount,
 	}
 	if in.IgnoreInitialNodeCount {
-		spec.IgnoreInitialNodeCount = boolPtr(true)
+		spec.IgnoreInitialNodeCount = ptr.To(true)
 	}
 	// A tag-only update (UserTags set) leaves the node count and security
 	// groups untouched: it only pushes the desired user tags onto existing
@@ -1202,17 +1204,17 @@ func (s *Client) UpdateNodePool(_ context.Context, in UpdateNodePoolInput) error
 	// (an empty slice resets to the node default security group).
 	if in.UserTags != nil {
 		spec.NodeTemplate = &model.NodeSpecUpdate{UserTags: toUserTags(in.ClusterName, in.UserTags)}
-		spec.UserTagsPolicyOnExistingNodes = stringPtr(in.UserTagsPolicyOnExistingNodes)
+		spec.UserTagsPolicyOnExistingNodes = ptr.To(in.UserTagsPolicyOnExistingNodes)
 	} else {
 		spec.CustomSecurityGroups = &in.CustomSecurityGroups
 		if in.Autoscaling != nil {
 			spec.Autoscaling = toNodePoolAutoscaling(in.Autoscaling)
 		}
 		if in.TaintPolicyOnExistingNodes != "" {
-			spec.TaintPolicyOnExistingNodes = stringPtr(in.TaintPolicyOnExistingNodes)
+			spec.TaintPolicyOnExistingNodes = ptr.To(in.TaintPolicyOnExistingNodes)
 		}
 		if in.LabelPolicyOnExistingNodes != "" {
-			spec.LabelPolicyOnExistingNodes = stringPtr(in.LabelPolicyOnExistingNodes)
+			spec.LabelPolicyOnExistingNodes = ptr.To(in.LabelPolicyOnExistingNodes)
 		}
 	}
 	if _, err := s.cce.UpdateNodePool(&model.UpdateNodePoolRequest{
@@ -1297,9 +1299,9 @@ func toNodePoolAutoscaling(in *NodePoolAutoscaling) *model.NodePoolNodeAutoscali
 		return nil
 	}
 	return &model.NodePoolNodeAutoscaling{
-		Enable:       boolPtr(in.Enable),
-		MinNodeCount: int32Ptr(in.MinNodeCount),
-		MaxNodeCount: int32Ptr(in.MaxNodeCount),
+		Enable:       ptr.To(in.Enable),
+		MinNodeCount: ptr.To(in.MinNodeCount),
+		MaxNodeCount: ptr.To(in.MaxNodeCount),
 	}
 }
 
@@ -1371,7 +1373,7 @@ func (s *Client) listAllNodes(clusterID string) ([]model.Node, error) {
 	return paginateAll(2000, func(marker *string) ([]model.Node, *string, error) {
 		resp, err := s.cce.ListNodes(&model.ListNodesRequest{
 			ClusterId: clusterID,
-			Limit:     int32Ptr(2000),
+			Limit:     ptr.To(int32(2000)),
 			Marker:    marker,
 		})
 		if err != nil {
@@ -1521,8 +1523,8 @@ func (s *Client) StartUpgrade(_ context.Context, clusterID, targetVersion string
 		Kind:       "WorkFlowTask",
 		ApiVersion: "v3",
 		Spec: &model.WorkFlowSpec{
-			ClusterID:      stringPtr(clusterID),
-			ClusterVersion: stringPtr(currentVersion),
+			ClusterID:      ptr.To(clusterID),
+			ClusterVersion: ptr.To(currentVersion),
 			TargetVersion:  targetVersion,
 		},
 	}
@@ -1537,9 +1539,9 @@ func (s *Client) StartUpgrade(_ context.Context, clusterID, targetVersion string
 		ApiVersion: "v3",
 		Kind:       "PreCheckTask",
 		Spec: &model.PrecheckSpec{
-			ClusterID:      stringPtr(clusterID),
-			ClusterVersion: stringPtr(currentVersion),
-			TargetVersion:  stringPtr(targetVersion),
+			ClusterID:      ptr.To(clusterID),
+			ClusterVersion: ptr.To(currentVersion),
+			TargetVersion:  ptr.To(targetVersion),
 		},
 	}
 	if _, err := s.cce.CreatePreCheck(&model.CreatePreCheckRequest{
@@ -1563,7 +1565,7 @@ func (s *Client) StartUpgrade(_ context.Context, clusterID, targetVersion string
 					Strategy: &model.UpgradeStrategy{
 						Type: "inPlaceRollingUpdate",
 						InPlaceRollingUpdate: &model.InPlaceRollingUpdate{
-							UserDefinedStep: int32Ptr(20),
+							UserDefinedStep: ptr.To(int32(20)),
 						},
 					},
 				},
@@ -1903,12 +1905,6 @@ func derefBool(p *bool) bool {
 	return *p
 }
 
-func stringPtr(s string) *string { return &s }
-
-func boolPtr(b bool) *bool { return &b }
-
-func int32Ptr(i int32) *int32 { return &i }
-
 // toResourceTags maps a tag map to the CCE SDK resource-tag list; nil for an
 // empty map so the API omits the field.
 func toResourceTags(tags map[string]string) *[]model.ResourceTag {
@@ -1917,7 +1913,7 @@ func toResourceTags(tags map[string]string) *[]model.ResourceTag {
 	}
 	out := make([]model.ResourceTag, 0, len(tags))
 	for k, v := range tags {
-		out = append(out, model.ResourceTag{Key: stringPtr(k), Value: stringPtr(v)})
+		out = append(out, model.ResourceTag{Key: ptr.To(k), Value: ptr.To(v)})
 	}
 	return &out
 }
@@ -1942,7 +1938,7 @@ func base64StrPtr(s string) *string {
 	if s == "" {
 		return nil
 	}
-	return stringPtr(base64.StdEncoding.EncodeToString([]byte(s)))
+	return ptr.To(base64.StdEncoding.EncodeToString([]byte(s)))
 }
 
 // encryptionModeEnum maps the spec string to the SDK enum.
@@ -1957,6 +1953,9 @@ func encryptionModeEnum(mode string) *model.EncryptionConfigMode {
 	}
 }
 
+// defaultVolumeType is the default EVS volume type for node root/data volumes.
+const defaultVolumeType = "GPSSD"
+
 func defaultString(v, def string) string {
 	if v == "" {
 		return def
@@ -1969,7 +1968,7 @@ func clusterCategory(category, networkMode string) *model.ClusterSpecCategory {
 		c := model.GetClusterSpecCategoryEnum().TURBO
 		return &c
 	}
-	if category == "" && networkMode == "eni" {
+	if category == "" && networkMode == common.ModeENI {
 		// Official default: eni mode implies Turbo (CreateCluster.txt).
 		c := model.GetClusterSpecCategoryEnum().TURBO
 		return &c
@@ -1992,7 +1991,7 @@ func parseTaints(in []string) (*[]model.Taint, error) {
 		}
 		taint := model.Taint{Key: key, Effect: te}
 		if value != "" {
-			taint.Value = stringPtr(value)
+			taint.Value = ptr.To(value)
 		}
 		out = append(out, taint)
 	}
@@ -2104,7 +2103,7 @@ func (s *Client) UpgradeNodePool(_ context.Context, clusterID, nodePoolID string
 		Body: &model.UpgradeNodePool{
 			Kind:       &kind,
 			ApiVersion: &apiVersion,
-			Spec:       &model.NodePoolUpgradeSpec{MaxUnavailable: int32Ptr(maxUnavailable)},
+			Spec:       &model.NodePoolUpgradeSpec{MaxUnavailable: ptr.To(maxUnavailable)},
 		},
 	}); err != nil {
 		return errors.Wrapf(err, "UpgradeNodePool %s failed", nodePoolID)
@@ -2140,15 +2139,15 @@ func (s *Client) UpdateClusterLogConfig(_ context.Context, clusterID string, ttl
 			t = "control"
 		}
 		logConfigs = append(logConfigs, model.ClusterLogConfigLogConfigs{
-			Name:   stringPtr(l.Name),
-			Enable: boolPtr(l.Enable),
+			Name:   ptr.To(l.Name),
+			Enable: ptr.To(l.Enable),
 			Type:   logConfigType(t),
 		})
 	}
 	if _, err := s.cce.UpdateClusterLogConfig(&model.UpdateClusterLogConfigRequest{
 		ClusterId: clusterID,
 		Body: &model.ClusterLogConfig{
-			TtlInDays:  int32Ptr(ttlInDays),
+			TtlInDays:  ptr.To(ttlInDays),
 			LogConfigs: &logConfigs,
 		},
 	}); err != nil {
@@ -2203,14 +2202,14 @@ func logConfigType(t string) *model.ClusterLogConfigLogConfigsType {
 	// win over any colliding user tag.
 	func toClusterTags(clusterName string, userTags map[string]string) *[]model.ResourceTag {
 		out := []model.ResourceTag{
-			{Key: stringPtr(tags.OwnedTagKey(clusterName)), Value: stringPtr("owned")},
-			{Key: stringPtr(RoleTagKey), Value: stringPtr(RoleApiserver)},
+			{Key: ptr.To(tags.OwnedTagKey(clusterName)), Value: ptr.To("owned")},
+			{Key: ptr.To(RoleTagKey), Value: ptr.To(RoleApiserver)},
 		}
 		for k, v := range userTags {
 			if skipReservedTagKey(k, clusterName) {
 				continue
 			}
-			out = append(out, model.ResourceTag{Key: stringPtr(k), Value: stringPtr(v)})
+			out = append(out, model.ResourceTag{Key: ptr.To(k), Value: ptr.To(v)})
 		}
 		return &out
 	}
@@ -2220,14 +2219,14 @@ func logConfigType(t string) *model.ClusterLogConfigLogConfigsType {
 	// win over any colliding user tag.
 	func toUserTags(clusterName string, userTags map[string]string) *[]model.UserTag {
 		out := []model.UserTag{
-			{Key: stringPtr(tags.OwnedTagKey(clusterName)), Value: stringPtr("owned")},
-			{Key: stringPtr(RoleTagKey), Value: stringPtr(RoleNode)},
+			{Key: ptr.To(tags.OwnedTagKey(clusterName)), Value: ptr.To("owned")},
+			{Key: ptr.To(RoleTagKey), Value: ptr.To(RoleNode)},
 		}
 		for k, v := range userTags {
 			if skipReservedTagKey(k, clusterName) {
 				continue
 			}
-			out = append(out, model.UserTag{Key: stringPtr(k), Value: stringPtr(v)})
+			out = append(out, model.UserTag{Key: ptr.To(k), Value: ptr.To(v)})
 		}
 		return &out
 	}

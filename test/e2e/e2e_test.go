@@ -44,6 +44,7 @@ import (
 	"k8s.io/apimachinery/pkg/types"
 	clientgoscheme "k8s.io/client-go/kubernetes/scheme"
 	"k8s.io/client-go/tools/clientcmd"
+	"k8s.io/utils/ptr"
 	clusterv1 "sigs.k8s.io/cluster-api/api/core/v1beta2"
 	"sigs.k8s.io/controller-runtime/pkg/client"
 
@@ -166,12 +167,12 @@ var _ = Describe("CCE workload cluster lifecycle", func() {
 				ObjectMeta: metav1.ObjectMeta{Name: clusterName + "-pool-0", Namespace: namespace, Labels: labels, OwnerReferences: []metav1.OwnerReference{ownerRef}},
 				Spec: clusterv1.MachinePoolSpec{
 					ClusterName: clusterName,
-					Replicas:    int32Ptr(1),
+					Replicas:    ptr.To(int32(1)),
 					Template: clusterv1.MachineTemplateSpec{
 						Spec: clusterv1.MachineSpec{
 							ClusterName: clusterName,
 							Version:     "v1.33.0",
-							Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr(clusterName + "-bootstrap")},
+							Bootstrap:   clusterv1.Bootstrap{DataSecretName: ptr.To(clusterName + "-bootstrap")},
 							InfrastructureRef: clusterv1.ContractVersionedObjectReference{
 								APIGroup: infrav1beta2.GroupVersion.Group,
 								Kind:     "CCEManagedMachinePool",
@@ -271,6 +272,3 @@ func envOr(key, fallback string) string {
 	return fallback
 }
 
-func int32Ptr(i int32) *int32 { return &i }
-
-func ptr(s string) *string { return &s }
