@@ -30,6 +30,8 @@ import (
 	vpcv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2"
 	vpcmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
 	vpcregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/region"
+
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/hack/internal/hwutil"
 )
 
 const (
@@ -50,8 +52,8 @@ func main() {
 		fatal("usage: go run ./hack/cleanup-hw -cluster <id> [-nodepool <id>] [-eip <id>] [-subnet <id> -vpc <id>]")
 	}
 
-	ak := envOr("CLOUD_SDK_AK", "CCE_DEPLOY_AK")
-	sk := envOr("CLOUD_SDK_SK", "CCE_DEPLOY_SK")
+	ak := hwutil.EnvOr("CLOUD_SDK_AK", "CCE_DEPLOY_AK")
+	sk := hwutil.EnvOr("CLOUD_SDK_SK", "CCE_DEPLOY_SK")
 	if ak == "" || sk == "" {
 		fatal("CLOUD_SDK_AK and CLOUD_SDK_SK must be set")
 	}
@@ -228,15 +230,6 @@ func newVpcClient(region string, cred auth.ICredential) *vpcv2.VpcClient {
 	hc, err := vpcv2.VpcClientBuilder().WithRegion(r).WithCredential(cred).WithHttpConfig(config.DefaultHttpConfig()).SafeBuild()
 	must(err, "build VPC client")
 	return vpcv2.NewVpcClient(hc)
-}
-
-func envOr(keys ...string) string {
-	for _, k := range keys {
-		if v := os.Getenv(k); v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func must(err error, ctx string) {

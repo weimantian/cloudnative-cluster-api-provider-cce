@@ -50,7 +50,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -59,8 +58,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
-
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/hack/internal/hwutil"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 )
@@ -80,8 +78,8 @@ func main() {
 	kubeconfigPath := flag.String("kubeconfig", "capi-mgmt.kubeconfig", "kubeconfig output path (create mode)")
 	flag.Parse()
 
-	ak := envOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
-	sk := envOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
+	ak := hwutil.EnvOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
+	sk := hwutil.EnvOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
 	region := envDefault("CCE_DEPLOY_REGION", "cn-north-4")
 	if ak == "" || sk == "" {
 		fatal("CCE_DEPLOY_AK (or CLOUD_SDK_AK) and CCE_DEPLOY_SK (or CLOUD_SDK_SK) must be set")
@@ -121,16 +119,16 @@ func categoryName(category string) string {
 }
 
 func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath string) {
-	vpcID := envOr("CCE_DEPLOY_VPC")
-	subnetID := envOr("CCE_DEPLOY_SUBNET")
-	keypair := envOr("CCE_DEPLOY_KEYPAIR")
+	vpcID := hwutil.EnvOr("CCE_DEPLOY_VPC")
+	subnetID := hwutil.EnvOr("CCE_DEPLOY_SUBNET")
+	keypair := hwutil.EnvOr("CCE_DEPLOY_KEYPAIR")
 	if vpcID == "" || subnetID == "" || keypair == "" {
 		fatal("CCE_DEPLOY_VPC, CCE_DEPLOY_SUBNET and CCE_DEPLOY_KEYPAIR are required to create")
 	}
 
 	name := "capi-mgmt-" + fmt.Sprintf("%d", time.Now().Unix()%100000)
 	public := envBool("CCE_DEPLOY_PUBLIC", true)
-	publicCIDRs := splitCSV(envOr("CCE_DEPLOY_PUBLIC_CIDRS"))
+	publicCIDRs := splitCSV(hwutil.EnvOr("CCE_DEPLOY_PUBLIC_CIDRS"))
 	fmt.Printf("creating management cluster %q (region %s, vpc %s, subnet %s)…\n",
 		name, envDefault("CCE_DEPLOY_REGION", "cn-north-4"), vpcID, subnetID)
 
@@ -142,20 +140,20 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 	var eniSubnets []string
 	if category == "turbo" {
 		networkMode = "eni"
-		eniSubnets = splitCSV(envOr("CCE_DEPLOY_ENI_SUBNET"))
+		eniSubnets = splitCSV(hwutil.EnvOr("CCE_DEPLOY_ENI_SUBNET"))
 		if len(eniSubnets) == 0 {
 			fatal("CCE_DEPLOY_ENI_SUBNET is required when CCE_DEPLOY_CATEGORY=turbo")
 		}
 		containerCIDR = "" // Turbo: container CIDR comes from the ENI subnet
 	}
 	var id string
-	if err := retryThrottled("CreateCluster", 5, func() error {
+	if err := hwutil.RetryThrottled("CreateCluster", 5, func() error {
 		var e error
 		id, e = svc.CreateCluster(ctx, cce.CreateClusterInput{
 			Name:                 name,
 			Category:             categoryName(category), // turbo->Turbo, standard->CCE
 			Flavor:               "cce.s1.small",
-			Version:              envOr("CCE_DEPLOY_K8S_VERSION", ""),
+			Version:              hwutil.EnvOr("CCE_DEPLOY_K8S_VERSION", ""),
 			ContainerNetworkMode: networkMode,
 			ContainerNetworkCIDR: containerCIDR,
 			ENISubnets:           eniSubnets,
@@ -203,7 +201,7 @@ func createMgmtCluster(ctx context.Context, svc cce.Service, kubeconfigPath stri
 // for its nodes to become active, and downloads the kubeconfig. Shared by the
 // default create mode and the standalone -pool mode.
 func createPool(ctx context.Context, svc cce.Service, clusterID, kubeconfigPath string) {
-	keypair := envOr("CCE_DEPLOY_KEYPAIR")
+	keypair := hwutil.EnvOr("CCE_DEPLOY_KEYPAIR")
 	az := envDefault("CCE_DEPLOY_AZ", "cn-north-4a")
 	flavor := envDefault("CCE_DEPLOY_MGMT_FLAVOR", "")
 	if flavor == "" {
@@ -223,7 +221,7 @@ func createPool(ctx context.Context, svc cce.Service, clusterID, kubeconfigPath 
 	// AZ list; the first AZ becomes the pool's own AZ, the rest become extension
 	// scale groups (same flavor). Unset = single AZ (current default).
 	var extensionGroups []cce.ExtensionScaleGroupInput
-	if azs := splitCSV(envOr("CCE_DEPLOY_MGMT_AZS")); len(azs) > 1 {
+	if azs := splitCSV(hwutil.EnvOr("CCE_DEPLOY_MGMT_AZS")); len(azs) > 1 {
 		az = azs[0]
 		for i, a := range azs[1:] {
 			extensionGroups = append(extensionGroups, cce.ExtensionScaleGroupInput{
@@ -241,7 +239,7 @@ func createPool(ctx context.Context, svc cce.Service, clusterID, kubeconfigPath 
 	nodeBandwidth := int32Env("CCE_DEPLOY_PUBLIC_NODES_BANDWIDTH", 5)
 
 	var poolID string
-	if err := retryThrottled("CreateNodePool", 5, func() error {
+	if err := hwutil.RetryThrottled("CreateNodePool", 5, func() error {
 		var e error
 		poolID, e = svc.CreateNodePool(ctx, cce.CreateNodePoolInput{
 			ClusterID: clusterID,
@@ -249,17 +247,17 @@ func createPool(ctx context.Context, svc cce.Service, clusterID, kubeconfigPath 
 			Flavor:    flavor,
 			// OS is required (verified live: "OS:should not be empty"); valid
 			// value for current versions from official docs.
-			OS:                  "Huawei Cloud EulerOS 2.0",
-			RootVolumeSize:      40,
-			RootVolumeType:      "GPSSD",
+			OS:             "Huawei Cloud EulerOS 2.0",
+			RootVolumeSize: 40,
+			RootVolumeType: "GPSSD",
 			// Non-local-disk flavors (c6.large.2) require a data volume.
-			DataVolumes:         []cce.NodeVolumeInput{{Size: 100, Type: "GPSSD"}},
-			SSHKey:              keypair,
-			AvailabilityZone:    az,
-			InitialNodeCount:    nodeCount,
-			BillingMode:         0,
-			ExtensionScaleGroups: extensionGroups,
-			PublicIP:             publicNodes,
+			DataVolumes:           []cce.NodeVolumeInput{{Size: 100, Type: "GPSSD"}},
+			SSHKey:                keypair,
+			AvailabilityZone:      az,
+			InitialNodeCount:      nodeCount,
+			BillingMode:           0,
+			ExtensionScaleGroups:  extensionGroups,
+			PublicIP:              publicNodes,
 			PublicIPBandwidthSize: nodeBandwidth,
 		})
 		return e
@@ -412,15 +410,6 @@ func isTemporary(err error) bool {
 
 // --- helpers ---
 
-func envOr(keys ...string) string {
-	for _, k := range keys {
-		if v := os.Getenv(k); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 // envDefault returns the value of key, or def when the key is unset or empty.
 func envDefault(key, def string) string {
 	if v := os.Getenv(key); v != "" {
@@ -475,34 +464,4 @@ func splitCSV(s string) []string {
 		}
 	}
 	return out
-}
-
-// retryThrottled retries fn when the Huawei Cloud API reports 429
-// (APIGW.0308 throttling). Each retry sleeps to let the per-minute write
-// window drain before trying again, so repeated attempts do not keep
-// refreshing the counter (verified: retries count towards the limit).
-func retryThrottled(desc string, maxRetries int, fn func() error) error {
-	var err error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		err = fn()
-		if !isThrottled(err) {
-			return err
-		}
-		wait := time.Duration(60*(attempt+1)) * time.Second
-		fmt.Printf("%s: throttled (429), retrying in %v (attempt %d/%d)\n", desc, wait, attempt+1, maxRetries)
-		time.Sleep(wait)
-	}
-	return err
-}
-
-// isThrottled reports whether err is a Huawei Cloud 429 (APIGW.0308) error.
-func isThrottled(err error) bool {
-	if err == nil {
-		return false
-	}
-	var se *sdkerr.ServiceResponseError
-	if errors.As(err, &se) {
-		return se.StatusCode == 429
-	}
-	return false
 }

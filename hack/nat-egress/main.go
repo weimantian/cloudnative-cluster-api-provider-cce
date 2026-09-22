@@ -38,10 +38,11 @@ import (
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
 	eipv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2"
 	eipmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2/model"
-	eipRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2/region"
 	natv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/nat/v2"
 	natmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/nat/v2/model"
 	natRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/nat/v2/region"
+
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/hack/internal/hwutil"
 )
 
 const (
@@ -54,9 +55,9 @@ func main() {
 	gatewayID := flag.String("id", "", "NAT gateway ID (delete mode) or EIP ID (delete-eip mode)")
 	flag.Parse()
 
-	ak := envOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
-	sk := envOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
-	region := envOr("CCE_DEPLOY_REGION", "cn-north-4")
+	ak := hwutil.EnvOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
+	sk := hwutil.EnvOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
+	region := hwutil.EnvOr("CCE_DEPLOY_REGION", "cn-north-4")
 	if ak == "" || sk == "" {
 		fatal("CCE_DEPLOY_AK (or CLOUD_SDK_AK) and CCE_DEPLOY_SK (or CLOUD_SDK_SK) must be set")
 	}
@@ -66,8 +67,8 @@ func main() {
 
 	switch *mode {
 	case "create":
-		vpcID := envOr("CCE_DEPLOY_VPC")
-		subnetID := envOr("CCE_DEPLOY_SUBNET")
+		vpcID := hwutil.EnvOr("CCE_DEPLOY_VPC")
+		subnetID := hwutil.EnvOr("CCE_DEPLOY_SUBNET")
 		if vpcID == "" || subnetID == "" {
 			fatal("create mode requires CCE_DEPLOY_VPC and CCE_DEPLOY_SUBNET")
 		}
@@ -109,7 +110,7 @@ func doCreate(ctx context.Context, region, ak, sk string, natc *natv2.NatClient,
 
 	// 2. Create EIP, then NAT gateway, then poll ACTIVE.
 	eipc := newEipClient(region, ak, sk)
-	eipID, eipAddr, err := createPublicIP(ctx, eipc, eipNamePrefix)
+	eipID, eipAddr, err := hwutil.CreatePublicIP(ctx, eipc, eipNamePrefix)
 	if err != nil {
 		fatalf("create EIP: %v", err)
 	}
@@ -242,37 +243,9 @@ func newNatClient(region, ak, sk string) *natv2.NatClient {
 }
 
 func newEipClient(region, ak, sk string) *eipv2.EipClient {
-	r, err := eipRegion.SafeValueOf(region)
-	must(err, "resolve EIP region")
-	cred, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).SafeBuild()
-	must(err, "build credentials")
-	hc, err := eipv2.EipClientBuilder().WithRegion(r).WithCredential(cred).
-		WithHttpConfig(config.DefaultHttpConfig()).SafeBuild()
+	c, err := hwutil.NewEipClient(region, ak, sk)
 	must(err, "build EIP client")
-	return eipv2.NewEipClient(hc)
-}
-
-func createPublicIP(ctx context.Context, c *eipv2.EipClient, name string) (string, string, error) {
-	shareType := eipmodel.GetCreatePublicipBandwidthOptionShareTypeEnum().PER
-	bandwidth := eipmodel.CreatePublicipBandwidthOption{ShareType: shareType, Name: &name, Size: int32Ptr(5)}
-	publicip := eipmodel.CreatePublicipOption{Type: "5_bgp", Alias: &name}
-	resp, err := c.CreatePublicip(&eipmodel.CreatePublicipRequest{Body: &eipmodel.CreatePublicipRequestBody{
-		Bandwidth: &bandwidth,
-		Publicip:  &publicip,
-	}})
-	if err != nil {
-		return "", "", err
-	}
-	id, addr := "", ""
-	if resp.Publicip != nil {
-		if resp.Publicip.Id != nil {
-			id = *resp.Publicip.Id
-		}
-		if resp.Publicip.PublicIpAddress != nil {
-			addr = *resp.Publicip.PublicIpAddress
-		}
-	}
-	return id, addr, nil
+	return c
 }
 
 func deletePublicIP(ctx context.Context, c *eipv2.EipClient, id string) error {
@@ -360,7 +333,7 @@ func ensureSnatRule(ctx context.Context, region, ak, sk string, c *natv2.NatClie
 	if eipID == "" {
 		eipc := newEipClient(region, ak, sk)
 		var err error
-		eipID, _, err = createPublicIP(ctx, eipc, eipNamePrefix)
+		eipID, _, err = hwutil.CreatePublicIP(ctx, eipc, eipNamePrefix)
 		if err != nil {
 			fatalf("create EIP: %v", err)
 		}
@@ -402,17 +375,6 @@ func statusOf(gw *natmodel.NatGatewayResponseBody) string {
 		return gw.Status.Value()
 	}
 	return "-"
-}
-
-func int32Ptr(v int32) *int32 { return &v }
-
-func envOr(keys ...string) string {
-	for _, k := range keys {
-		if v := os.Getenv(k); v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func must(err error, ctx string) {

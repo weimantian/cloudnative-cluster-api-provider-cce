@@ -25,7 +25,6 @@ package main
 
 import (
 	"context"
-	"errors"
 	"flag"
 	"fmt"
 	"net"
@@ -35,7 +34,6 @@ import (
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
-	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/sdkerr"
 	ecsv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2"
 	ecsmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/model"
 	ecsRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/ecs/v2/region"
@@ -45,6 +43,8 @@ import (
 	vpcv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2"
 	vpcmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
 	vpcRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/region"
+
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/hack/internal/hwutil"
 )
 
 const (
@@ -62,12 +62,12 @@ func main() {
 	if _, _, err := net.ParseCIDR(*sshCIDR); err != nil {
 		fatal("-ssh-cidr must be a valid CIDR (e.g. 203.0.113.10/32)")
 	}
-	ak := envOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
-	sk := envOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
+	ak := hwutil.EnvOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
+	sk := hwutil.EnvOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
 	region := envDefault("CCE_DEPLOY_REGION", "cn-north-4")
 	az := envDefault("CCE_DEPLOY_AZ", "cn-north-4a")
-	vpcID := envOr("CCE_DEPLOY_VPC")
-	subnetID := envOr("CCE_DEPLOY_SUBNET")
+	vpcID := hwutil.EnvOr("CCE_DEPLOY_VPC")
+	subnetID := hwutil.EnvOr("CCE_DEPLOY_SUBNET")
 	flavor := envDefault("CCE_BASTION_FLAVOR", "s6.small.1")
 	if ak == "" || sk == "" {
 		fatal("CLOUD_SDK_AK/CCE_DEPLOY_AK and CLOUD_SDK_SK/CCE_DEPLOY_SK must be set")
@@ -101,7 +101,7 @@ func main() {
 	// 1. Keypair (private key saved locally for SSH).
 	if _, err := os.Stat(keyPath); os.IsNotExist(err) {
 		var resp *ecsmodel.NovaCreateKeypairResponse
-		if err := retryThrottled("create keypair", 3, func() error {
+		if err := hwutil.RetryThrottled("create keypair", 3, func() error {
 			var e error
 			resp, e = ecs.NovaCreateKeypair(&ecsmodel.NovaCreateKeypairRequest{Body: &ecsmodel.NovaCreateKeypairRequestBody{
 				Keypair: &ecsmodel.NovaCreateKeypairOption{Name: keyName},
@@ -199,7 +199,7 @@ func findSecurityGroup(ctx context.Context, vpc *vpcv2.VpcClient, vpcID, name st
 
 func createSecurityGroup(ctx context.Context, vpc *vpcv2.VpcClient, vpcID, name string) string {
 	var resp *vpcmodel.CreateSecurityGroupResponse
-	if err := retryThrottled("create security group", 3, func() error {
+	if err := hwutil.RetryThrottled("create security group", 3, func() error {
 		var e error
 		resp, e = vpc.CreateSecurityGroup(&vpcmodel.CreateSecurityGroupRequest{Body: &vpcmodel.CreateSecurityGroupRequestBody{
 			SecurityGroup: &vpcmodel.CreateSecurityGroupOption{Name: name, VpcId: strPtr(vpcID)},
@@ -218,7 +218,7 @@ func createSSHRule(ctx context.Context, vpc *vpcv2.VpcClient, sgID, cidr string)
 	proto := "tcp"
 	min := int32(22)
 	max := int32(22)
-	if err := retryThrottled("create ssh rule", 3, func() error {
+	if err := hwutil.RetryThrottled("create ssh rule", 3, func() error {
 		_, e := vpc.CreateSecurityGroupRule(&vpcmodel.CreateSecurityGroupRuleRequest{Body: &vpcmodel.CreateSecurityGroupRuleRequestBody{
 			SecurityGroupRule: &vpcmodel.CreateSecurityGroupRuleOption{
 				SecurityGroupId: sgID,
@@ -261,7 +261,7 @@ func createServer(ctx context.Context, ecs *ecsv2.EcsClient, vpcID, subnetID, sg
 		metadata["agency_name"] = agency
 	}
 	var resp *ecsmodel.CreateServersResponse
-	if err := retryThrottled("create server", 3, func() error {
+	if err := hwutil.RetryThrottled("create server", 3, func() error {
 		var e error
 		resp, e = ecs.CreateServers(&ecsmodel.CreateServersRequest{Body: &ecsmodel.CreateServersRequestBody{
 			Server: &ecsmodel.PrePaidServer{
@@ -273,14 +273,14 @@ func createServer(ctx context.Context, ecs *ecsv2.EcsClient, vpcID, subnetID, sg
 					SubnetId: &subnetID,
 				}},
 				KeyName:  strPtr(keyName),
-				Count:       &count,
-				Metadata:    metadata,
+				Count:    &count,
+				Metadata: metadata,
 				RootVolume: &ecsmodel.PrePaidServerRootVolume{
 					Volumetype: ecsmodel.GetPrePaidServerRootVolumeVolumetypeEnum().GPSSD,
 					Size:       &size,
 				},
-				SecurityGroups:    &[]ecsmodel.PrePaidServerSecurityGroup{{Id: &sgID}},
-				AvailabilityZone:  &az,
+				SecurityGroups:   &[]ecsmodel.PrePaidServerSecurityGroup{{Id: &sgID}},
+				AvailabilityZone: &az,
 				Publicip: &ecsmodel.PrePaidServerPublicip{
 					Eip: &ecsmodel.PrePaidServerEip{
 						Iptype: "5_bgp",
@@ -335,15 +335,6 @@ func publicIP(ctx context.Context, ecs *ecsv2.EcsClient, serverID string) string
 	return ""
 }
 
-func envOr(keys ...string) string {
-	for _, k := range keys {
-		if v := os.Getenv(k); v != "" {
-			return v
-		}
-	}
-	return ""
-}
-
 func envDefault(key, def string) string {
 	if v := os.Getenv(key); v != "" {
 		return v
@@ -369,34 +360,4 @@ func must(err error, what string) {
 func fatal(format string, args ...interface{}) {
 	fmt.Fprintf(os.Stderr, "ERROR: "+format+"\n", args...)
 	os.Exit(1)
-}
-
-// retryThrottled retries fn when the Huawei Cloud API reports 429
-// (APIGW.0308 throttling). Each retry sleeps to let the per-minute write
-// window drain before trying again, so repeated attempts do not keep
-// refreshing the counter (verified: retries count towards the limit).
-func retryThrottled(desc string, maxRetries int, fn func() error) error {
-	var err error
-	for attempt := 0; attempt <= maxRetries; attempt++ {
-		err = fn()
-		if !isThrottled(err) {
-			return err
-		}
-		wait := time.Duration(60*(attempt+1)) * time.Second
-		fmt.Printf("%s: throttled (429), retrying in %v (attempt %d/%d)\n", desc, wait, attempt+1, maxRetries)
-		time.Sleep(wait)
-	}
-	return err
-}
-
-// isThrottled reports whether err is a Huawei Cloud 429 (APIGW.0308) error.
-func isThrottled(err error) bool {
-	if err == nil {
-		return false
-	}
-	var se *sdkerr.ServiceResponseError
-	if errors.As(err, &se) {
-		return se.StatusCode == 429
-	}
-	return false
 }

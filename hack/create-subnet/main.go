@@ -38,6 +38,8 @@ import (
 	vpcv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2"
 	vpcmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/model"
 	vpcregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/vpc/v2/region"
+
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/hack/internal/hwutil"
 )
 
 func main() {
@@ -52,9 +54,9 @@ func main() {
 		fatal("-vpc is required")
 	}
 
-	ak := envOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
-	sk := envOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
-	region := envOr("CCE_DEPLOY_REGION", "cn-north-4")
+	ak := hwutil.EnvOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
+	sk := hwutil.EnvOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
+	region := hwutil.EnvOr("CCE_DEPLOY_REGION", "cn-north-4")
 	if ak == "" || sk == "" {
 		fatal("CCE_DEPLOY_AK (or CLOUD_SDK_AK) and CCE_DEPLOY_SK (or CLOUD_SDK_SK) must be set")
 	}
@@ -120,15 +122,6 @@ func firstHost(cidr string) (string, error) {
 	}
 	host := net.IPv4(ip4[0], ip4[1], ip4[2], ip4[3]+1)
 	return host.String(), nil
-}
-
-func envOr(keys ...string) string {
-	for _, k := range keys {
-		if v := os.Getenv(k); v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func fatal(msg string) {

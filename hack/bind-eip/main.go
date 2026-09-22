@@ -37,9 +37,8 @@ import (
 	ccev3 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/model"
 	cceRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/region"
-	eipv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2"
-	eipmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2/model"
-	eipRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2/region"
+
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/hack/internal/hwutil"
 )
 
 func main() {
@@ -49,9 +48,9 @@ func main() {
 		fatal("usage: go run ./hack/bind-eip -cluster <cluster-id>")
 	}
 
-	ak := envOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
-	sk := envOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
-	region := envOr("CCE_DEPLOY_REGION", "cn-north-4")
+	ak := hwutil.EnvOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
+	sk := hwutil.EnvOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
+	region := hwutil.EnvOr("CCE_DEPLOY_REGION", "cn-north-4")
 	if ak == "" || sk == "" {
 		fatal("CCE_DEPLOY_AK (or CLOUD_SDK_AK) and CCE_DEPLOY_SK (or CLOUD_SDK_SK) must be set")
 	}
@@ -80,7 +79,11 @@ func main() {
 	// 2. Bind EIP if no public endpoint yet.
 	if public == "" {
 		fmt.Println("no public endpoint — creating + binding EIP…")
-		eipID, eipAddr, err := createPublicIP(ctx, region, ak, sk, "capi-ops-eip")
+		eipc, err := hwutil.NewEipClient(region, ak, sk)
+		if err != nil {
+			fatalf("create EIP: %v", err)
+		}
+		eipID, eipAddr, err := hwutil.CreatePublicIP(ctx, eipc, "capi-ops-eip")
 		if err != nil {
 			fatalf("create EIP: %v", err)
 		}
@@ -179,43 +182,6 @@ func newCCEClient(region, ak, sk string) *ccev3.CceClient {
 	return ccev3.NewCceClient(hc)
 }
 
-func createPublicIP(ctx context.Context, regionID, ak, sk, name string) (string, string, error) {
-	region, err := eipRegion.SafeValueOf(regionID)
-	if err != nil {
-		return "", "", err
-	}
-	cred, err := basic.NewCredentialsBuilder().WithAk(ak).WithSk(sk).SafeBuild()
-	if err != nil {
-		return "", "", err
-	}
-	hc, err := eipv2.EipClientBuilder().WithRegion(region).WithCredential(cred).
-		WithHttpConfig(config.DefaultHttpConfig()).SafeBuild()
-	if err != nil {
-		return "", "", err
-	}
-	c := eipv2.NewEipClient(hc)
-	shareType := eipmodel.GetCreatePublicipBandwidthOptionShareTypeEnum().PER
-	bandwidth := eipmodel.CreatePublicipBandwidthOption{ShareType: shareType, Name: &name, Size: int32Ptr(5)}
-	publicip := eipmodel.CreatePublicipOption{Type: "5_bgp", Alias: &name}
-	resp, err := c.CreatePublicip(&eipmodel.CreatePublicipRequest{Body: &eipmodel.CreatePublicipRequestBody{
-		Bandwidth: &bandwidth,
-		Publicip:  &publicip,
-	}})
-	if err != nil {
-		return "", "", err
-	}
-	id, addr := "", ""
-	if resp.Publicip != nil {
-		if resp.Publicip.Id != nil {
-			id = *resp.Publicip.Id
-		}
-		if resp.Publicip.PublicIpAddress != nil {
-			addr = *resp.Publicip.PublicIpAddress
-		}
-	}
-	return id, addr, nil
-}
-
 func probeHTTPS(url string, timeout time.Duration) (bool, error) {
 	client := &http.Client{
 		Timeout: timeout,
@@ -243,17 +209,6 @@ func runtimeOf(r *model.Runtime) string {
 		class = r.RuntimeClass.Value()
 	}
 	return name + "/" + class
-}
-
-func int32Ptr(v int32) *int32 { return &v }
-
-func envOr(keys ...string) string {
-	for _, k := range keys {
-		if v := os.Getenv(k); v != "" {
-			return v
-		}
-	}
-	return ""
 }
 
 func must(err error, ctx string) {

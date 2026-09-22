@@ -24,11 +24,13 @@ import (
 	swrv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/swr/v2"
 	swrmodel "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/swr/v2/model"
 	swrRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/swr/v2/region"
+
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/hack/internal/hwutil"
 )
 
 func main() {
-	ak := envOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
-	sk := envOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
+	ak := hwutil.EnvOr("CCE_DEPLOY_AK", "CLOUD_SDK_AK")
+	sk := hwutil.EnvOr("CCE_DEPLOY_SK", "CLOUD_SDK_SK")
 	region := envDefault("CCE_DEPLOY_REGION", "cn-north-4")
 	org := envDefault("SWR_ORG", "capi_cce")
 	if ak == "" || sk == "" {
@@ -97,15 +99,6 @@ func ensureNamespace(swr *swrv2.SwrClient, ns string) error {
 }
 
 func registry(region string) string { return "swr." + region + ".myhuaweicloud.com" }
-
-func envOr(keys ...string) string {
-	for _, k := range keys {
-		if v := os.Getenv(k); v != "" {
-			return v
-		}
-	}
-	return ""
-}
 
 func envDefault(key, def string) string {
 	if v := os.Getenv(key); v != "" {
