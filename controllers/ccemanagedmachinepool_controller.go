@@ -30,8 +30,8 @@ import (
 	"sigs.k8s.io/controller-runtime/pkg/predicate"
 	"sigs.k8s.io/controller-runtime/pkg/reconcile"
 
-	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/common"
+	controlplanev1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/controlplane/v1beta2"
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/conditions"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
@@ -139,7 +139,6 @@ func (r *CCEManagedMachinePoolReconciler) Reconcile(ctx context.Context, req ctr
 		Client:                r.Client,
 		Cluster:               cluster,
 		CCEManagedMachinePool: pool,
-		ControllerName:        "ccemanagedmachinepool",
 	})
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "failed to build CMP scope")

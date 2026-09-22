@@ -24,6 +24,26 @@ import (
 	infrav1beta2 "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/api/infrastructure/v1beta2"
 )
 
+const defaultControllerNamespace = "capi-cce-system"
+
+// controllerNamespace is the namespace where the controller manager runs. It
+// locates controller-scoped Secrets (e.g. the static-identity Secret) and
+// defaults to the release namespace; deployments running under a different
+// namespace override it via SetControllerNamespace at startup.
+var controllerNamespace = defaultControllerNamespace
+
+// SetControllerNamespace overrides the namespace used to resolve
+// controller-scoped Secrets.
+func SetControllerNamespace(ns string) {
+	controllerNamespace = ns
+}
+
+// ControllerNamespace returns the namespace used to resolve
+// controller-scoped Secrets.
+func ControllerNamespace() string {
+	return controllerNamespace
+}
+
 // Credentials are the Huawei Cloud AK/SK used by the services layer.
 type Credentials struct {
 	AccessKey string
@@ -96,7 +116,7 @@ func ResolveIdentity(ctx context.Context, c client.Client, namespace string, ide
 			return nil, "", err
 		}
 		secret := &corev1.Secret{}
-		if err := c.Get(ctx, types.NamespacedName{Namespace: "capi-cce-system", Name: id.Spec.SecretRef}, secret); err != nil {
+		if err := c.Get(ctx, types.NamespacedName{Namespace: ControllerNamespace(), Name: id.Spec.SecretRef}, secret); err != nil {
 			return nil, "", errors.Wrapf(err, "failed to read static identity Secret %s", id.Spec.SecretRef)
 		}
 		ak, sk := string(secret.Data["accessKey"]), string(secret.Data["secretKey"])

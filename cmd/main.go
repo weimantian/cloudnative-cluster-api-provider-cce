@@ -31,6 +31,7 @@ import (
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/credentials"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/features"
 	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/metrics"
+	"github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/scope"
 	cceService "github.com/huaweicloud/cloudnative-cluster-api-provider-cce/internal/services/cce"
 )
 
@@ -116,6 +117,9 @@ func main() {
 	if validFlavors != "" {
 		infrav1beta2.ValidFlavors = splitCSV(validFlavors)
 	}
+	if ns := os.Getenv("POD_NAMESPACE"); ns != "" {
+		scope.SetControllerNamespace(ns)
+	}
 
 	mgr, err := ctrl.NewManager(ctrl.GetConfigOrDie(), manager.Options{
 		Scheme:                 scheme,
@@ -148,7 +152,6 @@ func main() {
 			ServiceFactory: func(regionID string, creds *credentials.Credentials) (cceService.Service, error) {
 				return cceService.NewClient(regionID, creds)
 			},
-			GlobalScope:   nil, // GC uses the legacy Region field below; region() falls back to it.
 			Interval:      gcInterval,
 			ResourceTypes: gcResourceTypes,
 			Region:        gcRegion,

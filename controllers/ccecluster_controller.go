@@ -115,10 +115,9 @@ func (r *CCEClusterReconciler) Reconcile(ctx context.Context, req ctrl.Request) 
 	}
 
 	scope, err := scope.NewCCEClusterScope(scope.CCEClusterScopeParams{
-		Client:         r.Client,
-		Cluster:        cluster,
-		CCECluster:     cceCluster,
-		ControllerName: "ccecluster",
+		Client:     r.Client,
+		Cluster:    cluster,
+		CCECluster: cceCluster,
 	})
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "failed to build CCECluster scope")

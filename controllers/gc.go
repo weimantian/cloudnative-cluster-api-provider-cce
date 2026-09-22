@@ -41,14 +41,7 @@ type GarbageCollector struct {
 	// than a per-cluster Secret/identity. Overridden in tests with a fake.
 	ServiceFactory func(regionID string, creds *credentials.Credentials) (cceService.Service, error)
 
-	// GlobalScope is the account-wide analog of the per-object scope.
-	// Holds region + controller name, built once at
-	// manager-start by main.go. The legacy Region field below is kept for
-	// backward compatibility; prefer scope.Region() when both are set.
-	GlobalScope *scope.GlobalScope
-
 	// Region the sweep enumerates (CCE is regional; a sweep covers one region).
-	// Deprecated: use GlobalScope.Region() instead.
 	Region string
 
 	// Interval between sweeps.
@@ -65,13 +58,8 @@ type GarbageCollector struct {
 // only runs on the leader, like the controllers.
 func (g *GarbageCollector) NeedLeaderElection() bool { return true }
 
-// region returns the GC's region from GlobalScope if set, else the legacy
-// Region field. Lets the GC migrate to the GlobalScope without
-// breaking existing setup.
+// region returns the region the GC sweeps.
 func (g *GarbageCollector) region() string {
-	if g.GlobalScope != nil {
-		return g.GlobalScope.Region()
-	}
 	return g.Region
 }
 
@@ -82,7 +70,7 @@ func (g *GarbageCollector) region() string {
 func (g *GarbageCollector) serviceForRegion(creds *credentials.Credentials) (cceService.Service, error) {
 	region := g.region()
 	if region == "" {
-		return nil, errors.New("garbage collector: no GC region configured (set --gc-region or GlobalScope.Region)")
+		return nil, errors.New("garbage collector: no GC region configured (set --gc-region)")
 	}
 	return g.ServiceFactory(region, creds)
 }
@@ -229,7 +217,7 @@ func skipGCAnnotation(c *clusterv1.Cluster) bool {
 // NAT). These are NOT covered by DeleteCluster's cascade options - e.g. a
 // managed NAT EIP whose Cluster CR was force-deleted - and would keep
 // billing. Only resources carrying the provider owned tag whose Cluster
-	// CR is gone are removed (whitelist-by-tag).
+// CR is gone are removed (whitelist-by-tag).
 //
 // Tracked clusters (CR present) skip phase-2 GC: the cloud resource is
 // considered managed by the tracked cluster, not orphan. opt-out

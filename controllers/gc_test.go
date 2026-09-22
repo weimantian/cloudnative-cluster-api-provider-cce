@@ -282,7 +282,7 @@ func TestGarbageCollectorSweepSkipsOptedOutCluster(t *testing.T) {
 // TestGarbageCollectorRegionWiring pins the production wiring: the region the
 // sweeper passes to ServiceFactory is the configured one, and a GC with an
 // empty region fails loudly instead of silently sweeping nothing.
-// Regression: main.go never set Region/GlobalScope, so region() returned "" and
+// Regression: main.go never set Region, so region() returned "" and
 // the sweep no-op'd — which the old tests missed by setting Region directly.
 func TestGarbageCollectorRegionWiring(t *testing.T) {
 	creds := &credentials.Credentials{AccessKey: "test-ak", SecretKey: "test-sk"}

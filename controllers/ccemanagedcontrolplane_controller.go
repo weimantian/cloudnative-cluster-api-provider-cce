@@ -7,12 +7,12 @@ Licensed under the MIT No Attribution (MIT-0) License.
 package controllers
 
 import (
-	"time"
 	"context"
 	"net/url"
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/pkg/errors"
 	corev1 "k8s.io/api/core/v1"
@@ -123,7 +123,7 @@ func (r *CCEManagedControlPlaneReconciler) newIAMService(regionID string, creds 
 
 // Reconcile implements the reconcile loop of CCEManagedControlPlane. Uses
 // the per-reconcile CCEManagedControlPlaneScope to hold the patchHelper,
-// CR references and ControllerName. The
+// CR references. The
 // scope's PatchObject() (called via defer) atomically updates
 // status.observedGeneration via patch.WithStatusObservedGeneration.
 func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ctrl.Request) (res ctrl.Result, reterr error) {
@@ -184,7 +184,6 @@ func (r *CCEManagedControlPlaneReconciler) Reconcile(ctx context.Context, req ct
 		Client:                 r.Client,
 		Cluster:                cluster,
 		CCEManagedControlPlane: cp,
-		ControllerName:         "ccemanagedcontrolplane",
 	})
 	if err != nil {
 		return ctrl.Result{}, errors.Wrap(err, "failed to build CCM scope")

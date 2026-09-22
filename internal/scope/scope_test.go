@@ -222,19 +222,15 @@ func newFakeClient() client.Client {
 func TestNewCCEClusterScope_RejectsNil(t *testing.T) {
 	cases := map[string]func() error{
 		"nil cluster": func() error {
-			_, err := NewCCEClusterScope(CCEClusterScopeParams{Client: newFakeClient(), Cluster: nil, CCECluster: newCCECluster(), ControllerName: "x"})
+			_, err := NewCCEClusterScope(CCEClusterScopeParams{Client: newFakeClient(), Cluster: nil, CCECluster: newCCECluster()})
 			return err
 		},
 		"nil CCECluster": func() error {
-			_, err := NewCCEClusterScope(CCEClusterScopeParams{Client: newFakeClient(), Cluster: newCluster(), CCECluster: nil, ControllerName: "x"})
-			return err
-		},
-		"empty controllerName": func() error {
-			_, err := NewCCEClusterScope(CCEClusterScopeParams{Client: newFakeClient(), Cluster: newCluster(), CCECluster: newCCECluster(), ControllerName: ""})
+			_, err := NewCCEClusterScope(CCEClusterScopeParams{Client: newFakeClient(), Cluster: newCluster(), CCECluster: nil})
 			return err
 		},
 		"nil client": func() error {
-			_, err := NewCCEClusterScope(CCEClusterScopeParams{Client: nil, Cluster: newCluster(), CCECluster: newCCECluster(), ControllerName: "x"})
+			_, err := NewCCEClusterScope(CCEClusterScopeParams{Client: nil, Cluster: newCluster(), CCECluster: newCCECluster()})
 			return err
 		},
 	}
@@ -248,7 +244,6 @@ func TestNewCCEClusterScope_RejectsNil(t *testing.T) {
 func TestNewCCEClusterScope_HappyPath(t *testing.T) {
 	s, err := NewCCEClusterScope(CCEClusterScopeParams{
 		Client: newFakeClient(), Cluster: newCluster(), CCECluster: newCCECluster(),
-		ControllerName: "ccecluster",
 	})
 	if err != nil {
 		t.Fatalf("NewCCEClusterScope: %v", err)
@@ -261,7 +256,6 @@ func TestNewCCEClusterScope_HappyPath(t *testing.T) {
 func TestNewCCMScope_HappyPath(t *testing.T) {
 	s, err := NewCCEManagedControlPlaneScope(CCEManagedControlPlaneScopeParams{
 		Client: newFakeClient(), Cluster: newCluster(), CCEManagedControlPlane: newCCM(),
-		ControllerName: "ccm",
 	})
 	if err != nil {
 		t.Fatalf("NewCCMScope: %v", err)
@@ -274,34 +268,11 @@ func TestNewCCMScope_HappyPath(t *testing.T) {
 func TestNewCMPScope_HappyPath(t *testing.T) {
 	s, err := NewCCEManagedMachinePoolScope(CCEManagedMachinePoolScopeParams{
 		Client: newFakeClient(), Cluster: newCluster(), CCEManagedMachinePool: newCMP(),
-		ControllerName: "cmp",
 	})
 	if err != nil {
 		t.Fatalf("NewCMPScope: %v", err)
 	}
 	if err := s.Close(context.Background()); err != nil {
 		t.Errorf("Close: %v", err)
-	}
-}
-
-func TestNewGlobalScope_RejectsNil(t *testing.T) {
-	if _, err := NewGlobalScope(GlobalScopeParams{Region: "", ControllerName: "x"}); err == nil {
-		t.Error("expected error for empty region")
-	}
-	if _, err := NewGlobalScope(GlobalScopeParams{Region: "cn-north-4", ControllerName: ""}); err == nil {
-		t.Error("expected error for empty controllerName")
-	}
-}
-
-func TestNewGlobalScope_HappyPath(t *testing.T) {
-	s, err := NewGlobalScope(GlobalScopeParams{Region: "cn-north-4", ControllerName: "gc"})
-	if err != nil {
-		t.Fatalf("NewGlobalScope: %v", err)
-	}
-	if s.Region() != "cn-north-4" {
-		t.Errorf("Region: %s", s.Region())
-	}
-	if s.ControllerName() != "gc" {
-		t.Errorf("ControllerName: %s", s.ControllerName())
 	}
 }

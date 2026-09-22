@@ -22,7 +22,6 @@ type CCEManagedControlPlaneScopeParams struct {
 	Client                 client.Client
 	Cluster                *clusterv1.Cluster
 	CCEManagedControlPlane *controlplanev1beta2.CCEManagedControlPlane
-	ControllerName         string
 }
 
 // CCEManagedControlPlaneScope is the per-reconcile context for the
@@ -45,9 +44,6 @@ func NewCCEManagedControlPlaneScope(params CCEManagedControlPlaneScopeParams) (*
 	}
 	if params.CCEManagedControlPlane == nil {
 		return nil, errors.New("CCEManagedControlPlane is required")
-	}
-	if params.ControllerName == "" {
-		return nil, errors.New("controllerName is required")
 	}
 	if params.Client == nil {
 		return nil, errors.New("client is required")

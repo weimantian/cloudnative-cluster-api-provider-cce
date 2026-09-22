@@ -19,10 +19,9 @@ import (
 
 // CCEClusterScopeParams is the input for NewCCEClusterScope.
 type CCEClusterScopeParams struct {
-	Client         client.Client
-	Cluster        *clusterv1.Cluster
-	CCECluster     *infrav1beta2.CCECluster
-	ControllerName string
+	Client     client.Client
+	Cluster    *clusterv1.Cluster
+	CCECluster *infrav1beta2.CCECluster
 }
 
 // CCEClusterScope is the per-reconcile context for the CCECluster controller.
@@ -42,9 +41,6 @@ func NewCCEClusterScope(params CCEClusterScopeParams) (*CCEClusterScope, error) 
 	if params.CCECluster == nil {
 		return nil, errors.New("CCECluster is required")
 	}
-	if params.ControllerName == "" {
-		return nil, errors.New("controllerName is required")
-	}
 	if params.Client == nil {
 		return nil, errors.New("client is required")
 	}
@@ -61,13 +57,9 @@ func NewCCEClusterScope(params CCEClusterScopeParams) (*CCEClusterScope, error) 
 	}, nil
 }
 
-// PatchObject persists the CCECluster (spec + status).
-// start of reconcile (so the controller can compare against GenerationAtStart
-
 // PatchObject persists the CCECluster (spec + status). Note: CCECluster
 // does not yet carry a status.observedGeneration field — controllers that
 // need obs/gen requeue must use CCEManagedControlPlaneScope instead.
-// must use CCEManagedControlPlaneScope instead.
 func (s *CCEClusterScope) PatchObject(ctx context.Context) error {
 	return s.patchHelper.Patch(ctx, s.CCECluster)
 }
