@@ -20,10 +20,6 @@ import (
 // Official CCE error codes (from the public ErrorCode reference; the catalog
 // is large — extend as needed).
 const (
-	// ErrCodeInvalidRequest: 400 Invalid request.
-	ErrCodeInvalidRequest = "CCE.01400001"
-	// ErrCodeSubnetNotFoundInVPC: 400 Subnet not found in the VPC.
-	ErrCodeSubnetNotFoundInVPC = "CCE.01400002"
 	// ErrCodeContainerNetworkCIDRConflict: 400 Container network CIDR blocks conflict.
 	ErrCodeContainerNetworkCIDRConflict = "CCE.01400005"
 	// ErrCodeInsufficientClusterQuota: 400 Insufficient cluster quota.
@@ -60,10 +56,6 @@ const (
 	ErrCodeResourceAlreadyExists = "CCE.01409001"
 	// ErrCodeResourceVersionExpired: 409 the resource version is expired.
 	ErrCodeResourceVersionExpired = "CCE.01409002"
-	// ErrCodeNodePoolStateNotAllowDelete: 403 current node pool status does not allow deletion.
-	ErrCodeNodePoolStateNotAllowDelete = "CCE.01403003"
-	// ErrCodeClusterStateNotAllowNodePoolDelete: 403 cluster status does not allow node pool deletion.
-	ErrCodeClusterStateNotAllowNodePoolDelete = "CCE.01403009"
 	// ErrCodeResourceLocked: 429 Resource locked by other requests.
 	ErrCodeResourceLocked = "CCE.01429002"
 	// ErrCodeConcurrencyLimit: 429 the concurrency limit of tasks has been reached.
@@ -78,6 +70,10 @@ const (
 	// (CCE_CM.0410, observed live; the CCE_CM.* family is not listed in the
 	// official error-code table but is returned by the platform).
 	ErrCodeContainerCIDRConflictCM = "CCE_CM.0410"
+	// ErrCodeScaleNoOp: 400 scale already satisfied (CCE_CM.0004, observed
+	// live; the CCE_CM.* family is not listed in the official error-code
+	// table but is returned by the platform as "No scale task needed").
+	ErrCodeScaleNoOp = "CCE_CM.0004"
 )
 
 // IsNotFound reports whether err is a "resource not found" SDK error.
@@ -175,6 +171,10 @@ func ServiceResponseError(err error) (code string, message string) {
 // initialNodeCount == desired, or when a transient 0 node count races a scale.
 // It means the scale is already satisfied, not a real failure (verified live).
 func IsScaleNoOp(err error) bool {
-	_, message := ServiceResponseError(err)
+	code, message := ServiceResponseError(err)
+	if code != "" {
+		return code == ErrCodeScaleNoOp
+	}
+	// No code available (non-SDK error): fall back to the literal message.
 	return strings.Contains(message, "No scale task needed")
 }

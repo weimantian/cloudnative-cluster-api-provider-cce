@@ -90,7 +90,7 @@ func TestIsPermissionDenied(t *testing.T) {
 		t.Error("401 must be PermissionDenied")
 	}
 	// Transient state-conflict 403 codes must NOT be permission errors.
-	for _, c := range []string{ErrCodeNodePoolStateNotAllowDelete, ErrCodeClusterStateNotAllowNodePoolDelete} {
+	for _, c := range []string{"CCE.01403003", "CCE.01403009"} {
 		if IsPermissionDenied(sdk(c, 403)) {
 			t.Errorf("%s is a transient state conflict, must not be PermissionDenied", c)
 		}
@@ -115,16 +115,31 @@ func TestServiceResponseError(t *testing.T) {
 
 func TestIsScaleNoOp(t *testing.T) {
 	noop := errors.Wrap(&sdkerr.ServiceResponseError{
-		StatusCode: 400, ErrorCode: "CCE_CM.0004",
-		ErrorMessage: "Request is invalid, No scale task needed with desired node count 1",
+		StatusCode: 400, ErrorCode: ErrCodeScaleNoOp,
+		ErrorMessage: "No scale task needed with desired node count 1",
 	}, "wrapped")
 	if !IsScaleNoOp(noop) {
-		t.Error("expected IsScaleNoOp=true for 'No scale task needed'")
+		t.Error("expected IsScaleNoOp=true for CCE_CM.0004")
 	}
+	// Code match is authoritative regardless of the message text.
+	sameCode := errors.Wrap(&sdkerr.ServiceResponseError{
+		StatusCode: 400, ErrorCode: ErrCodeScaleNoOp, ErrorMessage: "some other error",
+	}, "wrapped")
+	if !IsScaleNoOp(sameCode) {
+		t.Error("expected IsScaleNoOp=true for CCE_CM.0004 regardless of message")
+	}
+	// A different code must not match.
 	other := errors.Wrap(&sdkerr.ServiceResponseError{
-		StatusCode: 400, ErrorCode: "CCE_CM.0004", ErrorMessage: "some other error",
+		StatusCode: 400, ErrorCode: "CCE.01400001", ErrorMessage: "No scale task needed",
 	}, "wrapped")
 	if IsScaleNoOp(other) {
-		t.Error("expected IsScaleNoOp=false for unrelated error")
+		t.Error("expected IsScaleNoOp=false for unrelated code")
+	}
+	// Empty code: fall back to the legacy literal-message match.
+	fallback := errors.Wrap(&sdkerr.ServiceResponseError{
+		StatusCode: 400, ErrorCode: "", ErrorMessage: "No scale task needed",
+	}, "wrapped")
+	if !IsScaleNoOp(fallback) {
+		t.Error("expected IsScaleNoOp=true for message-only fallback")
 	}
 }
