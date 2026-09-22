@@ -312,3 +312,13 @@ func TestBindAndUnbindClusterEip(t *testing.T) {
 		}
 	})
 }
+
+func TestDeleteNodePoolToleratesAlreadyDeleting(t *testing.T) {
+	rt := &recordingCCERT{t: t, routes: []cceRoute{
+		{method: http.MethodDelete, sub: "/nodepools/np-1", status: http.StatusForbidden,
+			body: `{"error_code":"CCE.01403003","error_msg":"Nodepool phase is Deleting, forbidden to delete nodepool"}`},
+	}}
+	if err := newTestCCEClient(t, rt).DeleteNodePool(context.Background(), "cluster-1", "np-1"); err != nil {
+		t.Errorf("an already-deleting pool must be a no-op, got %v", err)
+	}
+}

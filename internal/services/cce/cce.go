@@ -1337,6 +1337,16 @@ func (s *Client) DeleteNodePool(_ context.Context, clusterID, nodePoolID string)
 		if clouderrors.IsNotFound(err) {
 			return nil
 		}
+		// The pool is already Deleting (CCE.01403003): treat the delete as a
+		// no-op so the caller keeps polling and the finalizer can be released;
+		// erroring here loops the reconcile forever (observed live).
+		if clouderrors.IsNodePoolDeleting(err) {
+			return nil
+		}
+		return errors.Wrapf(err, "DeleteNodePool %s failed", nodePoolID)
+		if clouderrors.IsNotFound(err) {
+			return nil
+		}
 		return errors.Wrapf(err, "DeleteNodePool %s failed", nodePoolID)
 	}
 	return nil

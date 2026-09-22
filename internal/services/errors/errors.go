@@ -74,6 +74,10 @@ const (
 	// live; the CCE_CM.* family is not listed in the official error-code
 	// table but is returned by the platform as "No scale task needed").
 	ErrCodeScaleNoOp = "CCE_CM.0004"
+	// ErrCodeNodePoolStateNotAllowDelete: 403 the node pool's current phase
+	// does not allow deletion — in practice it is already Deleting. Idempotent
+	// delete paths treat it as "deletion already under way", not an error.
+	ErrCodeNodePoolStateNotAllowDelete = "CCE.01403003"
 )
 
 // IsNotFound reports whether err is a "resource not found" SDK error.
@@ -81,6 +85,18 @@ func IsNotFound(err error) bool {
 	var sdkErr *sdkerr.ServiceResponseError
 	if errors.As(err, &sdkErr) {
 		return sdkErr.StatusCode == 404 || sdkErr.ErrorCode == ErrCodeResourceNotFound
+	}
+	return false
+}
+
+// IsNodePoolDeleting reports whether err is the "node pool phase does not
+// allow delete" rejection (CCE.01403003). The pool is already Deleting (or in a
+// transient state that will become deletable), so an idempotent delete should
+// treat it as a no-op and keep polling rather than fail the reconcile.
+func IsNodePoolDeleting(err error) bool {
+	var sdkErr *sdkerr.ServiceResponseError
+	if errors.As(err, &sdkErr) {
+		return sdkErr.ErrorCode == ErrCodeNodePoolStateNotAllowDelete
 	}
 	return false
 }
