@@ -128,13 +128,13 @@ spec:
                 type: array
               dedicatedHostId:
                 description: |-
-                  DedicatedHostId is the dedicated host (专属主机) ID for the nodes
+                  DedicatedHostID is the dedicated host (专属主机) ID for the nodes
                   (nodeTemplate.dedicatedHostId). Only effective for dedicated-host
                   flavors.
                 type: string
               ecsGroupId:
                 description: |-
-                  EcsGroupId is the ECS server group ID (云服务器组) for the nodes
+                  EcsGroupID is the ECS server group ID (云服务器组) for the nodes
                   (nodeTemplate.ecsGroupId). Used to place nodes according to the group's
                   affinity/anti-affinity policy.
                 type: string
