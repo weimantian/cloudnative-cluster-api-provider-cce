@@ -7,8 +7,35 @@ resources:
   - ../rbac
   - ../manager
   # Webhook resources (configurations + service). The serving certificate is
-  # delivered by cert-manager (../certmanager): the webhook configs carry the
-  # cert-manager.io/inject-ca-from annotation so caBundle is injected, and the
-  # deployment's webhook-service-cert Secret is signed automatically.
+  # delivered by cert-manager (../certmanager): the webhook configurations get
+  # the cert-manager.io/inject-ca-from annotation (patched below) so their
+  # caBundle is injected, and the deployment's webhook-service-cert Secret is
+  # signed automatically.
   - ../certmanager
   - ../webhook
+
+# Inject the serving-cert CA into the admission webhook configurations'
+# caBundle. The annotation cannot be set in ../certmanager (it does not own
+# the webhook resources) nor ../webhook (it does not own the Certificate),
+# so it is patched here where both are in scope.
+patches:
+  - target:
+      group: admissionregistration.k8s.io
+      version: v1
+      kind: MutatingWebhookConfiguration
+      name: mutating-webhook-configuration
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          cert-manager.io/inject-ca-from: capi-cce-system/serving-cert
+  - target:
+      group: admissionregistration.k8s.io
+      version: v1
+      kind: ValidatingWebhookConfiguration
+      name: validating-webhook-configuration
+    patch: |-
+      - op: add
+        path: /metadata/annotations
+        value:
+          cert-manager.io/inject-ca-from: capi-cce-system/serving-cert

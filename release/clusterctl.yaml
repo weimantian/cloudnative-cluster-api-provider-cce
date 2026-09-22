@@ -1,15 +1,19 @@
 # Pre-configured clusterctl.yaml — all 4 providers fetch components from
 # this project's GitHub release/; component images already point to public SWR.
+#
+# NOTE: clusterctl expects the URL form `releases/<tag>/<asset>` (NOT
+# `releases/download/<tag>/<asset>` — the /download/ form is for plain HTTP
+# clients like curl and makes clusterctl fail with "release not found").
 providers:
   - name: "cluster-api"
-    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/core-components.yaml"
+    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/v0.1.2/core-components.yaml"
     type: "CoreProvider"
   - name: "kubeadm"
-    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/bootstrap-components.yaml"
+    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/v0.1.2/bootstrap-components.yaml"
     type: "BootstrapProvider"
   - name: "kubeadm"
-    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/control-plane-components.yaml"
+    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/v0.1.2/control-plane-components.yaml"
     type: "ControlPlaneProvider"
   - name: "cce"
-    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/download/v0.1.1/infrastructure-components.yaml"
+    url: "https://github.com/weimantian/cloudnative-cluster-api-provider-cce/releases/v0.1.2/infrastructure-components.yaml"
     type: "InfrastructureProvider"

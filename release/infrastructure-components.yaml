@@ -1541,6 +1541,12 @@ spec:
                   - type
                   type: object
                 type: array
+              controlPlaneEIPID:
+                description: |-
+                  ControlPlaneEIPID is the public EIP bound to the CCE API server when
+                  spec.endpointAccess.public is true (the provider creates and binds it).
+                  Persisted so the delete path can unbind and release it.
+                type: string
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint is the API server endpoint.
                 minProperties: 1
@@ -3128,6 +3134,8 @@ spec:
 apiVersion: admissionregistration.k8s.io/v1
 kind: MutatingWebhookConfiguration
 metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: capi-cce-system/serving-cert
   name: mutating-webhook-configuration
 webhooks:
 - admissionReviewVersions:
@@ -3234,6 +3242,8 @@ webhooks:
 apiVersion: admissionregistration.k8s.io/v1
 kind: ValidatingWebhookConfiguration
 metadata:
+  annotations:
+    cert-manager.io/inject-ca-from: capi-cce-system/serving-cert
   name: validating-webhook-configuration
 webhooks:
 - admissionReviewVersions:
