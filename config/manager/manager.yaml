@@ -26,7 +26,6 @@ spec:
           # The image tag is :latest (a moving tag); Always so an upgraded
           # release is actually pulled instead of reusing the node's cached tag.
           imagePullPolicy: Always
-          imagePullPolicy: IfNotPresent
           args:
             - --leader-elect
             - --health-probe-bind-address=:8081
