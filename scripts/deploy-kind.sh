@@ -23,7 +23,7 @@
 # Env overrides (all optional):
 #   IMG=...            provider image tag (default cluster-api-cce-controller:dev)
 #   KIND_CLUSTER=...   kind cluster name (default cce-mgmt)
-#   CCE_PROVIDER_VERSION=v0.1.1   provider version string for clusterctl
+#   CCE_PROVIDER_VERSION=v0.1.2   provider version string for clusterctl
 #
 # After this script, create the credentials Secret + workload cluster manifest
 # (see README Step-by-Step Deployment steps 5-6, or config/samples/).
@@ -32,7 +32,7 @@ set -euo pipefail
 
 IMG="${IMG:-cluster-api-cce-controller:dev}"
 KIND_CLUSTER="${KIND_CLUSTER:-cce-mgmt}"
-CCE_PROVIDER_VERSION="${CCE_PROVIDER_VERSION:-v0.1.1}"
+CCE_PROVIDER_VERSION="${CCE_PROVIDER_VERSION:-v0.1.2}"
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 ARTIFACTS="$REPO_ROOT/_artifacts"
