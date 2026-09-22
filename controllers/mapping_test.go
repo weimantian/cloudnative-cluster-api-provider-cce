@@ -75,27 +75,27 @@ func TestToCreateNodePoolInputMultipleDataVolumes(t *testing.T) {
 func TestToCreateNodePoolInputLaunchTemplate(t *testing.T) {
 	pool := &infrav1beta2.CCEManagedMachinePool{
 		Spec: infrav1beta2.CCEManagedMachinePoolSpec{
-			EcsGroupId:      "ecs-group-1",
+			EcsGroupID:      "ecs-group-1",
 			FaultDomain:     "fault-domain-1",
-			DedicatedHostId: "dh-1",
+			DedicatedHostID: "dh-1",
 		},
 	}
 	in := toCreateNodePoolInput("cluster-1", pool, nil)
-	if in.EcsGroupId != "ecs-group-1" {
-		t.Errorf("expected EcsGroupId=ecs-group-1, got %s", in.EcsGroupId)
+	if in.EcsGroupID != "ecs-group-1" {
+		t.Errorf("expected EcsGroupID=ecs-group-1, got %s", in.EcsGroupID)
 	}
 	if in.FaultDomain != "fault-domain-1" {
 		t.Errorf("expected FaultDomain=fault-domain-1, got %s", in.FaultDomain)
 	}
-	if in.DedicatedHostId != "dh-1" {
-		t.Errorf("expected DedicatedHostId=dh-1, got %s", in.DedicatedHostId)
+	if in.DedicatedHostID != "dh-1" {
+		t.Errorf("expected DedicatedHostID=dh-1, got %s", in.DedicatedHostID)
 	}
 
 	// Empty launch-template fields -> empty strings (omitted by SDK mapping).
 	empty := toCreateNodePoolInput("cluster-1", &infrav1beta2.CCEManagedMachinePool{}, nil)
-	if empty.EcsGroupId != "" || empty.FaultDomain != "" || empty.DedicatedHostId != "" {
+	if empty.EcsGroupID != "" || empty.FaultDomain != "" || empty.DedicatedHostID != "" {
 		t.Errorf("expected empty launch-template fields, got %s/%s/%s",
-			empty.EcsGroupId, empty.FaultDomain, empty.DedicatedHostId)
+			empty.EcsGroupID, empty.FaultDomain, empty.DedicatedHostID)
 	}
 }
 

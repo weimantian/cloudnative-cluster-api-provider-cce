@@ -10,9 +10,9 @@ import (
 	"context"
 	stderrors "errors"
 	"fmt"
+	"k8s.io/utils/ptr"
 	"net/http"
 	"net/netip"
-	"k8s.io/utils/ptr"
 
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/auth/basic"
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
@@ -140,7 +140,6 @@ func NewManager(regionID string, creds *credentials.Credentials) (*Manager, erro
 	return &Manager{vpc: vpcv2.NewVpcClient(vpcHC), nat: natv2.NewNatClient(natHC), eip: eipv2.NewEipClient(eipHC)}, nil
 }
 
-// ReconcileVpc implements ManagerInterface.
 // SetAdditionalTags implements ManagerInterface.
 func (m *Manager) SetAdditionalTags(tags map[string]string) {
 	m.additionalTags = tags
@@ -995,4 +994,3 @@ func strPtrOrNil(s string) *string {
 	}
 	return &s
 }
-

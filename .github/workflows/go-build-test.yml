@@ -2,10 +2,10 @@ name: Go Build & Test
 
 on:
   pull_request:
-    paths: ['**.go', 'go.mod', 'go.sum', 'Makefile']
+    paths: ['**.go', 'go.mod', 'go.sum', 'Makefile', 'staticcheck.conf']
   push:
     branches: [main]
-    paths: ['**.go', 'go.mod', 'go.sum', 'Makefile']
+    paths: ['**.go', 'go.mod', 'go.sum', 'Makefile', 'staticcheck.conf']
 
 permissions:
   contents: read
@@ -31,6 +31,18 @@ jobs:
 
       - name: Vet
         run: go vet ./...
+
+      - name: gofmt check
+        run: |
+          files=$(gofmt -l cmd api controllers internal test)
+          if [ -n "$files" ]; then
+            echo "gofmt reported unformatted files:"; echo "$files"; exit 1
+          fi
+
+      - name: staticcheck
+        run: |
+          go install honnef.co/go/tools/cmd/staticcheck@2026.2.1
+          staticcheck ./...
 
       - name: Set up envtest binaries
         run: |

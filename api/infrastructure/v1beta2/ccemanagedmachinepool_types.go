@@ -126,11 +126,11 @@ type CCEManagedMachinePoolSpec struct {
 	// +optional
 	NodeRepair *NodeRepairSpec `json:"nodeRepair,omitempty"`
 
-	// EcsGroupId is the ECS server group ID (云服务器组) for the nodes
+	// EcsGroupID is the ECS server group ID (云服务器组) for the nodes
 	// (nodeTemplate.ecsGroupId). Used to place nodes according to the group's
 	// affinity/anti-affinity policy.
 	// +optional
-	EcsGroupId string `json:"ecsGroupId,omitempty"`
+	EcsGroupID string `json:"ecsGroupId,omitempty"`
 
 	// FaultDomain is the fault domain (故障域) for the nodes
 	// (nodeTemplate.faultDomain). Enables single-AZ multi-fault-domain
@@ -138,11 +138,11 @@ type CCEManagedMachinePoolSpec struct {
 	// +optional
 	FaultDomain string `json:"faultDomain,omitempty"`
 
-	// DedicatedHostId is the dedicated host (专属主机) ID for the nodes
+	// DedicatedHostID is the dedicated host (专属主机) ID for the nodes
 	// (nodeTemplate.dedicatedHostId). Only effective for dedicated-host
 	// flavors.
 	// +optional
-	DedicatedHostId string `json:"dedicatedHostId,omitempty"`
+	DedicatedHostID string `json:"dedicatedHostId,omitempty"`
 
 	// PreInstall is the base64-encoded script run before node installation
 	// (nodeTemplate.extendParam["alpha.cce/preInstall"]). Mirrors the CCE node

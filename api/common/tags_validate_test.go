@@ -38,9 +38,9 @@ func TestTagsValidateSlashAllowedInValue(t *testing.T) {
 	if errs := (Tags{"k": "a/b"}).Validate(field.NewPath("spec", "additionalTags")); len(errs) != 0 {
 		t.Fatalf("'/' in a value must be allowed, got %v", errs)
 	}
-	}
+}
 
-		func TestTagsValidateRejects(t *testing.T) {
+func TestTagsValidateRejects(t *testing.T) {
 	longKey := Tags{}
 	longKey[strings.Repeat("k", 129)] = "v"
 	longValue := Tags{}

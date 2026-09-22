@@ -150,12 +150,12 @@ type CreateNodePoolInput struct {
 	// Tags are additional node pool tags (mapped to CCE userTags); the owned
 	// tag is always added by the service.
 	Tags map[string]string
-	// EcsGroupId maps to nodeTemplate.ecsGroupId (ECS server group).
-	EcsGroupId string
+	// EcsGroupID maps to nodeTemplate.ecsGroupId (ECS server group).
+	EcsGroupID string
 	// FaultDomain maps to nodeTemplate.faultDomain.
 	FaultDomain string
-	// DedicatedHostId maps to nodeTemplate.dedicatedHostId.
-	DedicatedHostId string
+	// DedicatedHostID maps to nodeTemplate.dedicatedHostId.
+	DedicatedHostID string
 	// PreInstall is the base64-encoded pre-install script
 	// (nodeTemplate.extendParam["alpha.cce/preInstall"]).
 	PreInstall string

@@ -50,7 +50,6 @@ var tagKeyRe = regexp.MustCompile(`^[\p{L}\p{N}\s_.:=+@\-]+$`)
 // tagValueRe matches a valid tag value (same charset plus '/').
 var tagValueRe = regexp.MustCompile(`^[\p{L}\p{N}\s_.:/=+@\-]*$`)
 
-
 // Validate checks that t satisfies the Huawei Cloud resource-tag constraints.
 // The owned tag is counted toward the per-resource cap only if it is present
 // in t (the service always adds it, so an explicit entry here is redundant

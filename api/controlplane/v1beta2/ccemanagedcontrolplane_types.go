@@ -332,7 +332,7 @@ type EndpointAccessSpec struct {
 	// exposes a VPC-internal endpoint and cannot disable it (platform-managed
 	// control plane), so this field defaults to true and false is rejected by
 	// the webhook. It exists for parity (EndpointAccess exposes
-// public/private).
+	// public/private).
 	// +kubebuilder:default=true
 	// +optional
 	Private bool `json:"private,omitempty"`

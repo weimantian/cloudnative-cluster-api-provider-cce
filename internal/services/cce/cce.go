@@ -152,50 +152,48 @@ func buildAuxClients(c *Client, regionID string, cred auth.ICredential) error {
 }
 
 // ShowCluster implements Service.
-	func (s *Client) ShowCluster(_ context.Context, clusterID string) (*ClusterInfo, error) {
-		resp, err := s.cce.ShowCluster(&model.ShowClusterRequest{ClusterId: clusterID})
-		if err != nil {
-			return nil, errors.Wrapf(err, "ShowCluster %s failed", clusterID)
-		}
-		info := &ClusterInfo{}
-		if resp.Metadata != nil && resp.Metadata.Uid != nil {
-			info.ClusterID = *resp.Metadata.Uid
-		}
-		if resp.Status != nil {
-			if resp.Status.Phase != nil {
-				info.Phase = *resp.Status.Phase
-			}
-			if resp.Status.Endpoints != nil {
-				for _, ep := range *resp.Status.Endpoints {
-					e := Endpoint{}
-					if ep.Url != nil {
-						e.URL = *ep.Url
-					}
-					if ep.Type != nil {
-						e.Type = *ep.Type
-					}
-					info.Endpoints = append(info.Endpoints, e)
-				}
-			}
-		}
-		if resp.Spec != nil {
-			if resp.Spec.Version != nil {
-				info.Version = *resp.Spec.Version
-			}
-			// Current custom tags (spec.clusterTags) — the diff base for tag sync.
-			info.Tags = map[string]string{}
-			if resp.Spec.ClusterTags != nil {
-				for _, t := range *resp.Spec.ClusterTags {
-					if t.Key != nil && t.Value != nil {
-						info.Tags[*t.Key] = *t.Value
-					}
-				}
-			}
-		}
-		return info, nil
+func (s *Client) ShowCluster(_ context.Context, clusterID string) (*ClusterInfo, error) {
+	resp, err := s.cce.ShowCluster(&model.ShowClusterRequest{ClusterId: clusterID})
+	if err != nil {
+		return nil, errors.Wrapf(err, "ShowCluster %s failed", clusterID)
 	}
-
-
+	info := &ClusterInfo{}
+	if resp.Metadata != nil && resp.Metadata.Uid != nil {
+		info.ClusterID = *resp.Metadata.Uid
+	}
+	if resp.Status != nil {
+		if resp.Status.Phase != nil {
+			info.Phase = *resp.Status.Phase
+		}
+		if resp.Status.Endpoints != nil {
+			for _, ep := range *resp.Status.Endpoints {
+				e := Endpoint{}
+				if ep.Url != nil {
+					e.URL = *ep.Url
+				}
+				if ep.Type != nil {
+					e.Type = *ep.Type
+				}
+				info.Endpoints = append(info.Endpoints, e)
+			}
+		}
+	}
+	if resp.Spec != nil {
+		if resp.Spec.Version != nil {
+			info.Version = *resp.Spec.Version
+		}
+		// Current custom tags (spec.clusterTags) — the diff base for tag sync.
+		info.Tags = map[string]string{}
+		if resp.Spec.ClusterTags != nil {
+			for _, t := range *resp.Spec.ClusterTags {
+				if t.Key != nil && t.Value != nil {
+					info.Tags[*t.Key] = *t.Value
+				}
+			}
+		}
+	}
+	return info, nil
+}
 
 // clusterTagsDiff computes the tag updates needed to converge cur to want:
 // add carries keys missing or with a different value; del carries keys present
@@ -589,8 +587,6 @@ func paginateAll[T any](
 	}
 }
 
-// CreateAccessPolicy implements Service.
-// CreateAccessPolicy implements Service.
 // ListEips implements Service.
 func (s *Client) ListEips(ctx context.Context) ([]EipRef, error) {
 	return paginateAll(1000, func(marker *string) ([]EipRef, *string, error) {
@@ -963,14 +959,14 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 	if in.SSHKey != "" {
 		template.Login = &model.Login{SshKey: ptr.To(in.SSHKey)}
 	}
-	if in.EcsGroupId != "" {
-		template.EcsGroupId = ptr.To(in.EcsGroupId)
+	if in.EcsGroupID != "" {
+		template.EcsGroupId = ptr.To(in.EcsGroupID)
 	}
 	if in.FaultDomain != "" {
 		template.FaultDomain = ptr.To(in.FaultDomain)
 	}
-	if in.DedicatedHostId != "" {
-		template.DedicatedHostId = ptr.To(in.DedicatedHostId)
+	if in.DedicatedHostID != "" {
+		template.DedicatedHostId = ptr.To(in.DedicatedHostID)
 	}
 	if len(in.Taints) > 0 {
 		taints, terr := parseTaints(in.Taints)
@@ -1022,8 +1018,8 @@ func (s *Client) CreateNodePool(ctx context.Context, in CreateNodePoolInput) (st
 		// reach the internet directly — public-subnet parity, avoiding a
 		// NAT gateway. Bandwidth defaults to PER/bandwidth when unset.
 		bw := &model.NodeBandwidth{
-			Size:      ptr.To(in.PublicIPBandwidthSize),
-			Sharetype: ptr.To(defaultString(in.PublicIPShareType, "PER")),
+			Size:       ptr.To(in.PublicIPBandwidthSize),
+			Sharetype:  ptr.To(defaultString(in.PublicIPShareType, "PER")),
 			Chargemode: ptr.To(defaultString(in.PublicIPChargeMode, "bandwidth")),
 		}
 		template.PublicIP = &model.NodeEipSpec{
@@ -2141,44 +2137,44 @@ func logConfigType(t string) *model.ClusterLogConfigLogConfigsType {
 }
 
 // toClusterTags builds the CCE clusterTags array: the owned tag, the built-in
-	// role=apiserver (the managed control plane is the cluster's control-plane
-	// cost role), plus user tags. Internal tags (owned + role) are reserved and
-	// win over any colliding user tag.
-	func toClusterTags(clusterName string, userTags map[string]string) *[]model.ResourceTag {
-		out := []model.ResourceTag{
-			{Key: ptr.To(tags.OwnedTagKey(clusterName)), Value: ptr.To("owned")},
-			{Key: ptr.To(RoleTagKey), Value: ptr.To(RoleApiserver)},
-		}
-		for k, v := range userTags {
-			if skipReservedTagKey(k, clusterName) {
-				continue
-			}
-			out = append(out, model.ResourceTag{Key: ptr.To(k), Value: ptr.To(v)})
-		}
-		return &out
+// role=apiserver (the managed control plane is the cluster's control-plane
+// cost role), plus user tags. Internal tags (owned + role) are reserved and
+// win over any colliding user tag.
+func toClusterTags(clusterName string, userTags map[string]string) *[]model.ResourceTag {
+	out := []model.ResourceTag{
+		{Key: ptr.To(tags.OwnedTagKey(clusterName)), Value: ptr.To("owned")},
+		{Key: ptr.To(RoleTagKey), Value: ptr.To(RoleApiserver)},
 	}
+	for k, v := range userTags {
+		if skipReservedTagKey(k, clusterName) {
+			continue
+		}
+		out = append(out, model.ResourceTag{Key: ptr.To(k), Value: ptr.To(v)})
+	}
+	return &out
+}
 
-	// toUserTags builds the CCE node pool userTags array (owned tag, built-in
-	// role=node, plus user tags). Internal tags (owned + role) are reserved and
-	// win over any colliding user tag.
-	func toUserTags(clusterName string, userTags map[string]string) *[]model.UserTag {
-		out := []model.UserTag{
-			{Key: ptr.To(tags.OwnedTagKey(clusterName)), Value: ptr.To("owned")},
-			{Key: ptr.To(RoleTagKey), Value: ptr.To(RoleNode)},
-		}
-		for k, v := range userTags {
-			if skipReservedTagKey(k, clusterName) {
-				continue
-			}
-			out = append(out, model.UserTag{Key: ptr.To(k), Value: ptr.To(v)})
-		}
-		return &out
+// toUserTags builds the CCE node pool userTags array (owned tag, built-in
+// role=node, plus user tags). Internal tags (owned + role) are reserved and
+// win over any colliding user tag.
+func toUserTags(clusterName string, userTags map[string]string) *[]model.UserTag {
+	out := []model.UserTag{
+		{Key: ptr.To(tags.OwnedTagKey(clusterName)), Value: ptr.To("owned")},
+		{Key: ptr.To(RoleTagKey), Value: ptr.To(RoleNode)},
 	}
+	for k, v := range userTags {
+		if skipReservedTagKey(k, clusterName) {
+			continue
+		}
+		out = append(out, model.UserTag{Key: ptr.To(k), Value: ptr.To(v)})
+	}
+	return &out
+}
 
-	// skipReservedTagKey reports whether a user-supplied tag key is managed
-	// internally (the per-cluster owned key and the reserved role key) and must
-	// be dropped in favor of the built-in value (owned and role are written
-	// after user tags and therefore win).
-	func skipReservedTagKey(userKey, clusterName string) bool {
-		return userKey == tags.OwnedTagKey(clusterName) || userKey == RoleTagKey
-	}
+// skipReservedTagKey reports whether a user-supplied tag key is managed
+// internally (the per-cluster owned key and the reserved role key) and must
+// be dropped in favor of the built-in value (owned and role are written
+// after user tags and therefore win).
+func skipReservedTagKey(userKey, clusterName string) bool {
+	return userKey == tags.OwnedTagKey(clusterName) || userKey == RoleTagKey
+}

@@ -4,6 +4,9 @@ Copyright 2025 Huawei Cloud.
 Licensed under the MIT No Attribution (MIT-0) License.
 */
 
+// Package throttle provides a process-wide read/write token-bucket limiter
+// shared by the Huawei Cloud CCE and managed-network (VPC/NAT/EIP) clients, so
+// the aggregate write budget stays at the platform cap.
 package throttle
 
 import (
@@ -25,7 +28,7 @@ import (
 //   - writes (everything else: Create/Delete) are clamped to the observed
 //     APIGW.0308 limit of 10 requests/minute (one token every 6s, burst 10).
 //     The burst covers a single managed-network create (VPC + 2 subnets + NAT
-//     + EIP + SNAT ≈ 6 writes), which are issued serially with polling gaps in
+//   - EIP + SNAT ≈ 6 writes), which are issued serially with polling gaps in
 //     between, so the burst is effectively never exhausted in normal use.
 //
 // The limiter is process-level shared: every client draws from the same
