@@ -1598,3 +1598,56 @@ func TestControlPlaneReconcileAccessPolicyForeignCollision(t *testing.T) {
 		t.Errorf("expected AccessPoliciesConfigured=False on the collision, got %v", c)
 	}
 }
+
+// TestControlPlaneReconcileBindsPublicEip covers spec.endpointAccess.public:
+// the provider creates and binds a public EIP to the CCE API server once,
+// records its id in status (so the delete path can release it), and requeues so
+// the next pass can read the new External endpoint into the kubeconfig.
+func TestControlPlaneReconcileBindsPublicEip(t *testing.T) {
+	ctx := context.Background()
+	ns := "cp-test-public-eip"
+	createNamespace(t, ns)
+
+	cluster, _, cp := newTestCluster(t, ns)
+	createCredentialsSecret(t, ns, "test-cluster")
+	markInfrastructureProvisioned(t, cluster)
+	cp.Spec.EndpointAccess.Public = true
+	if err := k8sClient.Update(ctx, cp); err != nil {
+		t.Fatalf("failed to set endpointAccess.public: %v", err)
+	}
+
+	binds := 0
+	fakeSvc := fakes.NewFakeCCEService()
+	fakeSvc.BindClusterEipFn = func(_ context.Context, _, _ string) (string, string, error) {
+		binds++
+		return "eip-pub-1", "203.0.113.9", nil
+	}
+	r := &CCEManagedControlPlaneReconciler{
+		Client: k8sClient,
+		ServiceFactory: func(_ string, _ *credentials.Credentials) (cceService.Service, error) {
+			return fakeSvc, nil
+		},
+	}
+
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("Reconcile returned error: %v", err)
+	}
+	if binds != 1 {
+		t.Fatalf("expected 1 BindClusterEip call, got %d", binds)
+	}
+	got := &controlplanev1beta2.CCEManagedControlPlane{}
+	if err := k8sClient.Get(ctx, client.ObjectKeyFromObject(cp), got); err != nil {
+		t.Fatalf("failed to get control plane: %v", err)
+	}
+	if got.Status.ControlPlaneEIPID != "eip-pub-1" {
+		t.Errorf("expected status.controlPlaneEIPID=eip-pub-1, got %q", got.Status.ControlPlaneEIPID)
+	}
+
+	// A second reconcile must not bind again (the id is already recorded).
+	if _, err := r.Reconcile(ctx, ctrl.Request{NamespacedName: client.ObjectKeyFromObject(cp)}); err != nil {
+		t.Fatalf("second Reconcile returned error: %v", err)
+	}
+	if binds != 1 {
+		t.Errorf("the EIP must be bound only once, got %d binds", binds)
+	}
+}

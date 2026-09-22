@@ -153,7 +153,7 @@ func newTestCluster(t *testing.T, ns string) (*clusterv1.Cluster, *infrav1beta2.
 				ENISubnets: []string{"sub-1"},
 			},
 			ServiceNetwork: controlplanev1beta2.ServiceNetworkSpec{CIDR: "10.247.0.0/16"},
-			EndpointAccess: controlplanev1beta2.EndpointAccessSpec{Public: true},
+			EndpointAccess: controlplanev1beta2.EndpointAccessSpec{Public: false},
 		},
 	}
 	for _, o := range []client.Object{cceCluster, cp} {

@@ -451,6 +451,15 @@ type Service interface { // ShowCluster returns the current state of a CCE clust
 	DeleteCluster(ctx context.Context, in DeleteClusterInput) error
 	// GetClusterKubeconfig downloads and assembles the cluster kubeconfig.
 	GetClusterKubeconfig(ctx context.Context, clusterID string, durationDays int32) (string, error)
+	// BindClusterEip creates a public EIP and binds it to the CCE cluster's
+	// API server (master), returning the EIP id and address. Used when
+	// spec.endpointAccess.public is true: the CCE API only applies the
+	// publicAccess whitelist, the EIP itself must be created and bound. The EIP
+	// carries the provider owned tag so the orphan sweeper can find it.
+	BindClusterEip(ctx context.Context, clusterID, clusterName string) (eipID, address string, err error)
+	// UnbindClusterEip unbinds and releases the cluster's API-server EIP
+	// (NotFound-tolerant, so teardown stays idempotent).
+	UnbindClusterEip(ctx context.Context, clusterID, eipID string) error
 	// ListClusters lists all CCE clusters in the region (used by the garbage
 	// collector's orphan sweeper; returns cluster ID, name and tags).
 	ListClusters(ctx context.Context) ([]ClusterRef, error)

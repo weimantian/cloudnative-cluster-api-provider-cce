@@ -35,6 +35,8 @@ type FakeCCEService struct {
 	ScaleNodePoolFn          func(ctx context.Context, clusterID, nodePoolID string, desiredCount int32) error
 	UpdateNodePoolFn         func(ctx context.Context, in cceService.UpdateNodePoolInput) error
 	DeleteNodePoolFn         func(ctx context.Context, clusterID, nodePoolID string) error
+	BindClusterEipFn         func(ctx context.Context, clusterID, clusterName string) (string, string, error)
+	UnbindClusterEipFn       func(ctx context.Context, clusterID, eipID string) error
 	ListNodePoolsFn          func(ctx context.Context, clusterID string) ([]cceService.NodePoolInfo, error)
 	ReconcileNodePoolTagsFn  func(ctx context.Context, clusterID, nodePoolID, clusterName string, userTags map[string]string, pools []cceService.NodePoolInfo) (bool, error)
 	ListNodesFn              func(ctx context.Context, clusterID, nodePoolID string) ([]string, error)
@@ -201,6 +203,10 @@ func NewFakeCCEService() *FakeCCEService {
 		return nil
 	}
 	f.DeleteNodePoolFn = func(_ context.Context, _, _ string) error { return nil }
+	f.BindClusterEipFn = func(_ context.Context, _, _ string) (string, string, error) {
+		return "eip-test", "198.51.100.1", nil
+	}
+	f.UnbindClusterEipFn = func(_ context.Context, _, _ string) error { return nil }
 	f.ListNodePoolsFn = func(_ context.Context, _ string) ([]cceService.NodePoolInfo, error) {
 		return []cceService.NodePoolInfo{{NodePoolID: "nodepool-1", Name: "pool-0", NodeCount: 3, ActiveNodeCount: 3}}, nil
 	}
@@ -490,6 +496,16 @@ func (f *FakeCCEService) UpdateNodePool(ctx context.Context, in cceService.Updat
 // DeleteNodePool implements cceService.Service.
 func (f *FakeCCEService) DeleteNodePool(ctx context.Context, clusterID, nodePoolID string) error {
 	return f.DeleteNodePoolFn(ctx, clusterID, nodePoolID)
+}
+
+// BindClusterEip implements cceService.Service.
+func (f *FakeCCEService) BindClusterEip(ctx context.Context, clusterID, clusterName string) (string, string, error) {
+	return f.BindClusterEipFn(ctx, clusterID, clusterName)
+}
+
+// UnbindClusterEip implements cceService.Service.
+func (f *FakeCCEService) UnbindClusterEip(ctx context.Context, clusterID, eipID string) error {
+	return f.UnbindClusterEipFn(ctx, clusterID, eipID)
 }
 
 // ListNodePools implements cceService.Service.

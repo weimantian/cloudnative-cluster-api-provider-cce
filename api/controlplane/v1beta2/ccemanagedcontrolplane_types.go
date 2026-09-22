@@ -383,6 +383,12 @@ type CCEManagedControlPlaneStatus struct {
 	// +optional
 	KubeconfigSecretName string `json:"kubeconfigSecretName,omitempty"`
 
+	// ControlPlaneEIPID is the public EIP bound to the CCE API server when
+	// spec.endpointAccess.public is true (the provider creates and binds it).
+	// Persisted so the delete path can unbind and release it.
+	// +optional
+	ControlPlaneEIPID string `json:"controlPlaneEIPID,omitempty"`
+
 	// Version of the cluster as reported by CCE.
 	// +optional
 	Version string `json:"version,omitempty"`

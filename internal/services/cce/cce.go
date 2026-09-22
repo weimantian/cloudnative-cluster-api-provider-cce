@@ -536,6 +536,76 @@ func (s *Client) DeleteCluster(_ context.Context, in DeleteClusterInput) error {
 	return nil
 }
 
+// BindClusterEip creates a public EIP and binds it to the cluster's API server
+// (master), returning the EIP id and address. The EIP is tagged with the
+// provider owned tag so the orphan sweeper can find it if it leaks. If either
+// the tagging or the bind step fails the freshly created EIP is released, so a
+// failed attempt never leaks a billed EIP.
+func (s *Client) BindClusterEip(_ context.Context, clusterID, clusterName string) (string, string, error) {
+	if s.eip == nil {
+		return "", "", errors.New("BindClusterEip: EIP client is not configured")
+	}
+	name := clusterName + "-apiserver-eip"
+	shareType := eipmodel.GetCreatePublicipBandwidthOptionShareTypeEnum().PER
+	resp, err := s.eip.CreatePublicip(&eipmodel.CreatePublicipRequest{Body: &eipmodel.CreatePublicipRequestBody{
+		Bandwidth: &eipmodel.CreatePublicipBandwidthOption{ShareType: shareType, Name: &name, Size: ptr.To(int32(5))},
+		Publicip:  &eipmodel.CreatePublicipOption{Type: common.DefaultEIPType, Alias: &name},
+	}})
+	if err != nil {
+		return "", "", errors.Wrap(err, "CreatePublicip(apiserver) failed")
+	}
+	if resp.Publicip == nil || resp.Publicip.Id == nil {
+		return "", "", errors.New("CreatePublicip(apiserver) returned no id")
+	}
+	eipID := *resp.Publicip.Id
+	addr := ""
+	if resp.Publicip.PublicIpAddress != nil {
+		addr = *resp.Publicip.PublicIpAddress
+	}
+	tag := eipmodel.ResourceTagOption{Key: tags.OwnedTagKey(clusterName), Value: "owned"}
+	if _, terr := s.eip.CreatePublicipTag(&eipmodel.CreatePublicipTagRequest{
+		PublicipId: eipID,
+		Body:       &eipmodel.CreatePublicipTagRequestBody{Tag: &tag},
+	}); terr != nil {
+		_, _ = s.eip.DeletePublicip(&eipmodel.DeletePublicipRequest{PublicipId: eipID})
+		return "", "", errors.Wrap(terr, "CreatePublicipTag(owned) failed; untagged EIP released")
+	}
+	action := model.GetMasterEipRequestSpecActionEnum().BIND
+	if _, berr := s.cce.UpdateClusterEip(&model.UpdateClusterEipRequest{
+		ClusterId: clusterID,
+		Body: &model.MasterEipRequest{Spec: &model.MasterEipRequestSpec{
+			Action: &action,
+			Spec:   &model.MasterEipRequestSpecSpec{Id: &eipID},
+		}},
+	}); berr != nil {
+		_, _ = s.eip.DeletePublicip(&eipmodel.DeletePublicipRequest{PublicipId: eipID})
+		return "", "", errors.Wrapf(berr, "UpdateClusterEip(bind) %s failed; EIP released", clusterID)
+	}
+	return eipID, addr, nil
+}
+
+// UnbindClusterEip unbinds the master EIP then releases it. NotFound on either
+// step is tolerated so teardown is idempotent.
+func (s *Client) UnbindClusterEip(_ context.Context, clusterID, eipID string) error {
+	if eipID == "" {
+		return nil
+	}
+	if s.eip == nil {
+		return errors.New("UnbindClusterEip: EIP client is not configured")
+	}
+	action := model.GetMasterEipRequestSpecActionEnum().UNBIND
+	if _, err := s.cce.UpdateClusterEip(&model.UpdateClusterEipRequest{
+		ClusterId: clusterID,
+		Body:      &model.MasterEipRequest{Spec: &model.MasterEipRequestSpec{Action: &action}},
+	}); err != nil && !clouderrors.IsNotFound(err) {
+		return errors.Wrapf(err, "UpdateClusterEip(unbind) %s failed", clusterID)
+	}
+	if _, err := s.eip.DeletePublicip(&eipmodel.DeletePublicipRequest{PublicipId: eipID}); err != nil && !clouderrors.IsNotFound(err) {
+		return errors.Wrapf(err, "DeletePublicip %s failed", eipID)
+	}
+	return nil
+}
+
 // ListClusters implements Service. It lists all CCE clusters in the region,
 // returning their ID, name and tags (used by the garbage collector's orphan
 // sweeper).

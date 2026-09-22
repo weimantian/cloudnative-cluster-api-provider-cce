@@ -379,6 +379,24 @@ func (r *CCEManagedControlPlaneReconciler) reconcileNormal(ctx context.Context, 
 	conditions.MarkTrue(cp, conditions.CCEClusterReadyCondition, "ClusterAvailable", "CCE cluster is available")
 	recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "ClusterAvailable", "CCE cluster %s is available", clusterID)
 
+	// Public API-server access: spec.endpointAccess.public only makes CCE apply
+	// the publicAccess whitelist — the EIP itself must be created and bound via
+	// UpdateClusterEip. Bind it once, persist the id, then requeue so the next
+	// pass reads the new External endpoint into status (the kubeconfig then uses
+	// it). The EIP id is released by the delete path.
+	if cp.Spec.EndpointAccess.Public && cp.Status.ControlPlaneEIPID == "" {
+		eipID, _, berr := svc.BindClusterEip(ctx, clusterID, cp.Spec.ClusterName)
+		if berr != nil {
+			conditions.MarkFalse(cp, conditions.CCEClusterReadyCondition,
+				conditions.CCEClusterNotFoundReason, berr.Error())
+			return resultAfterError(client.ObjectKeyFromObject(cp), berr)
+		}
+		cp.Status.ControlPlaneEIPID = eipID
+		recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "ClusterEipBound", "bound public EIP %s to the CCE API server", eipID)
+		return ctrl.Result{RequeueAfter: defaultRequeue}, nil
+	}
+	recordEvent(r.Recorder, cp, corev1.EventTypeNormal, "ClusterAvailable", "CCE cluster %s is available", clusterID)
+
 	// Tag drift sync (FR-1.9): reconcile spec.additionalTags
 	// against the cloud cluster tags so declarations stay authoritative even
 	// after creation (add/update drifted tags, remove extras, never the owned
@@ -645,6 +663,17 @@ func (r *CCEManagedControlPlaneReconciler) reconcileDelete(ctx context.Context, 
 			}
 			return ctrl.Result{RequeueAfter: defaultRequeue}, nil
 		}
+	}
+
+	// Release the public API-server EIP this provider bound (no-op when
+	// endpointAccess.public was never enabled or the EIP was already released).
+	// Runs after the CCE cluster is confirmed gone so the unbind cannot fail on
+	// a live master; NotFound is tolerated either way.
+	if cp.Status.ControlPlaneEIPID != "" {
+		if err := svc.UnbindClusterEip(ctx, cp.Status.ClusterID, cp.Status.ControlPlaneEIPID); err != nil {
+			return resultAfterErrorForDelete(client.ObjectKeyFromObject(cp), err)
+		}
+		cp.Status.ControlPlaneEIPID = ""
 	}
 
 	// Delete the kubeconfig Secrets (CAPI + user). Both are owned by the

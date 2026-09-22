@@ -551,6 +551,12 @@ spec:
                   - type
                   type: object
                 type: array
+              controlPlaneEIPID:
+                description: |-
+                  ControlPlaneEIPID is the public EIP bound to the CCE API server when
+                  spec.endpointAccess.public is true (the provider creates and binds it).
+                  Persisted so the delete path can unbind and release it.
+                type: string
               controlPlaneEndpoint:
                 description: ControlPlaneEndpoint is the API server endpoint.
                 minProperties: 1

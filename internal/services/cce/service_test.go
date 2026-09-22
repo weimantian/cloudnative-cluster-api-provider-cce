@@ -17,6 +17,8 @@ import (
 	"github.com/huaweicloud/huaweicloud-sdk-go-v3/core/config"
 	ccev3 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3"
 	cceRegion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/cce/v3/region"
+	eipv2 "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2"
+	eipregion "github.com/huaweicloud/huaweicloud-sdk-go-v3/services/eip/v2/region"
 )
 
 type cceRoute struct {
@@ -107,7 +109,19 @@ func newTestCCEClient(t *testing.T, rt http.RoundTripper) *Client {
 	if err != nil {
 		t.Fatalf("build cce client: %v", err)
 	}
-	return &Client{cce: ccev3.NewCceClient(hc)}
+	eipRegion, err := eipregion.SafeValueOf("cn-north-4")
+	if err != nil {
+		t.Fatalf("resolve eip region: %v", err)
+	}
+	ehc, err := eipv2.EipClientBuilder().
+		WithRegion(eipRegion).
+		WithCredential(cred).
+		WithHttpConfig(config.DefaultHttpConfig().WithHttpRoundTripper(rt)).
+		SafeBuild()
+	if err != nil {
+		t.Fatalf("build eip client: %v", err)
+	}
+	return &Client{cce: ccev3.NewCceClient(hc), eip: eipv2.NewEipClient(ehc)}
 }
 
 // tagJSON renders a tag map as the CCE spec.clusterTags array.
@@ -263,4 +277,38 @@ func TestGetClusterKubeconfigOverlaysExternalEndpoint(t *testing.T) {
 	if strings.Contains(kube, "https://10.0.1.17:5443") {
 		t.Errorf("the stale cert server must be replaced, got:\n%s", kube)
 	}
+}
+
+func TestBindAndUnbindClusterEip(t *testing.T) {
+	ctx := context.Background()
+	t.Run("bind creates, tags and binds an EIP", func(t *testing.T) {
+		rt := &recordingCCERT{t: t, routes: []cceRoute{
+			{method: http.MethodPost, sub: "/publicips", body: `{"publicip":{"id":"eip-1","public_ip_address":"203.0.113.9"}}`},
+			{method: http.MethodPost, sub: "/tags", body: `{}`},
+			{method: http.MethodPut, sub: "mastereip", body: `{}`},
+		}}
+		eipID, addr, err := newTestCCEClient(t, rt).BindClusterEip(ctx, "cluster-1", "demo")
+		if err != nil {
+			t.Fatalf("BindClusterEip: %v", err)
+		}
+		if eipID != "eip-1" || addr != "203.0.113.9" {
+			t.Errorf("got (%q,%q), want (eip-1,203.0.113.9)", eipID, addr)
+		}
+		if rt.index(http.MethodPut, "mastereip") < 0 {
+			t.Errorf("expected an UpdateClusterEip(bind) call, got %v", rt.requests)
+		}
+	})
+
+	t.Run("unbind unbinds then releases", func(t *testing.T) {
+		rt := &recordingCCERT{t: t, routes: []cceRoute{
+			{method: http.MethodPut, sub: "mastereip", body: `{}`},
+			{method: http.MethodDelete, sub: "/publicips/eip-1", body: `{}`},
+		}}
+		if err := newTestCCEClient(t, rt).UnbindClusterEip(ctx, "cluster-1", "eip-1"); err != nil {
+			t.Fatalf("UnbindClusterEip: %v", err)
+		}
+		if rt.index(http.MethodDelete, "/publicips/eip-1") < 0 {
+			t.Errorf("expected the EIP to be released, got %v", rt.requests)
+		}
+	})
 }
