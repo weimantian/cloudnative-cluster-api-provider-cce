@@ -316,6 +316,17 @@ kubectl apply -f my-cluster.yaml
 > ⚠️ ④ **Capacity scales up only**: the cluster `flavor` cannot be downgraded (the webhook rejects a downgrade) and `containerNetwork.cidr`/`mode` are immutable after creation (only `cidrs` can be appended) — plan for peak capacity before creating the cluster.
 > ⚠️ ⑤ (optional) **NetworkPolicy (DataPlane V2)**: a CCE Turbo (eni) cluster has **no** NetworkPolicy capability by default; a Standard (vpc-router) cluster uses the same switch for eBPF Service/NetworkPolicy. Set `enableDataPlaneV2: true` on `CCEManagedControlPlane.spec` at creation (**new clusters only, cannot be disabled afterwards**; the webhook rejects later changes). Version gates (the platform **silently ignores** the parameter below these): Standard `v1.25.16-r30`/`v1.27.16-r30`/`v1.28.15-r20`/`v1.29.10-r14`/`v1.30.6-r14` or ≥ `v1.31.4-r4`; Turbo `v1.27.16-r10`/`v1.28.15-r0`/`v1.29.10-r0`/`v1.30.6-r0` or ≥ `v1.34.3-r10`. Once on: K8s `NetworkPolicy` (L3/L4) + `CiliumNetworkPolicy` (L7, Standard-VPC only); node images limited to HCE 2.0 / Ubuntu 22.04 / Ubuntu 24.04; on 1.34+ nodes no longer run kube-proxy; cilium-agent runs per node (~80 MiB + ~10 KiB per Pod). Verify: `kubectl -n kube-system get ds yangtse-cilium`.
 
+> 🧪 **DataPlane V2 test items (verify each after enabling; use a Standard vpc-router cluster)**
+>
+> 1. **cilium-agent ready**: `kubectl --kubeconfig=my-cce-cluster.kubeconfig -n kube-system get ds yangtse-cilium` → `DESIRED=READY`, equal to the node count.
+> 2. **kube-proxy removed (1.34+)**: `kubectl -n kube-system get ds kube-proxy` → `NotFound` (still present on older versions — expected).
+> 3. **L3/L4 enforced**: create a probe Pod in `np-test`, apply a default-deny `NetworkPolicy` — `kubectl -n np-test exec <pod> -- wget -qO- <service>` must time out, then recover after an allow rule.
+> 4. **L7 enforced (Standard-VPC only)**: apply a `CiliumNetworkPolicy` restricting an HTTP path — unmatched paths are rejected (403 / connection reset).
+> 5. **Immutability**: `kubectl patch ccemanagedcontrolplane my-cce-cluster-control-plane --type=merge -p '{"spec":{"enableDataPlaneV2":false}}'` → rejected by the webhook (creation-time only).
+> 6. **Version-gate behaviour**: below the gate the cluster still builds but has **no** `yangtse-cilium` DS (the platform silently ignores it) — record the observed version and result.
+> 7. **Node images**: must be HCE 2.0 / Ubuntu 22.04 / Ubuntu 24.04 (V2 does not take effect on other images).
+> 8. **Rollback**: V2 cannot be disabled; to remove it you must **delete and recreate** the cluster.
+
 **Step 7: Verify + scale**
 
 ```bash

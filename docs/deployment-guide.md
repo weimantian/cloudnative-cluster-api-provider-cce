@@ -320,6 +320,17 @@ kubectl apply -f my-cluster.yaml
 > ⚠️ ④ **容量只增不减**：集群规格 `flavor` 不支持降级（webhook 会拒绝降级变更），容器网段 `containerNetwork.cidr`/`mode` 创建后不可变（只能追加 `cidrs` 扩容）——建集群前请按峰值容量规划。
 > ⚠️ ⑤（可选）**NetworkPolicy（DataPlane V2）**：Turbo（eni）集群默认**没有** NetworkPolicy 能力；Standard（vpc-router）集群如需 eBPF Service/NetworkPolicy 也用同一开关。创建时给 `CCEManagedControlPlane.spec` 加 `enableDataPlaneV2: true`（**仅新建可开、开启后不可关**，webhook 拦截后续变更）。版本门槛（不满足时平台**静默忽略**该参数）：Standard `v1.25.16-r30`/`v1.27.16-r30`/`v1.28.15-r20`/`v1.29.10-r14`/`v1.30.6-r14` 或 ≥ `v1.31.4-r4`；Turbo `v1.27.16-r10`/`v1.28.15-r0`/`v1.29.10-r0`/`v1.30.6-r0` 或 ≥ `v1.34.3-r10`。开启后：K8s `NetworkPolicy`（L3/L4）+ `CiliumNetworkPolicy`（L7 仅 Standard-VPC）；节点镜像限 HCE 2.0 / Ubuntu 22.04 / Ubuntu 24.04；1.34+ 节点不再安装 kube-proxy；每节点部署 cilium-agent（约 80 MiB + 每 Pod 约 10 KiB）。确认：`kubectl -n kube-system get ds yangtse-cilium`。
 
+> 🧪 **DataPlane V2 测试项（开启后逐项验证；建议用 Standard vpc-router 集群）**
+>
+> 1. **cilium-agent 就绪**：`kubectl --kubeconfig=my-cce-cluster.kubeconfig -n kube-system get ds yangtse-cilium` → `DESIRED=READY` 且等于节点数。
+> 2. **kube-proxy 已移除（1.34+）**：`kubectl -n kube-system get ds kube-proxy` → `NotFound`（低版本仍存在，属正常）。
+> 3. **L3/L4 生效**：`kubectl create ns np-test`，部署探针 Pod 后应用 default-deny `NetworkPolicy`；`kubectl -n np-test exec <pod> -- wget -qO- <service>` 应超时，加入放行规则后恢复。
+> 4. **L7 生效（仅 Standard-VPC）**：应用 `CiliumNetworkPolicy` 限制 HTTP 路径，未匹配路径被拒（403/连接被重置）。
+> 5. **不可变性**：`kubectl patch ccemanagedcontrolplane my-cce-cluster-control-plane --type=merge -p '{"spec":{"enableDataPlaneV2":false}}'` → 被 webhook 拒绝（仅新建可开）。
+> 6. **版本门槛行为**：版本低于门槛时集群仍建成但**无** `yangtse-cilium` DS（平台静默忽略）——记录实测版本与结果。
+> 7. **节点镜像**：须为 HCE 2.0 / Ubuntu 22.04 / Ubuntu 24.04（其他镜像 V2 不生效）。
+> 8. **回滚**：V2 开启后不可关闭，如需去除只能**删除并重建**集群。
+
 **步骤 9：验证 + 扩缩容**
 
 ```bash
