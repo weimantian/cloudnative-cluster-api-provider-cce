@@ -166,13 +166,7 @@ mv ~/Downloads/capi-mgmt-kubeconfig.yaml ~/.kube/
 
 > 若用 Standard（vpc-router）集群：集群类型选 CCE Standard，不填 ENI 子网，节点规格任意通用型（`c6.large.2`）。
 
-	### 阶段二：本地直连集群 A
-
-	> ⚠️ **实测提示（2026-09 真实 E2E，cn-north-4）**：
-> - **节点规格可能售罄**：`c7.xlarge.2` 在 `cn-north-4a` 会报 `SoldOut`（节点被删、池永卡）→ 用指南验证过的 `c7.large.2`（sub-ENI 配额 > 0）。若某 AZ 缺货，换 AZ 或换活跃 sub-ENI flavor。
-> - **公网 endpoint 白名单用 Huawei 侧看到的出口 IP**：`api.ipify.org` 返回的 IP 可能与 Huawei 实际看到的出口 IP 不同（本机实测二者不一致）——白名单填错会表现为 **公网 5443 连接超时**（TCP 被丢），而非拒绝。先探 `nc -z <公网IP> 5443`，不通就把 `spec.publicAccess`/控制台白名单放宽到你真实的出口 IP（或临时 `0.0.0.0/0` 验证）。
-> - 管理集群节点**需能出网**（`hack/deploy-mgmt-cluster` 的 `CCE_DEPLOY_PUBLIC_NODES=true` 给每节点绑 EIP，或给节点子网加 NAT）；否则 cce-agent 拉包失败、节点卡 `Installing`。
-
+### 阶段二：本地直连集群 A
 
 **步骤 3：配置 kubeconfig（server 改公网 endpoint）**
 
@@ -305,6 +299,16 @@ spec:
 
 值可自行修改；可只打控制面 / 任一 pool / 全部 pool。跳过本步 = 不打自定义标签（仅自动打 owned/role）。加完自检：`grep -c additionalTags my-cluster.yaml` 应等于你要打标签的 kind 数。改好后再执行下面的第 5-7 步。
 
+**（可选）打开 DataPlane V2**：在**控制面** `CCEManagedControlPlane` 的 `spec:` 下加 `enableDataPlaneV2: true`（**仅新建可开、开启后不可关**，webhook 拦截后续变更）：
+
+```yaml
+spec:
+  enableDataPlaneV2: true
+  clusterName: my-cce-cluster   # 已存在，仅示意同级缩进（2 空格）
+```
+
+条件、版本门槛与开启后的影响见下方「注意事项 ⑤」。跳过本步 = 不开 V2（Turbo 集群默认无 NetworkPolicy 能力）。
+
 ```bash
 # 5. 创建凭据 Secret + bootstrap Secret（继续执行）
 export CLOUD_SDK_AK='<你的AK>' CLOUD_SDK_SK='<你的SK>'
@@ -404,11 +408,7 @@ kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -o jsonpath='{.spec.addi
 #    或在控制台给集群手加一个多余标签，10 分钟巡检周期内会被自动删除（纠回 spec）
 ```
 
-## 6. 踩坑问题记录
-> 踩坑记录已移至本地文件 [`docs/pitfalls.md`](pitfalls.md)（**不随仓库推送**，含本地/跳板机两场景，请直接查看该文件）。
----
-
-## 7. 清理资源
+## 6. 清理资源
 
 ```bash
 # 1. 删工作负载集群 B（本地，CAPI 删除链）
@@ -420,9 +420,9 @@ kubectl delete cluster my-cce-cluster
 
 ---
 
-## 8. 其他
+## 7. 其他
 
-### 8.1 凭证轮换
+### 7.1 凭证轮换
 
 ```bash
 kubectl create secret generic my-cce-cluster-credentials \
@@ -430,7 +430,7 @@ kubectl create secret generic my-cce-cluster-credentials \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-### 8.2 命令速查表（全部在本地执行）
+### 7.2 命令速查表（全部在本地执行）
 
 | 操作 | 命令 |
 |---|---|

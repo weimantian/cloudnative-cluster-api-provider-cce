@@ -310,6 +310,8 @@ kubectl create secret generic my-cce-cluster-credentials \
 kubectl create secret generic my-cce-cluster-bootstrap \
   --namespace default --from-literal=value=""
 
+# （可选）打开 DataPlane V2（仅新建可开、开启后不可关）：在 my-cluster.yaml 的控制面
+# CCEManagedControlPlane 的 spec: 下加 enableDataPlaneV2: true（条件与影响见下方 ⑤）
 kubectl apply -f my-cluster.yaml
 ```
 
@@ -353,11 +355,7 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # 等 CURRENT/AVAILABLE=1�
 
 ---
 
-## 6. 踩坑问题记录
-> 踩坑记录已移至本地文件 [`docs/pitfalls.md`](pitfalls.md)（**不随仓库推送**，含本地/跳板机两场景，请直接查看该文件）。
----
-
-## 7. 清理资源
+## 6. 清理资源
 
 ```bash
 # 1. 删工作负载集群 B（CloudShell，CAPI 删除链）
@@ -370,9 +368,9 @@ kubectl delete cluster my-cce-cluster
 
 ---
 
-## 8. 其他
+## 7. 其他
 
-### 8.1 凭证轮换
+### 7.1 凭证轮换
 
 ```bash
 kubectl create secret generic my-cce-cluster-credentials \
@@ -380,7 +378,7 @@ kubectl create secret generic my-cce-cluster-credentials \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-### 8.2 命令速查表（全部在跳板机执行）
+### 7.2 命令速查表（全部在跳板机执行）
 
 | 操作 | 命令 |
 |---|---|

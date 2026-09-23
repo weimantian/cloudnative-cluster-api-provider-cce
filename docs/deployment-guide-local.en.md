@@ -166,12 +166,6 @@ mv ~/Downloads/capi-mgmt-kubeconfig.yaml ~/.kube/
 
 ### Stage 2: Connect to Cluster A from Your Local Machine
 
-> ⚠️ **Field notes (real E2E, 2026-09, cn-north-4)**:
-> - **Node flavor may be sold out**: `c7.xlarge.2` returns `SoldOut` in `cn-north-4a` (nodes deleted, pool stuck) → use the validated `c7.large.2` (sub-ENI quota > 0). If an AZ is short, change AZ or pick an in-stock sub-ENI flavor.
-> - **Whitelist the egress IP *Huawei* sees**: the IP from `api.ipify.org` can differ from what Huawei sees for your egress, and a wrong whitelist shows up as a **TCP timeout on the public :5443** (packets dropped), not a refusal. Probe `nc -z <publicIP> 5443`; if it times out, widen `publicAccess`/the console whitelist to your real egress IP (or `0.0.0.0/0` temporarily to verify).
-> - Management-cluster nodes **need egress** (`hack/deploy-mgmt-cluster`'s `CCE_DEPLOY_PUBLIC_NODES=true` binds a per-node EIP, or add a NAT to the node subnet); otherwise cce-agent fails to download and nodes stick in `Installing`.
-
-
 **Step 3: Configure kubeconfig (point the server at the public endpoint)**
 
 The console-downloaded kubeconfig server is an intranet address; for direct local access, change it to the public endpoint:
@@ -300,6 +294,16 @@ spec:
 
 Change the values freely; tag only the control plane / any pool / all pools. Skipping this step creates the cluster without custom tags (owned/role are still added automatically). Self-check after editing: `grep -c additionalTags my-cluster.yaml` should equal the number of kinds you tagged. Then run steps 5-7 below.
 
+**(optional) Enable DataPlane V2**: add `enableDataPlaneV2: true` under the `spec:` of the **control plane** `CCEManagedControlPlane` (**new clusters only, cannot be disabled afterwards**; the webhook rejects later changes):
+
+```yaml
+spec:
+  enableDataPlaneV2: true
+  clusterName: my-cce-cluster   # already present — shows the sibling indent (2 spaces)
+```
+
+Requirements, version gates and the effects of turning it on are in note ⑤ below. Skipping this step leaves V2 off (a Turbo cluster has no NetworkPolicy capability by default).
+
 ```bash
 # 5. Create the credentials Secret + bootstrap Secret (continue)
 export CLOUD_SDK_AK='<your-AK>' CLOUD_SDK_SK='<your-SK>'
@@ -398,11 +402,7 @@ kubectl get ccemanagedmachinepool my-cce-cluster-pool-0 -o jsonpath='{.spec.addi
 #    Or add a stray tag in the console: the 10-min periodic sweep deletes it (pull-back)
 ```
 
-## 6. Troubleshooting / Pitfall Log
-> The pitfall log now lives in the local file [`docs/pitfalls.md`](pitfalls.md) (Chinese; **not pushed** with the repo — read it directly).
----
-
-## 7. Clean Up Resources
+## 6. Clean Up Resources
 
 ```bash
 # 1. Delete workload cluster B (local, CAPI deletion chain)
@@ -414,9 +414,9 @@ kubectl delete cluster my-cce-cluster
 
 ---
 
-## 8. Misc
+## 7. Misc
 
-### 8.1 Credential Rotation
+### 7.1 Credential Rotation
 
 ```bash
 kubectl create secret generic my-cce-cluster-credentials \
@@ -424,7 +424,7 @@ kubectl create secret generic my-cce-cluster-credentials \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-### 8.2 Command Cheat Sheet (all run locally)
+### 7.2 Command Cheat Sheet (all run locally)
 
 | Action | Command |
 |---|---|

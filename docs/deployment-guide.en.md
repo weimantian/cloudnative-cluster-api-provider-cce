@@ -302,6 +302,8 @@ kubectl create secret generic my-cce-cluster-credentials \
 kubectl create secret generic my-cce-cluster-bootstrap \
   --namespace default --from-literal=value=""
 
+# (optional) Enable DataPlane V2 (new clusters only; cannot be disabled afterwards): add
+# enableDataPlaneV2: true under the control plane CCEManagedControlPlane spec: (see note ⑤ below)
 kubectl apply -f my-cluster.yaml
 ```
 
@@ -345,11 +347,7 @@ kubectl get machinepool my-cce-cluster-pool-0 -w      # wait for CURRENT/AVAILAB
 
 ---
 
-## 6. Troubleshooting / Pitfall Log
-> The pitfall log now lives in the local file [`docs/pitfalls.md`](pitfalls.md) (Chinese; **not pushed** with the repo — read it directly).
----
-
-## 7. Clean Up Resources
+## 6. Clean Up Resources
 
 ```bash
 # 1. Delete workload cluster B (CloudShell, CAPI deletion chain)
@@ -362,9 +360,9 @@ kubectl delete cluster my-cce-cluster
 
 ---
 
-## 8. Misc
+## 7. Misc
 
-### 8.1 Credential Rotation
+### 7.1 Credential Rotation
 
 ```bash
 kubectl create secret generic my-cce-cluster-credentials \
@@ -372,7 +370,7 @@ kubectl create secret generic my-cce-cluster-credentials \
   --dry-run=client -o yaml | kubectl apply -f -
 ```
 
-### 8.2 Command Cheat Sheet (all run on the bastion)
+### 7.2 Command Cheat Sheet (all run on the bastion)
 
 | Action | Command |
 |---|---|
