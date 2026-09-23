@@ -82,7 +82,7 @@ spec:
   # ipv6enable: <value>
   # Autopilot(Serverless) 集群
   # enableAutopilot: <value>
-  # DataPlane V2（eBPF/Cilium：Service ClusterIP / NetworkPolicy / Bandwidth；仅新建可开、开启后不可关）
+  # DataPlane V2（eBPF/Cilium：Service ClusterIP / NetworkPolicy / Bandwidth；仅新建可开、开启后不可关；支持 eni(Turbo) / vpc-router(Standard) 两种模型）
   # enableDataPlaneV2: <value>
   # API Server 证书附加 SAN
   # customSan: <value>
